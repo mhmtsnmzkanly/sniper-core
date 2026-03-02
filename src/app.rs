@@ -190,8 +190,9 @@ impl eframe::App for CrawlerApp {
                         }).collect(),
                     };
 
+                    let output_dir = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
-                        let mut engine = crate::core::automation::AutomationEngine::new(port, tid_clone, root);
+                        let mut engine = crate::core::automation::AutomationEngine::new(port, tid_clone, output_dir);
                         let _ = engine.run(dsl).await;
                     });
                 }
