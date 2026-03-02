@@ -1,0 +1,47 @@
+[package]
+name = "auto-crawler"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+# UI Framework
+eframe = "0.31"
+egui = "0.31"
+rfd = "0.14"
+
+# Async & Networking
+tokio = { version = "1", features = ["full"] }
+rquest = { version = "5.1", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+dotenv = "0.15"
+futures = "0.3"
+url = "2.5"
+headless_chrome = "1.0"
+libc = "0.2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = "0.4"
+
+# CLI (Temel destek için kalsın)
+clap = { version = "4.5", features = ["derive"] }
+lazy_static = "1.4"
+
+[profile.dev]
+opt-level = 0
+debug = 1 # Tam debug yerine sınırlı sembol kullan
+
+# Sadece bağımlılıkları optimize et (Kendi kodun hızlı derlenir, kütüphaneler küçük kalır)
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = "z"     # Boyut odaklı maksimum optimizasyon
+lto = true          # Link Time Optimization (Tüm kodları birleştirip temizler)
+codegen-units = 1   # Daha yavaş derleme ama daha küçük binary
+panic = 'abort'     # Hata anında temizleme kodlarını kaldırır
+strip = true        # Debug sembollerini tamamen siler
