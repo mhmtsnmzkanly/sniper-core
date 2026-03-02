@@ -222,6 +222,11 @@ impl eframe::App for CrawlerApp {
                         ws.discovered_selectors = selectors;
                     }
                 }
+                AppEvent::AutomationDatasetUpdated(tid, data) => {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.extracted_data = data;
+                    }
+                }
                 AppEvent::RequestScriptExecution(tid, script) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();

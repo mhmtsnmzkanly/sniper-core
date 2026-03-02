@@ -21,6 +21,7 @@ pub enum AppEvent {
     RequestUrlUnblock(String, String), // tab_id, url_pattern
     RequestPageSelectors(String), // tab_id
     SelectorsReceived(String, Vec<String>), // tab_id, selectors
+    AutomationDatasetUpdated(String, Vec<std::collections::HashMap<String, String>>), // tab_id, data
     TerminateBrowser,
     
     // --- STORAGE COMMANDS ---

@@ -194,19 +194,27 @@ impl AutomationEngine {
                     );
                     let text = self.run_js(page, js).await?;
                     if text != "NOT_FOUND" {
-                        let mut ctx = self.context.lock().unwrap();
-                        ctx.variables.insert(as_key.clone(), text.clone());
-                        if add_to_row.unwrap_or(true) {
-                            ctx.current_row.insert(as_key.clone(), text.clone());
-                        }
-                        emit(AppEvent::ConsoleLogAdded(tid, format!("[DATA] {}: {}", as_key, text)));
+                        let (tid_clone, current_rows) = {
+                            let mut ctx = self.context.lock().unwrap();
+                            ctx.variables.insert(as_key.clone(), text.clone());
+                            if add_to_row.unwrap_or(true) {
+                                ctx.current_row.insert(as_key.clone(), text.clone());
+                            }
+                            (ctx.tab_id.clone(), ctx.extracted_data.clone())
+                        };
+                        emit(AppEvent::ConsoleLogAdded(tid_clone.clone(), format!("[DATA] {}: {}", as_key, text)));
+                        emit(AppEvent::AutomationDatasetUpdated(tid_clone, current_rows));
                     } else {
                         return Err(AppError::Browser(format!("Element not found: {}", final_sel)));
                     }
                 }
                 Step::NewRow => {
-                    let mut ctx = self.context.lock().unwrap();
-                    ctx.push_current_row();
+                    let (tid_clone, current_rows) = {
+                        let mut ctx = self.context.lock().unwrap();
+                        ctx.push_current_row();
+                        (ctx.tab_id.clone(), ctx.extracted_data.clone())
+                    };
+                    emit(AppEvent::AutomationDatasetUpdated(tid_clone, current_rows));
                 }
                 Step::Export { filename } => {
                     let final_name = self.interpolate(filename);
