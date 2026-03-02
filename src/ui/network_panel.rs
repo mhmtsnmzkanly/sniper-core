@@ -73,8 +73,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     });
 
                     ui.horizontal(|ui| {
-                        if ui.button("REQ").on_hover_text("View Request Payload").clicked() {}
-                        if ui.button("RES").on_hover_text("View Response Body").clicked() {}
+                        if ui.button("REQ").on_hover_text("View Request Payload").clicked() {
+                            ws.active_request_id = Some(format!("req_{}", req.request_id));
+                        }
+                        if ui.button("RES").on_hover_text("View Response Body").clicked() {
+                            ws.active_request_id = Some(format!("res_{}", req.request_id));
+                        }
                         
                         // --- CSS RESOURCE EXTRACTOR ---
                         let is_css = req.resource_type.to_lowercase().contains("style") || req.url.to_lowercase().ends_with(".css");
@@ -109,4 +113,36 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
         });
     });
+
+    // --- REQUEST INSPECTOR MODAL ---
+    if let Some(act_id) = ws.active_request_id.clone() {
+        let is_res = act_id.starts_with("res_");
+        let rid = act_id.replace("req_", "").replace("res_", "");
+        
+        if let Some(req) = ws.network_requests.iter().find(|r| r.request_id == rid) {
+            let title = if is_res { format!("RESPONSE: {}", req.url) } else { format!("REQUEST: {}", req.url) };
+            let content = if is_res { req.response_body.as_deref().unwrap_or("Empty body") } else { req.request_body.as_deref().unwrap_or("No payload") };
+
+            let mut open = true;
+            egui::Window::new(RichText::new(title).strong().color(Color32::KHAKI))
+                .open(&mut open)
+                .default_size([600.0, 400.0])
+                .resizable(true)
+                .show(ui.ctx(), |ui| {
+                    if ui.button("📋 Copy to Clipboard").clicked() {
+                        ui.ctx().copy_text(content.to_string());
+                    }
+                    ui.separator();
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        let mut text = content.to_string();
+                        ui.add(egui::TextEdit::multiline(&mut text)
+                            .font(egui::FontId::monospace(11.0))
+                            .desired_width(f32::INFINITY));
+                    });
+                });
+            if !open { ws.active_request_id = None; }
+        } else {
+            ws.active_request_id = None;
+        }
+    }
 }

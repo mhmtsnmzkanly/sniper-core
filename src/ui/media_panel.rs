@@ -97,8 +97,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.allocate_ui(egui::vec2(120.0, 120.0), |ui| {
                     if asset.mime_type.starts_with("image/") {
                         if let Some(data) = &asset.data {
-                            ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
-                                .max_size(egui::vec2(110.0, 110.0)).corner_radius(8.0));
+                            let resp = ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
+                                .max_size(egui::vec2(110.0, 110.0)).corner_radius(8.0).sense(egui::Sense::click()));
+                            if resp.clicked() {
+                                if let Some(ws) = state.workspaces.get_mut(&tid) {
+                                    ws.active_media_url = Some(asset.url.clone());
+                                }
+                            }
                         }
                     } else { ui.label("🎬 MEDIA"); }
                 });
@@ -128,4 +133,28 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             }
         });
     });
+
+    // --- MEDIA PREVIEW MODAL ---
+    if let Some(ws) = state.workspaces.get_mut(&tid) {
+        if let Some(url) = ws.active_media_url.clone() {
+            if let Some(asset) = ws.media_assets.iter().find(|a| a.url == url) {
+                let mut open = true;
+                egui::Window::new(RichText::new(&asset.name).strong())
+                    .open(&mut open)
+                    .default_size([500.0, 500.0])
+                    .resizable(true)
+                    .show(ui.ctx(), |ui| {
+                        if let Some(data) = &asset.data {
+                            ui.add(egui::Image::from_bytes(format!("preview://{}", asset.url), data.clone())
+                                .max_size(ui.available_size()));
+                        } else {
+                            ui.label("Binary data not available.");
+                        }
+                    });
+                if !open { ws.active_media_url = None; }
+            } else {
+                ws.active_media_url = None;
+            }
+        }
+    }
 }
