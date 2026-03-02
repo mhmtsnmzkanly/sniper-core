@@ -263,7 +263,11 @@ fn map_dsl_to_steps(steps: Vec<crate::core::automation::dsl::Step>) -> Vec<Autom
         crate::core::automation::dsl::Step::SetVariable { key, value } => AutomationStep::SetVariable { key, value },
         crate::core::automation::dsl::Step::NewRow => AutomationStep::NewRow,
         crate::core::automation::dsl::Step::Export { filename } => AutomationStep::Export(filename),
+        crate::core::automation::dsl::Step::If { condition, then_steps, .. } => {
+            let sel = match condition { crate::core::automation::dsl::Condition::Exists { selector } => selector, _ => "".into() };
+            AutomationStep::If { condition_selector: sel, then_steps: map_dsl_to_steps(then_steps) }
+        },
         crate::core::automation::dsl::Step::ForEach { selector, body } => AutomationStep::ForEach { selector, body: map_dsl_to_steps(body) },
-        _ => AutomationStep::ScrollBottom,
+        crate::core::automation::dsl::Step::ScrollBottom => AutomationStep::ScrollBottom,
     }).collect()
 }
