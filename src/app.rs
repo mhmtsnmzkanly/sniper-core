@@ -169,7 +169,7 @@ impl eframe::App for CrawlerApp {
                             crate::state::AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
                             crate::state::AutomationStep::WaitSelector(sel) => crate::core::automation::dsl::Step::WaitFor { selector: sel, timeout_ms: Some(5000) },
                             crate::state::AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
-                            crate::state::AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel, as_key: "data".into() },
+                            crate::state::AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel, as_key: "data".into(), add_to_row: Some(true) },
                             _ => crate::core::automation::dsl::Step::ScrollBottom,
                         }).collect(),
                     };

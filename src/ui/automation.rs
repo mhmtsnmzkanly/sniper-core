@@ -29,7 +29,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                             AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click { selector: sel.clone() },
                             AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
                             AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
-                            AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel.clone(), as_key: "data".into() },
+                            AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel.clone(), as_key: "data".into(), add_to_row: Some(true) },
                             _ => crate::core::automation::dsl::Step::ScrollBottom, // Default fallback
                         }).collect(),
                     };
