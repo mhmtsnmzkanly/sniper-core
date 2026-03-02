@@ -22,7 +22,7 @@ pub fn emit(event: AppEvent) {
 }
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading(RichText::new("SNIPER STUDIO // V1.1.0").strong().size(22.0).color(Color32::WHITE));
+    ui.heading(RichText::new("SNIPER STUDIO // V1.2.0").strong().size(22.0).color(Color32::WHITE));
     ui.add_space(15.0);
 
     // PHASE 1: BROWSER ENVIRONMENT
