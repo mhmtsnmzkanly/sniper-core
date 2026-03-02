@@ -5,6 +5,7 @@ use crate::config::AppConfig;
 pub enum Tab {
     Scrape,
     Automation,
+    Network,
     Translate,
     Settings,
 }
@@ -18,6 +19,16 @@ pub struct ChromeTabInfo {
     pub tab_type: String,
     #[serde(rename = "webSocketDebuggerUrl")]
     pub web_socket_url: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct NetworkRequest {
+    pub request_id: String,
+    pub url: String,
+    pub method: String,
+    pub resource_type: String,
+    pub status: Option<u16>,
+    pub timestamp: f64,
 }
 
 pub struct LogEntry {
@@ -39,13 +50,17 @@ pub struct AppState {
     pub mirror_mode: bool,
     pub last_tab_refresh: f64,
     
-    // Translate State
-    pub is_translating: bool,
-    
-    // Automation / Script State
+    // Automation State
     pub js_script: String,
     pub js_result: String,
     pub js_execution_active: bool,
+
+    // Network State
+    pub network_requests: Vec<NetworkRequest>,
+    pub network_recording: bool,
+    
+    // Translate State
+    pub is_translating: bool,
     
     // Logs
     pub logs: Vec<LogEntry>,
@@ -63,10 +78,12 @@ impl AppState {
             is_browser_running: false,
             mirror_mode: false,
             last_tab_refresh: 0.0,
-            is_translating: false,
             js_script: "document.title".to_string(),
             js_result: String::new(),
             js_execution_active: false,
+            network_requests: Vec::new(),
+            network_recording: false,
+            is_translating: false,
             logs: Vec::new(),
         }
     }

@@ -140,12 +140,57 @@ impl BrowserManager {
 
             let result = page.evaluate(script).await?;
 
-            // Sonucu okunabilir bir metne dönüştür
-            if let Some(val) = result.value() {
-                Ok(format!("{}", val))
-            } else {
-                Ok("Undefined / No return value".to_string())
-            }
-        }
-        }
+            /// Sekmenin ağ trafiğini dinlemeye başlar
+            pub async fn enable_network_monitoring(port: u16, tab_id: String) -> Result<()> {
+                use chromiumoxide::cdp::browser_protocol::network::Event;
 
+                let ws_url = Self::get_ws_url(port).await?;
+                let (browser, mut handler) = Browser::connect(ws_url).await?;
+
+                // Önce sekmeyi bul
+                let pages = browser.pages().await?;
+                let page = pages.into_iter()
+                    .find(|p| p.target_id().as_ref() == tab_id)
+                    .ok_or(anyhow!("Tab not found"))?;
+
+                // Ağ izlemeyi aç
+                page.execute(chromiumoxide::cdp::browser_protocol::network::EnableParams::default()).await?;
+
+                // Olayları dinle (Ayrı bir görevde)
+                let mut events = page.event_listener::<Event>().await?;
+
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = async {
+                            while let Some(event) = events.next().await {
+                                match event {
+                                    Event::RequestWillBeSent(e) => {
+                                        let req = crate::state::NetworkRequest {
+                                            request_id: e.request_id.to_string(),
+                                            url: e.request.url.clone(),
+                                            method: e.request.method.clone(),
+                                            resource_type: format!("{:?}", e.r#type),
+                                            status: None,
+                                            timestamp: e.timestamp.clone().into(),
+                                        };
+                                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
+                                    }
+                                    Event::ResponseReceived(e) => {
+                                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
+                                            e.request_id.to_string(),
+                                            e.response.status as u16
+                                        ));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        } => {}
+                        _ = async {
+                            while let Some(_) = handler.next().await {}
+                        } => {}
+                    }
+                });
+
+                Ok(())
+            }
+            }
