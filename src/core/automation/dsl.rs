@@ -27,6 +27,8 @@ pub enum Step {
         selector: String,
         body: Vec<Step>,
     },
+    Screenshot { filename: String },
+    WaitUntilIdle { timeout_ms: Option<u64> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -42,6 +42,19 @@ impl AutomationEngine {
         }
 
         let page = page.ok_or_else(|| AppError::NotFound(format!("Target page {} not found", tid)))?;
+        
+        // --- AUTO-ENGINE ENHANCEMENT: Dialog Handler ---
+        // Automatically accept any alerts or confirm dialogs that might block automation
+        page.execute(chromiumoxide::cdp::browser_protocol::page::EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut dialog_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::page::EventJavascriptDialogOpening>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page_for_dialog = page.clone();
+        tokio::spawn(async move {
+            while let Some(_) = dialog_events.next().await {
+                tracing::warn!("[AUTO-ENGINE] Auto-dismissing JS Dialog.");
+                let _ = page_for_dialog.execute(chromiumoxide::cdp::browser_protocol::page::HandleJavaScriptDialogParams::builder().accept(true).build().unwrap()).await;
+            }
+        });
+
         let steps = dsl.steps.clone();
 
         for (idx, step) in steps.iter().enumerate() {
@@ -57,6 +70,16 @@ impl AutomationEngine {
                 }
                 Err(e) => {
                     tracing::error!("[AUTO-ENGINE] Step {} failed: {}", idx + 1, e);
+                    
+                    // --- AUTO-ENGINE ENHANCEMENT: Failure Screenshot ---
+                    let ts = chrono::Local::now().format("%H%M%S").to_string();
+                    let filename = format!("FAIL_STEP_{}_{}.png", idx + 1, ts);
+                    if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
+                        let _ = std::fs::write(&filename, data);
+                        tracing::warn!("[AUTO-ENGINE] Failure screenshot saved to {}", filename);
+                        emit(AppEvent::OperationError(format!("Failure! Screenshot saved as {}", filename)));
+                    }
+
                     emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
                     return Err(e);
                 }
@@ -118,16 +141,15 @@ impl AutomationEngine {
                          if (!el) throw new Error('Element not found'); \
                          el.style.outline = '3px solid #ff00ff'; \
                          el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
-                         setTimeout(() => {{ el.click(); el.style.outline = ''; }}, 150); \
                          return true;", final_sel
                     );
                     self.run_js(page, js).await?;
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    page.click(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::Type { selector, value } => {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
-                    
-                    // 1. Highlight and scroll via JS
                     let highlight_js = format!(
                         "(() => {{ \
                             const el = document.querySelector('{}'); \
@@ -138,16 +160,9 @@ impl AutomationEngine {
                         }})()", final_sel.replace("'", "\\'")
                     );
                     self.run_js(page, highlight_js).await?;
-                    
-                    // 2. PHYSICAL CLICK (Crucial for modern sites to accept input)
                     page.click(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                    
-                    // 3. NATIVE KEYBOARD TYPING
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     page.keyboard().type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    
-                    // 4. Cleanup highlight
-                    let _ = self.run_js(page, format!("document.querySelector('{}').style.outline = '';", final_sel.replace("'", "\\'"))).await;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
@@ -205,6 +220,18 @@ impl AutomationEngine {
                             let _ = std::fs::write(&final_name, json);
                         }
                     }
+                }
+                Step::Screenshot { filename } => {
+                    let final_name = self.interpolate(filename);
+                    if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
+                        let _ = std::fs::write(&final_name, data);
+                        tracing::info!("[AUTO-ENGINE] Manual screenshot saved to {}", final_name);
+                    }
+                }
+                Step::WaitUntilIdle { timeout_ms } => {
+                    // Wait for network requests to finish
+                    let _ = page.wait_for_navigation().await;
+                    tokio::time::sleep(std::time::Duration::from_millis(timeout_ms.unwrap_or(1000))).await;
                 }
                 Step::SetVariable { key, value } => {
                     let final_val = self.interpolate(value);
