@@ -6,12 +6,13 @@ use crate::ui::scrape::emit;
 pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     if !state.workspaces.contains_key(tid) { return; }
     
+    // 1. Extract and clone necessary state
     let (mut auto_steps, mut auto_status, discovered_selectors, mut selector_search, mut variables, mut var_key, mut var_val, extracted_data) = {
         let ws = state.workspaces.get(tid).unwrap();
         (ws.auto_steps.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone(), ws.variables.clone(), ws.var_edit_key.clone(), ws.var_edit_val.clone(), ws.extracted_data.clone())
     };
 
-    // --- LEFT PANEL: PIPELINE & VARIABLES ---
+    // --- MAIN LAYOUT ---
     ui.columns(2, |cols| {
         // COLUMN 0: Pipeline Builder
         cols[0].group(|ui| {
@@ -30,6 +31,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                         if ui.button("💤 Wait Idle").clicked() { auto_steps.push(AutomationStep::WaitUntilIdle); ui.close_menu(); }
                         ui.separator();
                         if ui.button("🧪 Ext").clicked() { auto_steps.push(AutomationStep::Extract { selector: "".into(), as_key: "data".into(), add_to_dataset: true }); ui.close_menu(); }
+                        if ui.button("🆕 New Row").clicked() { auto_steps.push(AutomationStep::NewRow); ui.close_menu(); }
                         if ui.button("🔁 Loop").clicked() { auto_steps.push(AutomationStep::ForEach { selector: "".into(), body: vec![] }); ui.close_menu(); }
                         ui.separator();
                         if ui.button("📸 Screenshot").clicked() { auto_steps.push(AutomationStep::Screenshot("capture.png".into())); ui.close_menu(); }
@@ -44,7 +46,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             let mut move_from = None;
             let mut move_to = None;
 
-            egui::ScrollArea::vertical().max_height(400.0).id_salt("auto_steps_scroll").show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(450.0).id_salt("auto_steps_scroll").show(ui, |ui| {
                 if auto_steps.is_empty() { ui.label("No blocks added."); }
                 for (idx, step) in auto_steps.iter_mut().enumerate() {
                     let item_id = egui::Id::new(("step", idx));
@@ -136,18 +138,19 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                     if let Ok(content) = std::fs::read_to_string(path) {
                         match serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
                             Ok(dsl) => {
-                                // Extract initial variables from DSL set_variable steps
+                                // IMPORTANT: Clear current steps before loading new ones
+                                auto_steps.clear();
+                                // Extract variables from DSL set_variable steps
                                 for step in &dsl.steps {
                                     if let crate::core::automation::dsl::Step::SetVariable { key, value } = step {
                                         variables.insert(key.clone(), value.clone());
                                     }
                                 }
                                 auto_steps = map_dsl_to_steps(dsl.steps);
-                                tracing::info!("[AUTO-UI] Successfully loaded {} steps.", auto_steps.len());
+                                tracing::info!("[AUTO-UI] Loaded {} steps successfully.", auto_steps.len());
                             },
                             Err(e) => {
                                 tracing::error!("[AUTO-UI] Load failed: {}", e);
-                                // We could trigger a notification here
                             }
                         }
                     }
@@ -162,6 +165,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         });
     });
 
+    // 2. Commit changes back to state
     if let Some(ws) = state.workspaces.get_mut(tid) {
         ws.auto_steps = auto_steps;
         ws.auto_status = auto_status;
@@ -210,11 +214,11 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                 AutomationStep::Screenshot(f) => { ui.label("To:"); ui.add(egui::TextEdit::singleline(f).desired_width(100.0)); }
                 AutomationStep::Wait(secs) => { ui.add(egui::DragValue::new(secs)); ui.label("s"); }
                 AutomationStep::WaitSelector(sel) => { selector_input(ui, sel, discovered, search); }
-                AutomationStep::WaitUntilIdle => { ui.label("Until Network Idle"); }
+                AutomationStep::WaitUntilIdle => { ui.label("Idle"); }
                 AutomationStep::Export(f) => { ui.label("To:"); ui.add(egui::TextEdit::singleline(f).desired_width(100.0)); }
-                AutomationStep::NewRow => { ui.label("START NEW ROW"); }
-                AutomationStep::ScrollBottom => { ui.label("TO BOTTOM"); }
-                _ => { ui.label("Other Step"); }
+                AutomationStep::NewRow => { ui.label("NEW ROW"); }
+                AutomationStep::ScrollBottom => { ui.label("BOTTOM"); }
+                _ => { ui.label("Block"); }
             }
             if ui.button("x").clicked() { *delete_idx = Some(idx); }
         });
