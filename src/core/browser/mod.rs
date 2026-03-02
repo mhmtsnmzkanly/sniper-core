@@ -1,10 +1,10 @@
 use crate::core::error::{AppError, AppResult};
-use tracing::info;
 use std::path::PathBuf;
 use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
-use crate::state::ChromeTabInfo;
+use crate::state::{ChromeTabInfo, ChromeCookie};
 use futures::StreamExt;
+use tracing::{debug, error};
 
 pub struct BrowserManager;
 
@@ -144,17 +144,26 @@ impl BrowserManager {
         Ok(result.value().map(|v| format!("{}", v)).unwrap_or_else(|| "No return value".to_string()))
     }
 
-    pub async fn enable_network_monitoring(port: u16, tab_id: String) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams};
+    pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
+        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams as NetEnable};
+        use chromiumoxide::cdp::js_protocol::runtime::{EventConsoleApiCalled, EnableParams as RuntimeEnable};
+        
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
-        page.execute(EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        // Enable Domains
+        page.execute(NetEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        page.execute(RuntimeEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
         let mut request_events = page.event_listener::<EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut response_events = page.event_listener::<EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut console_events = page.event_listener::<EventConsoleApiCalled>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -165,12 +174,21 @@ impl BrowserManager {
                             method: e.request.method.clone(),
                             resource_type: format!("{:?}", e.r#type),
                             status: None,
-                            timestamp: 0.0,
+                            request_body: None,
+                            response_body: None,
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
                     }
                     Some(e) = response_events.next() => {
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(e.request_id.as_ref().to_string(), e.response.status as u16));
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
+                            e.request_id.as_ref().to_string(), 
+                            e.response.status as u16,
+                            None
+                        ));
+                    }
+                    Some(e) = console_events.next() => {
+                        let msg = e.args.iter().map(|v| format!("{:?}", v.value)).collect::<Vec<_>>().join(" ");
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::ConsoleLogAdded(msg));
                     }
                     else => break,
                 }
@@ -193,17 +211,34 @@ impl BrowserManager {
         }).collect())
     }
 
-    pub async fn set_emulation(port: u16, tab_id: String, ua: String, lat: f64, lon: f64) -> AppResult<()> {
+    pub async fn manage_cookie(port: u16, tab_id: String, cookie: ChromeCookie, delete: bool) -> AppResult<()> {
+        use chromiumoxide::cdp::browser_protocol::network::{SetCookieParams, DeleteCookiesParams};
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
-        if !ua.is_empty() {
-            page.execute(chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::new(ua)).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        if delete {
+            let params = DeleteCookiesParams::builder()
+                .name(cookie.name)
+                .domain(cookie.domain)
+                .build()
+                .map_err(|e| AppError::Browser(e))?;
+            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        } else {
+            let params = SetCookieParams::builder()
+                .name(cookie.name)
+                .value(cookie.value)
+                .domain(cookie.domain)
+                .path(cookie.path)
+                .secure(cookie.secure)
+                .http_only(cookie.http_only)
+                .build()
+                .map_err(|e| AppError::Browser(e))?;
+            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
         }
-        page.execute(chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder().latitude(lat).longitude(lon).accuracy(1.0).build()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 }

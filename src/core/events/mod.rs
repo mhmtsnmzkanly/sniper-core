@@ -1,30 +1,34 @@
-use crate::state::ChromeTabInfo;
+use crate::state::{ChromeTabInfo, AutomationStep, ChromeCookie, NetworkRequest};
 use std::process::Child;
 
 #[derive(Debug)]
 pub enum AppEvent {
-    // Browser Olayları
+    // Browser
     BrowserStarted(Child),
     BrowserTerminated,
     TabsUpdated(Vec<ChromeTabInfo>),
+    ConsoleLogAdded(String),
     
-    // UI Komutları
-    RequestCapture(String, bool), // tab_id, mirror_mode
-    RequestScriptExecution(String, String), // tab_id, script
-    RequestNetworkToggle(String, bool), // tab_id, enabled
-    RequestAutomationRun(String, Vec<crate::state::AutomationStep>),
-    RequestCookies(String),
-    RequestEmulation(String, String, f64, f64), // tab_id, ua, lat, lon
+    // Commands
+    RequestCapture(String, bool),
+    RequestScriptExecution(String, String),
+    RequestNetworkToggle(String, bool),
+    RequestAutomationRun(String, Vec<AutomationStep>),
     RequestTabRefresh,
-    TerminateBrowser, // Command from UI to kill browser
+    TerminateBrowser,
     
-    // Durum Olayları
-    CookiesReceived(Vec<crate::state::ChromeCookie>),
+    // Storage Commands
+    RequestCookies(String),
+    RequestCookieDelete(String, String, String), // tab_id, name, domain
+    RequestCookieAdd(String, ChromeCookie),
+    
+    // Data Returns
+    CookiesReceived(Vec<ChromeCookie>),
     AutomationProgress(usize),
     AutomationFinished,
     AutomationError(String),
-    NetworkRequestSent(crate::state::NetworkRequest),
-    NetworkResponseReceived(String, u16), // request_id, status
+    NetworkRequestSent(NetworkRequest),
+    NetworkResponseReceived(String, u16, Option<String>), // id, status, body
     ScriptFinished(String),
     OperationSuccess(String),
     OperationError(String),
