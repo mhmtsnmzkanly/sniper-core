@@ -1,50 +1,46 @@
-# Auto-Crawler: Advanced Web Novel Scraper & Localizer
+# Sniper Scraper 3.0 (Precision Mode)
 
-Auto-Crawler is a multi-novel, high-performance CLI tool for scraping and localizing web novels from BookToki using the Google Gemini API.
+Auto-Crawler projesinin evrimleşmiş, anti-bot sistemlerine (Cloudflare vb.) karşı %100 dayanıklı ve kullanıcı kontrollü yeni sürümü. Artık "Otomatik Kazıma" yerine, insanın navigasyon gücü ile makinenin kayıt hızını birleştiren bir **Keskin Nişancı (Sniper)** modunda çalışır.
 
-## 🚀 Key Features
+## 🚀 Öne Çıkan Özellikler
 
-- **Novel-Aware Organization**: Saves content in nested directories: `raw/{novel_name}/{chapter}.txt`.
-- **Chronological Scraping**: Automatically detects pagination and scrapes from Chapter 1 onwards.
-- **Smart Checkpointing**: Resumes progress by checking for existing files in `translated/{novel_name}/`.
-- **AI Localization**: Uses Gemini 1.5 Flash with a professional localization prompt for Turkish.
-- **CLI Power**: Powered by `clap` for easy URL input and management.
-- **Safety First**: Implements rate-limiting (1s delay) and custom User-Agents for anti-bot protection.
+- **Anti-Bot Precision:** Cloudflare ve Captcha engellerini, gerçek tarayıcınızda (Chrome/Chromium) manuel olarak geçip programa sadece "Kaydet" emri vererek aşarsınız.
+- **Multi-Tab Support:** Belirlediğiniz port üzerinden tarayıcıdaki tüm açık sekmeleri görür, istediğiniz sekmeyi seçip anlık HTML kopyasını alırsınız.
+- **UTF-8 Full Support:** Türkçe, Korece ve diğer tüm dillerde karakter bozulması olmadan kayıt ve görüntüleme.
+- **Sistem Profili Entegrasyonu:** Kendi tarayıcı profilinizi (çerezler, şifreler) otomatik tespit edip kullanabilme.
+- **Orphan Process Protection:** Program kapandığında tarayıcı ve tüm sekmelerini otomatik olarak sonlandırır.
+- **AI Translation:** Kazınan ham HTML dosyalarını toplu olarak Google Gemini API üzerinden profesyonel kalitede Türkçeye çevirme.
 
-## 📋 Prerequisites
+## 🛠 Kurulum ve Kullanım (Sniper Modu)
 
-- **Rust**: [Install Rust](https://rustup.rs/) (1.75+).
-- **Gemini API Key**: [Get your key here](https://aistudio.google.com/app/apikey).
-
-## 🛠️ Setup
-
-1. **Environment**:
-   Create a `.env` file or set the variable:
-   ```bash
-   export GEMINI_API_KEY="your_api_key"
-   ```
-
-2. **Installation**:
-   ```bash
-   cd /home/duldul/Masaüstü/auto-crawler
-   cargo build --release
-   ```
-
-## 🎮 Usage
-
-Run the crawler by providing the novel's main page URL:
-
+### 1. Adım: Tarayıcı Hazırlığı
+Programın tarayıcınıza bağlanabilmesi için Chrome/Chromium'u Remote Debugging portu ile başlatmalısınız:
 ```bash
-cargo run --release -- --url "https://booktoki469.com/novel/263943"
+google-chrome --remote-debugging-port=9222
 ```
 
-### Options:
-- `-u` / `--url`: The main page URL of the novel you want to scrape.
+### 2. Adım: Programı Başlatın
+```bash
+cargo run
+```
 
-## 📂 Data Structure
+### 3. Adım: Operasyon
+1. **Output Dir:** Kayıt edilecek ana klasörü seçin.
+2. **Step 1:** URL girip `LAUNCH BROWSER` deyin (Veya hali hazırda açıksa sadece portu kontrol edin).
+3. **Step 2:** Tarayıcıda romanın bölümünü açın. GUI'de `REFRESH LIST` diyerek sekmeyi seçin.
+4. **Step 3:** `CAPTURE TARGET PAGE` butonuna basın. 
+   - *Sonuç:* `site.com/bolum.adi.html` şeklinde UTF-8 HTML dosyanız hazır!
 
-- `raw/{novel_name}/`: Original Korean chapters.
-- `translated/{novel_name}/`: Localized Turkish chapters.
+## 🌐 AI Çeviri (Translate Tab)
+1. **Raw Folder:** Kazınan HTML'lerin olduğu klasörü seçin.
+2. **Output Folder:** Çevirilerin kaydedileceği yeri seçin.
+3. **API Key:** Gemini API anahtarınızı girin.
+4. **Start:** Program tüm dosyaları sırayla okur ve AI ile yerelleştirir.
 
-## 🛡️ Disclaimer
-Use responsibly. This tool is for personal educational use only. Respect the copyright and terms of service of the content providers.
+## 📜 Loglama
+Program her çalışma için `logs/` klasörü altında iki adet log tutar:
+- `logs/{TIME}.log`: Uygulama adımları ve başarı durumları.
+- `logs/chrome.{TIME}.log`: Tarayıcıdan gelen içsel mesajlar ve hatalar.
+
+---
+**Geliştirici Notu:** Bu araç eğitim amaçlı geliştirilmiştir. Kullanırken ilgili sitelerin kullanım koşullarına uyunuz.
