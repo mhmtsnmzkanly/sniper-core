@@ -117,6 +117,7 @@ pub struct TabWorkspace {
     pub active_media_url: Option<String>,
     pub blocked_urls: HashSet<String>,
     pub discovered_selectors: Vec<String>,
+    pub selector_search: String,
     pub media_sort_col: String,
     pub media_sort_asc: bool,
 }
@@ -138,6 +139,7 @@ impl TabWorkspace {
             active_media_url: None,
             blocked_urls: HashSet::new(),
             discovered_selectors: Vec::new(),
+            selector_search: String::new(),
             media_sort_col: "name".to_string(),
             media_sort_asc: true,
         }

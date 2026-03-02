@@ -6,9 +6,9 @@ use crate::ui::scrape::emit;
 pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     if !state.workspaces.contains_key(tid) { return; }
     
-    let (mut auto_steps, mut auto_status, discovered_selectors) = {
+    let (mut auto_steps, mut auto_status, discovered_selectors, mut selector_search) = {
         let ws = state.workspaces.get(tid).unwrap();
-        (ws.auto_steps.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone())
+        (ws.auto_steps.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone())
     };
 
     ui.group(|ui| {
@@ -66,7 +66,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             for (idx, step) in auto_steps.iter_mut().enumerate() {
                 let item_id = egui::Id::new(("step", idx));
                 let dnd_res = ui.dnd_drag_source(item_id, idx, |ui| {
-                    render_step_block(ui, step, idx, &mut delete_idx, &discovered_selectors);
+                    render_step_block(ui, step, idx, &mut delete_idx, &discovered_selectors, &mut selector_search);
                 });
 
                 if let Some(payload) = ui.dnd_drop_zone::<usize, _>(Frame::NONE, |ui| { }).1 {
@@ -103,10 +103,11 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     if let Some(ws) = state.workspaces.get_mut(tid) {
         ws.auto_steps = auto_steps;
         ws.auto_status = auto_status;
+        ws.selector_search = selector_search;
     }
 }
 
-fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String]) {
+fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String], search: &mut String) {
     let (color, title) = match step {
         AutomationStep::Navigate(_) | AutomationStep::Click(_) | AutomationStep::Type { .. } => (Color32::from_rgb(60, 100, 200), "ACTION"),
         AutomationStep::Wait(_) | AutomationStep::WaitSelector(_) | AutomationStep::ScrollBottom => (Color32::from_rgb(180, 150, 40), "WAIT"),
@@ -129,23 +130,23 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
 
                 match step {
                     AutomationStep::Navigate(url) => { ui.label("Nav:"); ui.text_edit_singleline(url); }
-                    AutomationStep::Click(sel) => { ui.label("Click:"); selector_input(ui, sel, discovered); }
+                    AutomationStep::Click(sel) => { ui.label("Click:"); selector_input(ui, sel, discovered, search); }
                     AutomationStep::Type { selector, value } => {
                         ui.label("Type"); ui.text_edit_singleline(value);
-                        ui.label("into"); selector_input(ui, selector, discovered);
+                        ui.label("into"); selector_input(ui, selector, discovered, search);
                     }
                     AutomationStep::Wait(secs) => { ui.label("Wait"); ui.add(egui::DragValue::new(secs)); ui.label("sec"); }
-                    AutomationStep::WaitSelector(sel) => { ui.label("Wait for"); selector_input(ui, sel, discovered); }
+                    AutomationStep::WaitSelector(sel) => { ui.label("Wait for"); selector_input(ui, sel, discovered, search); }
                     AutomationStep::Extract { selector, as_key, .. } => {
-                        ui.label("Extract"); selector_input(ui, selector, discovered);
+                        ui.label("Extract"); selector_input(ui, selector, discovered, search);
                         ui.label("as"); ui.text_edit_singleline(as_key);
                     }
                     AutomationStep::ForEach { selector, body } => {
-                        ui.label("Loop:"); selector_input(ui, selector, discovered);
+                        ui.label("Loop:"); selector_input(ui, selector, discovered, search);
                         ui.label(RichText::new(format!("({} steps)", body.len())).italics().small());
                     }
                     AutomationStep::If { condition_selector, then_steps } => {
-                        ui.label("If exists:"); selector_input(ui, condition_selector, discovered);
+                        ui.label("If exists:"); selector_input(ui, condition_selector, discovered, search);
                         ui.label(RichText::new(format!("({} steps)", then_steps.len())).italics().small());
                     }
                     _ => { ui.label("Block"); }
@@ -159,21 +160,31 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
     ui.add_space(4.0);
 }
 
-fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String]) {
+fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String], search: &mut String) {
     ui.horizontal(|ui| {
         ui.text_edit_singleline(value);
         ui.menu_button("🔍", |ui| {
-            ui.set_max_width(250.0);
-            ui.label(RichText::new("Discovered Selectors").strong().small());
+            ui.set_max_width(280.0);
+            ui.label(RichText::new("SEARCH SELECTORS").strong().small());
+            ui.add(egui::TextEdit::singleline(search).hint_text("Filter by ID or Class..."));
             ui.separator();
-            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
                 if discovered.is_empty() {
                     ui.label(RichText::new("No selectors found. Click SCAN above.").italics().color(Color32::GRAY));
-                }
-                for s in discovered {
-                    if ui.button(RichText::new(s).small()).clicked() {
-                        *value = s.clone();
-                        ui.close_menu();
+                } else {
+                    let filter = search.to_lowercase();
+                    let mut found_any = false;
+                    for s in discovered {
+                        if filter.is_empty() || s.to_lowercase().contains(&filter) {
+                            if ui.button(RichText::new(s).small()).clicked() {
+                                *value = s.clone();
+                                ui.close_menu();
+                            }
+                            found_any = true;
+                        }
+                    }
+                    if !found_any {
+                        ui.label(RichText::new("No matches found.").italics().color(Color32::GRAY));
                     }
                 }
             });
