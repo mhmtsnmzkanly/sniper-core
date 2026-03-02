@@ -103,6 +103,8 @@ pub struct TabWorkspace {
     pub active_request_id: Option<String>,
     pub active_media_url: Option<String>,
     pub blocked_urls: HashSet<String>,
+    pub media_sort_col: String,
+    pub media_sort_asc: bool,
 }
 
 impl TabWorkspace {
@@ -121,6 +123,8 @@ impl TabWorkspace {
             active_request_id: None,
             active_media_url: None,
             blocked_urls: HashSet::new(),
+            media_sort_col: "name".to_string(),
+            media_sort_asc: true,
         }
     }
 }
