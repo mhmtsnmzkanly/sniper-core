@@ -144,6 +144,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
             });
 
+            ui.add_space(10.0);
+            if can_action {
+                crate::ui::automation::render_embedded(ui, state, &tid);
+            }
+
             if let Some(ws) = state.selected_tab_id.as_ref().and_then(|id| state.workspaces.get_mut(id)) {
                 if ws.sniffer_active {
                     egui::Window::new(format!("{} - CONSOLE & SCRIPT", ws.title))

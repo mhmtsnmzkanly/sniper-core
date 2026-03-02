@@ -245,7 +245,6 @@ impl eframe::App for CrawlerApp {
             ui.add_space(15.0);
             ui.label("CORE TOOLS");
             ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, " 🎯 SCRAPE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Automation, " 🤖 AUTOMATION");
             ui.add_space(15.0);
             ui.label("SYSTEM");
             ui.selectable_value(&mut self.state.active_tab, Tab::Settings, " ⚙ SETTINGS");
@@ -295,7 +294,6 @@ impl eframe::App for CrawlerApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.state.active_tab {
                 Tab::Scrape => ui::scrape::render(ui, &mut self.state),
-                Tab::Automation => ui::automation::render(ui, &mut self.state),
                 Tab::Settings => ui::config_panel::render(ui, &mut self.state),
                 _ => {}
             }
