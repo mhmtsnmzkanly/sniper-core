@@ -12,9 +12,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.label(RichText::new("Automation Pipeline").strong().size(16.0));
             if ui.button("➕ Add Step").clicked() {
                 state.auto_steps.push(AutomationStep::Wait(1));
+                tracing::info!("Automation step added.");
             }
             if ui.button("🗑 Clear All").clicked() {
                 state.auto_steps.clear();
+                tracing::warn!("All automation steps cleared.");
             }
         });
 
@@ -26,7 +28,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}.", idx + 1));
                     
-                    // Step Editor
                     match step {
                         AutomationStep::Navigate(url) => {
                             ui.label("Navigate to:");
@@ -57,6 +58,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
         if let Some(idx) = to_remove {
             state.auto_steps.remove(idx);
+            tracing::info!("Step {} removed.", idx + 1);
         }
 
         ui.add_space(10.0);
@@ -65,13 +67,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let btn_text = match &state.auto_status {
             AutomationStatus::Idle => "▶ START PIPELINE",
             AutomationStatus::Running(_i) => "RUNNING...",
-
             AutomationStatus::Finished => "PIPELINE FINISHED",
             AutomationStatus::Error(_) => "PIPELINE FAILED",
         };
 
         if ui.add_enabled(can_run, egui::Button::new(RichText::new(btn_text).strong()).min_size([ui.available_width(), 40.0].into())).clicked() {
             if let Some(tab_id) = state.selected_tab_id.clone() {
+                tracing::info!("Automation PIPELINE started with {} steps.", state.auto_steps.len());
                 state.auto_status = AutomationStatus::Running(0);
                 emit(AppEvent::RequestAutomationRun(tab_id, state.auto_steps.clone()));
             }
@@ -80,14 +82,41 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(20.0);
 
-    // Eski Faz 3 Script Injection Alt Kısımda Kalsın
-    ui.collapsing("Live Script Injection (Advanced)", |ui| {
-        ui.add(egui::TextEdit::multiline(&mut state.js_script).font(egui::TextStyle::Monospace).desired_rows(5));
-        if ui.button("Run Script").clicked() {
+    ui.group(|ui| {
+        ui.label(RichText::new("Live Script Injection").strong());
+        ui.horizontal(|ui| {
+            if ui.button("📁 Load JS File").clicked() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        state.js_script = content;
+                        tracing::info!("JS Script loaded from: {:?}", path);
+                    }
+                }
+            }
+            if ui.button("Clear Editor").clicked() {
+                state.js_script.clear();
+            }
+        });
+        
+        ui.add_space(5.0);
+        ui.add(egui::TextEdit::multiline(&mut state.js_script)
+            .font(egui::TextStyle::Monospace)
+            .desired_rows(8)
+            .desired_width(f32::INFINITY));
+        
+        if ui.button("▶ INJECT SCRIPT").clicked() {
             if let Some(tab_id) = state.selected_tab_id.clone() {
+                tracing::info!("Injecting live script (length: {} chars).", state.js_script.len());
                 emit(AppEvent::RequestScriptExecution(tab_id, state.js_script.clone()));
+            } else {
+                tracing::error!("No tab selected for script injection!");
             }
         }
-        ui.label(RichText::new(&state.js_result).color(Color32::GREEN));
+        
+        if !state.js_result.is_empty() {
+            ui.add_space(10.0);
+            ui.label("Result:");
+            ui.add(egui::Label::new(RichText::new(&state.js_result).color(Color32::GREEN).monospace()).selectable(true));
+        }
     });
 }

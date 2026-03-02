@@ -25,45 +25,60 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.heading("SNIPER SCRAPER STUDIO 1.0.0");
     ui.add_space(10.0);
 
-    // Config Section
+    // Settings
     ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Target Port:").strong());
-            ui.add(egui::DragValue::new(&mut state.config.remote_debug_port).range(1024..=65535));
-            ui.add_space(20.0);
-            ui.label(RichText::new("Output:").strong());
-            ui.label(RichText::new(state.config.raw_output_dir.to_string_lossy()).small().color(Color32::LIGHT_BLUE));
+        ui.columns(2, |cols| {
+            cols[0].horizontal(|ui| {
+                ui.label("🌐 PORT:");
+                ui.add(egui::DragValue::new(&mut state.config.remote_debug_port).range(1024..=65535));
+            });
+            cols[1].horizontal(|ui| {
+                ui.label("📁 SAVE TO:");
+                if ui.button("Browse").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        state.config.raw_output_dir = path;
+                        tracing::info!("Output directory changed to: {:?}", state.config.raw_output_dir);
+                    }
+                }
+            });
         });
+        ui.label(RichText::new(state.config.raw_output_dir.to_string_lossy()).small().color(Color32::LIGHT_BLUE));
     });
 
     ui.add_space(10.0);
 
-    // Step 1: Browser Launch
+    // Step 1: Browser Control
     ui.group(|ui| {
-        ui.label(RichText::new("Step 1: Browser Control").strong().size(14.0));
+        ui.label(RichText::new("Step 1: Browser Control").strong());
         ui.horizontal(|ui| {
-            ui.label("URL:");
+            ui.label("START URL:");
             ui.text_edit_singleline(&mut state.scrape_url);
             
             if !state.is_browser_running {
                 if ui.button("LAUNCH BROWSER").clicked() {
                     let url = if state.scrape_url.is_empty() { state.config.default_launch_url.clone() } else { state.scrape_url.clone() };
+                    tracing::info!("LAUNCH BROWSER pressed. Target: {}", url);
+                    
                     let profile = state.config.default_profile_dir.clone();
                     let port = state.config.remote_debug_port;
                     let ts = state.session_timestamp.clone();
                     
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::launch(&url, profile, port, ts).await {
-                            Ok(child) => emit(AppEvent::BrowserStarted(child)),
+                            Ok(child) => {
+                                tracing::info!("Browser process spawned successfully.");
+                                emit(AppEvent::BrowserStarted(child));
+                            },
                             Err(e) => {
                                 tracing::error!("Launch failed: {}", e);
-                                emit(AppEvent::OperationError(e.to_string()));
+                                emit(AppEvent::OperationError(format!("Could not launch browser: {}", e)));
                             }
                         }
                     });
                 }
             } else {
                 if ui.button(RichText::new("STOP BROWSER").color(Color32::RED)).clicked() {
+                    tracing::warn!("STOP BROWSER pressed.");
                     emit(AppEvent::TerminateBrowser);
                 }
             }
@@ -75,9 +90,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // Step 2: Tab Selection
     ui.group(|ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Step 2: Select Target Tab").strong().size(14.0));
+            ui.label(RichText::new("Step 2: Target Selection").strong().size(16.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("REFRESH LIST").clicked() {
+                    tracing::info!("REFRESH LIST pressed.");
                     emit(AppEvent::RequestTabRefresh);
                 }
             });
@@ -88,7 +104,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
             if state.available_tabs.is_empty() {
                 ui.centered_and_justified(|ui| {
-                    ui.label(RichText::new("Waiting for tabs... (Auto-refresh active)").italics().color(Color32::GRAY));
+                    ui.label(RichText::new("No tabs detected. Start Browser & Refresh.").italics().color(Color32::GRAY));
                 });
             } else {
                 let total_width = ui.available_width();
@@ -111,7 +127,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
                             let font_size = 12.0;
                             
-                            // Col 1: ID
                             let short_id = if tab.id.chars().count() > 8 { 
                                 format!("{}...", tab.id.chars().take(8).collect::<String>()) 
                             } else { 
@@ -119,7 +134,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             };
                             ui.label(RichText::new(short_id).monospace().size(font_size).color(Color32::DARK_GRAY));
 
-                            // Col 2: Info (Full URL and Title visible)
                             ui.allocate_ui(egui::vec2(info_width, 40.0), |ui| {
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(&tab.title).strong().size(font_size).color(if is_selected { Color32::LIGHT_BLUE } else { Color32::WHITE }));
@@ -127,9 +141,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 });
                             });
 
-                            // Col 3: Select
                             if ui.selectable_label(is_selected, if is_selected { "SELECTED" } else { "SELECT" }).clicked() {
                                 state.selected_tab_id = Some(tab.id.clone());
+                                tracing::info!("Tab selected: {} ({})", tab.title, tab.id);
                             }
                             
                             ui.end_row();
@@ -141,9 +155,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(10.0);
 
-    // Step 3: Actions
+    // Step 3: Available Actions
     ui.group(|ui| {
-        ui.label(RichText::new("Step 3: Available Actions").strong().size(14.0));
+        ui.label(RichText::new("Step 3: Available Actions").strong().size(16.0));
         ui.add_space(5.0);
         
         ui.checkbox(&mut state.mirror_mode, "Mirror Mode (Download Images, CSS, JS)");
@@ -154,14 +168,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         
         let btn = ui.add_enabled(
             can_capture, 
-            egui::Button::new(RichText::new(btn_label).size(15.0).strong())
-                .min_size([ui.available_width(), 45.0].into())
+            egui::Button::new(RichText::new(btn_label).size(16.0).strong())
+                .min_size([ui.available_width(), 50.0].into())
         );
         
         if btn.clicked() {
-            if let Some(tab_id) = state.selected_tab_id.clone() {
-                emit(AppEvent::RequestCapture(tab_id, state.mirror_mode));
-            }
+            let tab_id = state.selected_tab_id.clone().unwrap();
+            let mode_str = if state.mirror_mode { "MIRROR" } else { "HTML ONLY" };
+            tracing::info!("CAPTURE started. Tab ID: {}, Mode: {}", tab_id, mode_str);
+            
+            emit(AppEvent::RequestCapture(tab_id, state.mirror_mode));
         }
     });
 }

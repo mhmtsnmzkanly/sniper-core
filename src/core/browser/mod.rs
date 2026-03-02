@@ -1,5 +1,5 @@
 use crate::core::error::{AppError, AppResult};
-use tracing::{info, debug, error, warn};
+use tracing::info;
 use std::path::PathBuf;
 use std::process::{Stdio, Child};
 use chromiumoxide::Browser;

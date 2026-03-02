@@ -1,7 +1,7 @@
 use crate::state::{AppState, Tab};
 use crate::core::events::AppEvent;
 use crate::ui;
-use eframe::egui;
+use eframe::egui::{self, RichText};
 use std::sync::{Arc, Mutex};
 use chromiumoxide::Browser;
 use futures::StreamExt;
@@ -116,8 +116,15 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.raw_output_dir.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::capture_html(port, tab_id, root, mirror).await {
-                            tracing::error!("Capture failed: {}", e);
+                        match crate::core::browser::BrowserManager::capture_html(port, tab_id, root, mirror).await {
+                            Ok(p) => {
+                                tracing::info!("✅ Capture finished successfully: {:?}", p);
+                                ui::scrape::emit(AppEvent::OperationSuccess(format!("Page saved to: {:?}", p)));
+                            }
+                            Err(e) => {
+                                tracing::error!("❌ Capture failed: {}", e);
+                                ui::scrape::emit(AppEvent::OperationError(format!("Capture failed: {}", e)));
+                            }
                         }
                     });
                 }
@@ -132,14 +139,13 @@ impl eframe::App for CrawlerApp {
                 AppEvent::ScriptFinished(res) => {
                     self.state.js_result = res;
                     self.state.js_execution_active = false;
+                    tracing::info!("Script execution finished.");
                 }
                 AppEvent::RequestNetworkToggle(tab_id, enabled) => {
                     if enabled {
                         let port = self.state.config.remote_debug_port;
                         tokio::spawn(async move {
-                            if let Err(e) = crate::core::browser::BrowserManager::enable_network_monitoring(port, tab_id).await {
-                                tracing::error!("Network monitoring failed: {}", e);
-                            }
+                            let _ = crate::core::browser::BrowserManager::enable_network_monitoring(port, tab_id).await;
                         });
                     }
                 }
@@ -154,39 +160,49 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         if let Err(e) = crate::core::automation::AutomationEngine::run_pipeline(port, tab_id, steps).await {
                             ui::scrape::emit(AppEvent::AutomationError(e.to_string()));
+                        } else {
+                            ui::scrape::emit(AppEvent::AutomationFinished);
                         }
                     });
                 }
                 AppEvent::AutomationProgress(idx) => { self.state.auto_status = crate::state::AutomationStatus::Running(idx); }
-                AppEvent::AutomationFinished => { self.state.auto_status = crate::state::AutomationStatus::Finished; }
-                AppEvent::AutomationError(msg) => { self.state.auto_status = crate::state::AutomationStatus::Error(msg); }
+                AppEvent::AutomationFinished => { 
+                    self.state.auto_status = crate::state::AutomationStatus::Finished; 
+                    self.state.notify("Automation Success", "Pipeline finished all steps.", false);
+                }
+                AppEvent::AutomationError(msg) => { 
+                    self.state.auto_status = crate::state::AutomationStatus::Error(msg.clone()); 
+                    self.state.notify("Automation Failed", &msg, true);
+                }
                 
                 AppEvent::RequestCookies(tab_id) => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        if let Ok(cookies) = crate::core::browser::BrowserManager::get_cookies(port, tab_id).await {
-                            ui::scrape::emit(AppEvent::CookiesReceived(cookies));
+                        match crate::core::browser::BrowserManager::get_cookies(port, tab_id).await {
+                            Ok(cookies) => ui::scrape::emit(AppEvent::CookiesReceived(cookies)),
+                            Err(e) => {
+                                tracing::error!("Cookie fetch failed: {}", e);
+                                ui::scrape::emit(AppEvent::OperationError(format!("Cookie fetch failed: {}", e)));
+                            }
                         }
                     });
                 }
                 AppEvent::CookiesReceived(cookies) => {
                     self.state.cookies = cookies;
-                    tracing::info!("Successfully fetched cookies.");
+                    tracing::info!("Successfully fetched {} cookies.", self.state.cookies.len());
+                    self.state.notify("Storage", "Cookies fetched successfully.", false);
                 }
-                AppEvent::RequestEmulation(tab_id, ua, lat, lon) => {
-                    let port = self.state.config.remote_debug_port;
-                    tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::set_emulation(port, tab_id, ua, lat, lon).await {
-                            tracing::error!("Emulation failed: {}", e);
-                        } else {
-                            tracing::info!("Emulation settings applied.");
-                        }
-                    });
+                AppEvent::OperationSuccess(msg) => {
+                    self.state.notify("Operation Successful", &msg, false);
+                }
+                AppEvent::OperationError(msg) => {
+                    self.state.notify("Operation Error", &msg, true);
                 }
                 _ => {}
             }
         }
 
+        // --- UI RENDERING ---
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.heading("STUDIO");
             ui.add_space(10.0);
@@ -212,6 +228,33 @@ impl eframe::App for CrawlerApp {
                 Tab::Settings => ui::config_panel::render(ui, &mut self.state),
             }
         });
+
+        // --- NOTIFICATION MODAL ---
+        let mut close_notification = false;
+        if let Some(notif) = &self.state.notification {
+            let title = notif.title.clone();
+            let msg = notif.message.clone();
+            let is_error = notif.is_error;
+
+            egui::Window::new(RichText::new(&title).strong())
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        let color = if is_error { egui::Color32::RED } else { egui::Color32::GREEN };
+                        ui.label(RichText::new(&msg).color(color));
+                        ui.add_space(10.0);
+                        if ui.button("OK").clicked() {
+                            close_notification = true;
+                        }
+                    });
+                });
+        }
+        
+        if close_notification {
+            self.state.notification = None;
+        }
 
         ctx.request_repaint();
     }

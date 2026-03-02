@@ -68,10 +68,19 @@ pub struct LogEntry {
     pub timestamp: String,
 }
 
+pub struct Notification {
+    pub title: String,
+    pub message: String,
+    pub is_error: bool,
+}
+
 pub struct AppState {
     pub active_tab: Tab,
     pub config: AppConfig,
     pub session_timestamp: String,
+    
+    // UI Feedback
+    pub notification: Option<Notification>,
     
     // UI State
     pub scrape_url: String,
@@ -113,6 +122,7 @@ impl AppState {
             active_tab: Tab::Scrape,
             config,
             session_timestamp: timestamp,
+            notification: None,
             scrape_url: String::new(),
             available_tabs: Vec::new(),
             selected_tab_id: None,
@@ -128,10 +138,18 @@ impl AppState {
             network_recording: false,
             cookies: Vec::new(),
             user_agent_override: String::new(),
-            latitude: 41.0082, // Default Istanbul
+            latitude: 41.0082,
             longitude: 28.9784,
             is_translating: false,
             logs: Vec::new(),
         }
+    }
+
+    pub fn notify(&mut self, title: &str, message: &str, is_error: bool) {
+        self.notification = Some(Notification {
+            title: title.to_string(),
+            message: message.to_string(),
+            is_error,
+        });
     }
 }
