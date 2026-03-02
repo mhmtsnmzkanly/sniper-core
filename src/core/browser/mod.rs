@@ -72,27 +72,33 @@ impl BrowserManager {
         
         let js = r#"(() => {
             const results = new Set();
+            const importantAttrs = ['name', 'data-id', 'data-testid', 'role', 'type', 'href'];
             
-            // 1. Discover IDs
-            document.querySelectorAll('[id]').forEach(el => results.add('#' + el.id));
-            
-            // 2. Discover individual Classes
-            document.querySelectorAll('[class]').forEach(el => {
-                el.classList.forEach(c => results.add('.' + c));
-            });
-            
-            // 3. Discover Important Attributes
-            const attrs = ['name', 'data-id', 'data-testid', 'role', 'type', 'href'];
-            attrs.forEach(attr => {
-                document.querySelectorAll(`[${attr}]`).forEach(el => {
+            // Query all elements that might be interesting
+            document.querySelectorAll('a, button, input, select, [id], [class], [data-id], [data-testid]').forEach(el => {
+                const tag = el.tagName.toLowerCase();
+                const id = el.id ? '#' + el.id : '';
+                const classes = Array.from(el.classList).map(c => '.' + c).join('');
+                
+                // 1. Basic combinations
+                if (id) results.add(`${tag}${id}`);
+                if (classes) results.add(`${tag}${classes}`);
+                if (id && classes) results.add(`${tag}${id}${classes}`);
+
+                // 2. Attribute combinations
+                importantAttrs.forEach(attr => {
                     const val = el.getAttribute(attr);
-                    if (val && val.length < 50) { // Limit length for sanity
-                        results.add(`${el.tagName.toLowerCase()}[${attr}="${val}"]`);
+                    if (val && val.length < 60) {
+                        const attrStr = `[${attr}="${val}"]`;
+                        results.add(`${tag}${attrStr}`);
+                        if (id) results.add(`${tag}${id}${attrStr}`);
+                        if (classes) results.add(`${tag}${classes}${attrStr}`);
+                        if (id && classes) results.add(`${tag}${id}${classes}${attrStr}`);
                     }
                 });
             });
 
-            return Array.from(results).sort();
+            return Array.from(results).filter(s => s.length < 150).sort();
         })()"#;
         
         let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
