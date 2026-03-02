@@ -169,7 +169,20 @@ impl eframe::App for CrawlerApp {
                             crate::state::AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
                             crate::state::AutomationStep::WaitSelector(sel) => crate::core::automation::dsl::Step::WaitFor { selector: sel, timeout_ms: Some(5000) },
                             crate::state::AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
-                            crate::state::AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel, as_key: "data".into(), add_to_row: Some(true) },
+                            crate::state::AutomationStep::Extract { selector, as_key, add_to_row } => crate::core::automation::dsl::Step::Extract { selector, as_key, add_to_row: Some(add_to_row) },
+                            crate::state::AutomationStep::SetVariable { key, value } => crate::core::automation::dsl::Step::SetVariable { key, value },
+                            crate::state::AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
+                            crate::state::AutomationStep::Export(f) => crate::core::automation::dsl::Step::Export { filename: f },
+                            crate::state::AutomationStep::If { condition_selector, then_steps } => crate::core::automation::dsl::Step::If { 
+                                condition: crate::core::automation::dsl::Condition::Exists { selector: condition_selector },
+                                then_steps: map_ui_steps_to_dsl(&then_steps),
+                                else_steps: None,
+                            },
+                            crate::state::AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { 
+                                selector,
+                                body: map_ui_steps_to_dsl(&body),
+                            },
+                            crate::state::AutomationStep::InjectJS(s) => crate::core::automation::dsl::Step::ScrollBottom, // Placeholder for JS if needed
                             _ => crate::core::automation::dsl::Step::ScrollBottom,
                         }).collect(),
                     };
@@ -350,6 +363,31 @@ impl eframe::App for CrawlerApp {
 
         ctx.request_repaint();
     }
+}
+
+fn map_ui_steps_to_dsl(steps: &[crate::state::AutomationStep]) -> Vec<crate::core::automation::dsl::Step> {
+    steps.iter().map(|s| match s {
+        crate::state::AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
+        crate::state::AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click { selector: sel.clone() },
+        crate::state::AutomationStep::Type { selector, value } => crate::core::automation::dsl::Step::Type { selector: selector.clone(), value: value.clone() },
+        crate::state::AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
+        crate::state::AutomationStep::WaitSelector(sel) => crate::core::automation::dsl::Step::WaitFor { selector: sel.clone(), timeout_ms: Some(5000) },
+        crate::state::AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
+        crate::state::AutomationStep::Extract { selector, as_key, add_to_row } => crate::core::automation::dsl::Step::Extract { selector: selector.clone(), as_key: as_key.clone(), add_to_row: Some(*add_to_row) },
+        crate::state::AutomationStep::SetVariable { key, value } => crate::core::automation::dsl::Step::SetVariable { key: key.clone(), value: value.clone() },
+        crate::state::AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
+        crate::state::AutomationStep::Export(f) => crate::core::automation::dsl::Step::Export { filename: f.clone() },
+        crate::state::AutomationStep::If { condition_selector, then_steps } => crate::core::automation::dsl::Step::If { 
+            condition: crate::core::automation::dsl::Condition::Exists { selector: condition_selector.clone() },
+            then_steps: map_ui_steps_to_dsl(then_steps),
+            else_steps: None,
+        },
+        crate::state::AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { 
+            selector: selector.clone(),
+            body: map_ui_steps_to_dsl(body),
+        },
+        _ => crate::core::automation::dsl::Step::ScrollBottom,
+    }).collect()
 }
 
 fn state_bridge_render_network(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {

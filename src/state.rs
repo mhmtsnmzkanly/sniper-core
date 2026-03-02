@@ -26,10 +26,22 @@ pub struct MediaAsset {
 pub enum AutomationStep {
     Navigate(String),
     Click(String),
+    Type { selector: String, value: String },
     Wait(u64),
     WaitSelector(String),
     ScrollBottom,
-    ExtractText(String),
+    Extract { selector: String, as_key: String, add_to_row: bool },
+    SetVariable { key: String, value: String },
+    NewRow,
+    Export(String),
+    If {
+        condition_selector: String,
+        then_steps: Vec<AutomationStep>,
+    },
+    ForEach {
+        selector: String,
+        body: Vec<AutomationStep>,
+    },
     InjectJS(String),
 }
 
