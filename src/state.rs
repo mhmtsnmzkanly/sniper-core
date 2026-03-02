@@ -1,8 +1,8 @@
-use std::path::PathBuf;
 use std::collections::{HashSet, HashMap};
 use crate::config::AppConfig;
 use serde::{Serialize, Deserialize};
 
+/// Represents the primary navigation sections of the application.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Scrape,
@@ -11,7 +11,8 @@ pub enum Tab {
     Settings,
 }
 
-#[derive(Clone, Debug)]
+/// Captured binary media asset.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MediaAsset {
     pub name: String,
     pub url: String,
@@ -20,6 +21,7 @@ pub struct MediaAsset {
     pub data: Option<Vec<u8>>,
 }
 
+/// Atomic operation in the automation pipeline.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum AutomationStep {
     Navigate(String),
@@ -31,7 +33,8 @@ pub enum AutomationStep {
     InjectJS(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// Current status of a tab's automation pipeline.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AutomationStatus {
     Idle,
     Running(usize),
@@ -39,7 +42,8 @@ pub enum AutomationStatus {
     Error(String),
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
+/// Metadata for a Chrome/Chromium tab retrieved via CDP.
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
 pub struct ChromeTabInfo {
     pub id: String,
     pub title: String,
@@ -50,6 +54,7 @@ pub struct ChromeTabInfo {
     pub web_socket_url: String,
 }
 
+/// Browser cookie metadata.
 #[derive(Clone, Debug, serde::Deserialize, Serialize, Default)]
 pub struct ChromeCookie {
     pub name: String,
@@ -61,7 +66,8 @@ pub struct ChromeCookie {
     pub http_only: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
+/// Intercepted network request/response pair.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkRequest {
     pub request_id: String,
     pub url: String,
@@ -72,16 +78,12 @@ pub struct NetworkRequest {
     pub response_body: Option<String>,
 }
 
+/// Independent workspace for a specific browser tab.
 pub struct TabWorkspace {
-    pub tab_id: String,
     pub title: String,
-    
-    // Window Visibility Flags
     pub show_network: bool,
     pub show_media: bool,
     pub show_storage: bool,
-    
-    // Data
     pub network_requests: Vec<NetworkRequest>,
     pub media_assets: Vec<MediaAsset>,
     pub selected_media_urls: HashSet<String>,
@@ -89,14 +91,10 @@ pub struct TabWorkspace {
     pub cookies: Vec<ChromeCookie>,
     pub cookie_edit_buffer: ChromeCookie,
     pub show_cookie_modal: bool,
-    
-    // Automation
     pub auto_steps: Vec<AutomationStep>,
     pub auto_status: AutomationStatus,
     pub js_script: String,
     pub js_result: String,
-    
-    // Local UI State
     pub network_search: String,
     pub media_search: String,
     pub sniffer_active: bool,
@@ -105,33 +103,23 @@ pub struct TabWorkspace {
 }
 
 impl TabWorkspace {
-    pub fn new(id: String, title: String) -> Self {
+    pub fn new(_id: String, title: String) -> Self {
         Self {
-            tab_id: id,
             title,
-            show_network: false,
-            show_media: false,
-            show_storage: false,
-            network_requests: Vec::new(),
-            media_assets: Vec::new(),
-            selected_media_urls: HashSet::new(),
-            console_logs: Vec::new(),
-            cookies: Vec::new(),
-            cookie_edit_buffer: ChromeCookie::default(),
+            show_network: false, show_media: false, show_storage: false,
+            network_requests: Vec::new(), media_assets: Vec::new(),
+            selected_media_urls: HashSet::new(), console_logs: Vec::new(),
+            cookies: Vec::new(), cookie_edit_buffer: ChromeCookie::default(),
             show_cookie_modal: false,
-            auto_steps: Vec::new(),
-            auto_status: AutomationStatus::Idle,
-            js_script: String::new(),
-            js_result: String::new(),
-            network_search: String::new(),
-            media_search: String::new(),
-            sniffer_active: false,
-            auto_reload_triggered: false,
-            open_time: 0.0,
+            auto_steps: Vec::new(), auto_status: AutomationStatus::Idle,
+            js_script: String::new(), js_result: String::new(),
+            network_search: String::new(), media_search: String::new(),
+            sniffer_active: false, auto_reload_triggered: false, open_time: 0.0,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct LogEntry {
     pub message: String,
     pub level: tracing::Level,
@@ -141,17 +129,16 @@ pub struct LogEntry {
 pub struct Notification {
     pub title: String,
     pub message: String,
-    pub is_error: bool,
 }
 
 pub struct AppState {
     pub active_tab: Tab,
     pub config: AppConfig,
     pub session_timestamp: String,
+    pub output_confirmed: bool,
     pub profile_confirmed: bool,
     pub use_custom_profile: bool,
     pub notification: Option<Notification>,
-    pub scrape_url: String,
     pub available_tabs: Vec<ChromeTabInfo>,
     pub selected_tab_id: Option<String>,
     pub is_browser_running: bool,
@@ -164,28 +151,15 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: AppConfig, timestamp: String) -> Self {
         Self {
-            active_tab: Tab::Scrape,
-            config,
-            session_timestamp: timestamp,
-            profile_confirmed: false,
-            use_custom_profile: true,
-            notification: None,
-            scrape_url: String::new(),
-            available_tabs: Vec::new(),
-            selected_tab_id: None,
-            is_browser_running: false,
-            last_tab_refresh: 0.0,
-            is_translating: false,
-            workspaces: HashMap::new(),
-            logs: Vec::new(),
+            active_tab: Tab::Scrape, config, session_timestamp: timestamp,
+            output_confirmed: false, profile_confirmed: false, use_custom_profile: true,
+            notification: None, available_tabs: Vec::new(), selected_tab_id: None,
+            is_browser_running: false, last_tab_refresh: 0.0, is_translating: false,
+            workspaces: HashMap::new(), logs: Vec::new(),
         }
     }
 
-    pub fn notify(&mut self, title: &str, message: &str, is_error: bool) {
-        self.notification = Some(Notification {
-            title: title.to_string(),
-            message: message.to_string(),
-            is_error,
-        });
+    pub fn notify(&mut self, title: &str, message: &str, _is_error: bool) {
+        self.notification = Some(Notification { title: title.to_string(), message: message.to_string() });
     }
 }

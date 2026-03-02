@@ -1,7 +1,13 @@
 use crate::state::LogEntry;
 use tokio::sync::mpsc;
 use tracing_subscriber::{Layer, registry::LookupSpan, prelude::*};
-use tracing_appender::non_blocking::WorkerGuard;
+use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+
+lazy_static::lazy_static! {
+    static ref LOG_BUFFER: Arc<Mutex<Vec<LogEntry>>> = Arc::new(Mutex::new(Vec::new()));
+    static ref LOG_PATH: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+}
 
 pub struct GuiLoggerLayer {
     sender: mpsc::UnboundedSender<LogEntry>,
@@ -22,12 +28,23 @@ where
         event.record(&mut visitor);
         
         let entry = LogEntry {
-            message: visitor.message,
+            message: visitor.message.clone(),
             level: *event.metadata().level(),
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         };
         
-        let _ = self.sender.send(entry);
+        // Always send to GUI
+        let _ = self.sender.send(entry.clone());
+
+        // Buffer for file writing if path not yet set
+        let path_lock = LOG_PATH.lock().unwrap();
+        if path_lock.is_none() {
+            let mut buffer = LOG_BUFFER.lock().unwrap();
+            buffer.push(entry);
+        } else if path_lock.is_some() {
+            let mut buffer = LOG_BUFFER.lock().unwrap();
+            buffer.push(entry);
+        }
     }
 }
 
@@ -55,21 +72,49 @@ impl tracing::field::Visit for LogVisitor {
     }
 }
 
-pub fn init_logging(sender: mpsc::UnboundedSender<LogEntry>) -> (WorkerGuard, String) {
+pub fn init_logging(sender: mpsc::UnboundedSender<LogEntry>) -> String {
     let now = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let log_filename = format!("{}.log", now);
     
-    // Logları logs/ klasörüne kaydet
-    let _ = std::fs::create_dir_all("logs");
-    let file_appender = tracing_appender::rolling::never("logs", &log_filename);
-    let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
-
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout)) // Console
-        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking_file)) // File
-        .with(GuiLoggerLayer::new(sender)) // GUI
+        .with(GuiLoggerLayer::new(sender)) // GUI & Buffered File
         .init();
 
-    (guard, now)
+    now
+}
+
+pub fn set_log_path(path: PathBuf) {
+    let mut path_lock = LOG_PATH.lock().unwrap();
+    *path_lock = Some(path.clone());
+
+    // Flush buffer to file
+    let now = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let log_file_path = path.join(format!("{}.log", now));
+    
+    let mut buffer = LOG_BUFFER.lock().unwrap();
+    if let Ok(_) = std::fs::create_dir_all(&path) {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
+            use std::io::Write;
+            for entry in buffer.drain(..) {
+                let _ = writeln!(file, "[{}] [{}] {}", entry.timestamp, entry.level, entry.message);
+            }
+        }
+    }
+
+    // Start a background task to keep flushing the buffer
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let mut buffer = LOG_BUFFER.lock().unwrap();
+            if !buffer.is_empty() {
+                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
+                    use std::io::Write;
+                    for entry in buffer.drain(..) {
+                        let _ = writeln!(file, "[{}] [{}] {}", entry.timestamp, entry.level, entry.message);
+                    }
+                }
+            }
+        }
+    });
 }

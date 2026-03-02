@@ -10,14 +10,14 @@ pub struct AutomationEngine;
 
 impl AutomationEngine {
     pub async fn run_pipeline(port: u16, tab_id: String, steps: Vec<AutomationStep>) -> AppResult<()> {
-        let ws_url = crate::core::browser::BrowserManager::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let tabs = crate::core::browser::BrowserManager::list_tabs(port).await?;
+        let target = tabs.iter().find(|t| t.id == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
+        
+        let (browser, mut handler) = Browser::connect(target.web_socket_url.clone()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
 
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter()
-            .find(|p| p.target_id().as_ref() == tab_id)
-            .ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
+        let page = pages.into_iter().next().ok_or_else(|| AppError::NotFound("No page".into()))?;
 
         for (index, step) in steps.iter().enumerate() {
             emit(AppEvent::AutomationProgress(tab_id.clone(), index));
@@ -36,13 +36,9 @@ impl AutomationEngine {
                     tokio::time::sleep(Duration::from_secs(*secs)).await;
                 }
                 AutomationStep::WaitSelector(sel) => {
-                    // Simple poll for selector
                     let mut found = false;
                     for _ in 0..30 {
-                        if page.find_element(sel).await.is_ok() {
-                            found = true;
-                            break;
-                        }
+                        if page.find_element(sel).await.is_ok() { found = true; break; }
                         tokio::time::sleep(Duration::from_millis(500)).await;
                     }
                     if !found { return Err(AppError::Browser(format!("Timeout waiting for {}", sel))); }

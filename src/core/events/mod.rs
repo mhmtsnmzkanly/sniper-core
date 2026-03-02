@@ -1,38 +1,40 @@
 use crate::state::{ChromeTabInfo, AutomationStep, ChromeCookie, NetworkRequest, MediaAsset};
 use std::process::Child;
 
+/// Central event bus for the application.
 #[derive(Debug)]
 pub enum AppEvent {
-    // Browser
+    // --- BROWSER PROCESS EVENTS ---
     BrowserStarted(Child),
     BrowserTerminated,
     TabsUpdated(Vec<ChromeTabInfo>),
-    ConsoleLogAdded(String, String), // tab_id, message
+    ConsoleLogAdded(String, String),
     
-    // Commands
+    // --- COMMAND EVENTS ---
     RequestCapture(String, bool),
-    RequestScriptExecution(String, String),
+    RequestScriptExecution(String, String), // Added back
     RequestNetworkToggle(String, bool),
-    RequestAutomationRun(String, Vec<AutomationStep>),
+    RequestAutomationRun(String, Vec<AutomationStep>), // Added back
     RequestTabRefresh,
     RequestPageReload(String),
     TerminateBrowser,
     
-    // Storage Commands
+    // --- STORAGE COMMANDS ---
     RequestCookies(String),
     RequestCookieDelete(String, String, String),
     RequestCookieAdd(String, ChromeCookie),
     
-    // Data Returns (Target-Aware)
-    MediaCaptured(String, MediaAsset), // tab_id, asset
-    CookiesReceived(String, Vec<ChromeCookie>), // tab_id, cookies
-    AutomationProgress(String, usize),
-    AutomationFinished(String),
-    AutomationError(String, String),
-    NetworkRequestSent(String, NetworkRequest), // tab_id, req
-    NetworkResponseReceived(String, String, u16, Option<String>), // tab_id, request_id, status, body
-    ScriptFinished(String, String), // tab_id, result
+    // --- DATA RETURN EVENTS (TAB-AWARE) ---
+    MediaCaptured(String, MediaAsset),
+    CookiesReceived(String, Vec<ChromeCookie>),
+    AutomationProgress(String, usize), // Added back
+    AutomationFinished(String), // Added back
+    AutomationError(String, String), // Added back
+    NetworkRequestSent(String, NetworkRequest),
+    NetworkResponseReceived(String, String, u16, Option<String>),
+    ScriptFinished(String, String), // Added back
     
+    // --- FEEDBACK EVENTS ---
     OperationSuccess(String),
     OperationError(String),
 }

@@ -612,6 +612,7 @@ dependencies = [
  "image",
  "lazy_static",
  "libc",
+ "regex",
  "rfd",
  "rquest",
  "scraper",

@@ -4,6 +4,7 @@ use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
 use crate::state::ChromeTabInfo;
 use futures::StreamExt;
+use std::time::Duration;
 
 pub struct BrowserManager;
 
@@ -30,7 +31,7 @@ impl BrowserManager {
     pub fn find_executable() -> AppResult<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            let paths = ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chrome"];
+            let paths = ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chrome", "/usr/bin/google-chrome-stable"];
             for p in paths {
                 let path = PathBuf::from(p);
                 if path.exists() { return Ok(path); }
@@ -49,9 +50,7 @@ impl BrowserManager {
 
     pub async fn launch(url: &str, profile: PathBuf, port: u16, timestamp: String) -> AppResult<Child> {
         let exec_path = Self::find_executable()?;
-        let _ = std::fs::create_dir_all("logs");
-        let chrome_log_file = std::fs::File::create(format!("logs/chrome.{}.log", timestamp)).map_err(AppError::Io)?;
-
+        let chrome_log_file = std::fs::File::create(format!("chrome.{}.log", timestamp)).map_err(AppError::Io)?;
         let mut cmd = std::process::Command::new(exec_path);
         cmd.arg("--no-sandbox")
             .arg(format!("--remote-debugging-port={}", port))
@@ -61,55 +60,41 @@ impl BrowserManager {
             .arg(url)
             .stdout(Stdio::from(chrome_log_file.try_clone().map_err(AppError::Io)?))
             .stderr(Stdio::from(chrome_log_file));
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
-        }
-
+        #[cfg(unix)] { use std::os::unix::process::CommandExt; cmd.process_group(0); }
         cmd.spawn().map_err(AppError::Io)
     }
 
-    pub async fn get_ws_url(port: u16) -> AppResult<String> {
+    async fn get_ws_url(port: u16) -> AppResult<String> {
         let client = rquest::Client::new();
         let resp = client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await?;
         let json: serde_json::Value = resp.json().await?;
         Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::NotFound("WS URL missing".into()))?.to_string())
     }
 
-    pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
-        let client = rquest::Client::builder().timeout(std::time::Duration::from_millis(1500)).build()?;
-        let url = format!("http://127.0.0.1:{}/json/list", port);
-        let resp = client.get(url).send().await?;
-        let tabs: Vec<ChromeTabInfo> = resp.json().await?;
-        Ok(tabs.into_iter().filter(|t| t.tab_type == "page" && !t.url.is_empty()).collect())
+    async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
+        let ws_url = Self::get_ws_url(port).await?;
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let handle = tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok((browser, handle))
     }
 
-    pub fn get_output_path(root: PathBuf, category: &str, url_str: &str) -> AppResult<PathBuf> {
-        let parsed = url::Url::parse(url_str).map_err(|e| AppError::Internal(e.to_string()))?;
-        let domain = parsed.host_str().unwrap_or("unknown_domain");
-        let path_slug = parsed.path().trim_matches('/').replace('/', "_");
-        let path_slug = if path_slug.is_empty() { "index_html".to_string() } else { path_slug };
-        
-        let final_dir = root.join(category).join(domain).join(path_slug);
-        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
-        Ok(final_dir)
+    pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
+        let client = rquest::Client::builder().timeout(Duration::from_millis(1500)).build()?;
+        let url = format!("http://127.0.0.1:{}/json/list", port);
+        let resp = client.get(url).send().await.map_err(|e: rquest::Error| AppError::Network(e.to_string()))?;
+        let tabs: Vec<ChromeTabInfo> = resp.json().await?;
+        Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{
-            EventRequestWillBeSent, EventResponseReceived, EventLoadingFinished,
-            EnableParams as NetEnable, GetResponseBodyParams
-        };
+        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EventLoadingFinished, EnableParams as NetEnable, GetResponseBodyParams};
         use chromiumoxide::cdp::js_protocol::runtime::{EventConsoleApiCalled, EnableParams as RuntimeEnable};
         use base64::{prelude::BASE64_STANDARD, Engine};
 
-        let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        let (browser, _handler_job) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("No page".into()))?;
         
         page.execute(NetEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(RuntimeEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -119,62 +104,41 @@ impl BrowserManager {
         let mut finished_events = page.event_listener::<EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut console_events = page.event_listener::<EventConsoleApiCalled>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         
-        let page_arc = std::sync::Arc::new(page);
         let tid_inner = tab_id.clone();
+        let page_arc = std::sync::Arc::new(page);
 
         tokio::spawn(async move {
+            let _browser_keepalive = browser;
             let mut pending_responses = std::collections::HashMap::new();
             loop {
                 tokio::select! {
                     Some(e) = request_events.next() => {
-                        let req = crate::state::NetworkRequest {
-                            request_id: e.request_id.as_ref().to_string(),
-                            url: e.request.url.clone(),
-                            method: e.request.method.clone(),
-                            resource_type: format!("{:?}", e.r#type),
-                            status: None,
-                            request_body: None, 
-                            response_body: None,
-                        };
+                        let req = crate::state::NetworkRequest { request_id: e.request_id.as_ref().to_string(), url: e.request.url.clone(), method: e.request.method.clone(), resource_type: format!("{:?}", e.r#type), status: None, request_body: None, response_body: None };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
                     }
                     Some(e) = response_events.next() => {
                         let rid = e.request_id.as_ref().to_string();
                         pending_responses.insert(rid.clone(), (e.response.url.clone(), e.response.mime_type.clone()));
-                        let page_clone = page_arc.clone();
-                        let rid_clone = e.request_id.clone();
-                        let tid_res = tid_inner.clone();
-                        let status = e.response.status as u16;
+                        let page_clone = page_arc.clone(); let rid_clone = e.request_id.clone(); let tid_res = tid_inner.clone(); let status = e.response.status as u16;
                         tokio::spawn(async move {
-                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            tokio::time::sleep(Duration::from_millis(400)).await;
                             if let Ok(res) = page_clone.execute(GetResponseBodyParams::new(rid_clone.clone())).await {
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
-                                    tid_res, rid_clone.as_ref().to_string(), status, Some(res.result.body)
-                                ));
-                            } else {
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(tid_res, rid_clone.as_ref().to_string(), status, None));
+                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(tid_res, rid_clone.as_ref().to_string(), status, Some(res.result.body)));
                             }
                         });
                     }
                     Some(e) = finished_events.next() => {
                         let rid = e.request_id.as_ref().to_string();
                         if let Some((url, mime)) = pending_responses.remove(&rid) {
-                            if mime.starts_with("image/") || mime.starts_with("video/") || mime.starts_with("audio/") {
-                                let page_clone = page_arc.clone();
-                                let tid_media = tid_inner.clone();
+                            if mime.contains("image") || mime.contains("video") {
+                                let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
                                 tokio::spawn(async move {
-                                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                                    tokio::time::sleep(Duration::from_millis(600)).await;
                                     if let Ok(res) = page_clone.execute(GetResponseBodyParams::new(rid.clone())).await {
-                                        let binary_data = if res.result.base64_encoded {
-                                            BASE64_STANDARD.decode(&res.result.body).ok()
-                                        } else {
-                                            Some(res.result.body.into_bytes())
-                                        };
+                                        let binary_data = if res.result.base64_encoded { BASE64_STANDARD.decode(&res.result.body).ok() } else { Some(res.result.body.into_bytes()) };
                                         if let Some(data) = binary_data {
                                             let name = url.split('/').last().unwrap_or("unknown").to_string();
-                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media, crate::state::MediaAsset {
-                                                name, url, mime_type: mime, size_bytes: data.len(), data: Some(data),
-                                            }));
+                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media, crate::state::MediaAsset { name, url, mime_type: mime, size_bytes: data.len(), data: Some(data) }));
                                         }
                                     }
                                 });
@@ -182,7 +146,14 @@ impl BrowserManager {
                         }
                     }
                     Some(e) = console_events.next() => {
-                        let msg = e.args.iter().map(|v| format!("{:?}", v.value)).collect::<Vec<_>>().join(" ");
+                        let msg = e.args.iter().map(|v| {
+                            match &v.value {
+                                Some(serde_json::Value::String(s)) => s.clone(),
+                                Some(serde_json::Value::Null) => "null".to_string(),
+                                Some(other) => other.to_string(),
+                                None => "undefined".to_string(),
+                            }
+                        }).collect::<Vec<_>>().join(" ");
                         crate::ui::scrape::emit(crate::core::events::AppEvent::ConsoleLogAdded(tid_inner.clone(), msg));
                     }
                     else => break,
@@ -192,59 +163,78 @@ impl BrowserManager {
         Ok(())
     }
 
-    pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<crate::state::ChromeCookie>> {
-        let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
-        let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie {
-            name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(),
-            expires: c.expires, secure: c.secure, http_only: c.http_only,
-        }).collect())
-    }
-
-    pub async fn manage_cookie(port: u16, tab_id: String, cookie: crate::state::ChromeCookie, delete: bool) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{SetCookieParams, DeleteCookiesParams};
-        let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
-        if delete {
-            let params = DeleteCookiesParams::builder().name(cookie.name).domain(cookie.domain).build().map_err(|e| AppError::Browser(e))?;
-            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        } else {
-            let params = SetCookieParams::builder().name(cookie.name).value(cookie.value).domain(cookie.domain).path(cookie.path).secure(cookie.secure).http_only(cookie.http_only).build().map_err(|e| AppError::Browser(e))?;
-            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        }
-        Ok(())
-    }
-
     pub async fn reload_page(port: u16, tab_id: String) -> AppResult<()> {
-        let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
-        page.reload().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        page.execute(chromiumoxide::cdp::browser_protocol::page::ReloadParams::builder().ignore_cache(true).build()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
+    }
+
+    pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let result = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(format!("{:?}", result.value()))
     }
 
     pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> AppResult<PathBuf> {
-        let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        use chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams;
+        let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         let url_str = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
-        let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        let (content, extension) = if mirror_mode {
+            let snapshot = page.execute(CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+            (snapshot.result.data, "mhtml")
+        } else {
+            (page.content().await.map_err(|e| AppError::Browser(e.to_string()))?, "html")
+        };
+
         let category = if mirror_mode { "MIRROR" } else { "HTML" };
-        let dir = Self::get_output_path(save_root, category, &url_str)?;
-        let final_path = dir.join("index.html");
-        std::fs::write(&final_path, html.as_bytes()).map_err(AppError::Io)?;
-        tracing::info!("[SCRAPER <-> CAPTURE] Page saved, url: {}, file: {}", url_str, final_path.display());
+        let dir = crate::core::browser::BrowserManager::get_output_path(save_root, category, &url_str)?;
+        let final_path = dir.join(format!("index.{}", extension));
+        std::fs::write(&final_path, content.as_bytes()).map_err(AppError::Io)?;
         Ok(final_path)
+    }
+
+    pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<crate::state::ChromeCookie>> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie { name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(), expires: c.expires, secure: c.secure, http_only: c.http_only }).collect())
+    }
+
+    pub fn get_output_path(root: PathBuf, category: &str, url_str: &str) -> AppResult<PathBuf> {
+        let parsed = url::Url::parse(url_str).map_err(|e| AppError::Internal(e.to_string()))?;
+        let domain = parsed.host_str().unwrap_or("unknown_domain");
+        let path_slug = parsed.path().trim_matches('/').replace('/', "_");
+        let path_slug = if path_slug.is_empty() { "index_html".to_string() } else { path_slug };
+        let final_dir = root.join(category).join(domain).join(path_slug);
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
+        Ok(final_dir)
+    }
+
+    pub fn extract_resources_from_css(css_content: &str, base_url: &str) -> Vec<String> {
+        let mut urls = Vec::new();
+        let re = regex::Regex::new(r#"url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
+        let base = url::Url::parse(base_url).ok();
+
+        for cap in re.captures_iter(css_content) {
+            let found_url = &cap[1];
+            if found_url.starts_with("data:") { continue; }
+            
+            if let Some(base) = &base {
+                if let Ok(abs_url) = base.join(found_url) {
+                    urls.push(abs_url.to_string());
+                }
+            } else {
+                urls.push(found_url.to_string());
+            }
+        }
+        urls
     }
 }

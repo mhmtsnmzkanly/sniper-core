@@ -1,5 +1,7 @@
 use crate::state::AppState;
 use egui::{Ui, Color32, RichText};
+use crate::core::events::AppEvent;
+use crate::ui::scrape::emit;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
@@ -7,7 +9,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => { ui.label("No tab selected."); return; }
     };
     
-    // We borrow what we need from workspaces and then drop the borrow to free state for notification
     let (ws_title, media_count, media_assets, selected_media_urls, media_search) = {
         if !state.workspaces.contains_key(&tid) { return; }
         let ws = &state.workspaces[&tid];
@@ -24,6 +25,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ws.media_assets.clear();
                     ws.selected_media_urls.clear();
                 }
+            }
+            if ui.button("🔄 FORCE RELOAD").clicked() {
+                emit(AppEvent::RequestPageReload(tid.clone()));
             }
             ui.separator();
             ui.label("🔍 FILTER:");
@@ -102,7 +106,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.label(RichText::new(&asset.name).strong());
                 ui.label(RichText::new(&asset.mime_type).small().color(Color32::LIGHT_BLUE));
                 ui.label(RichText::new(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0)).monospace().color(Color32::YELLOW));
-                ui.label(RichText::new(format!("{}...", asset.url.chars().take(30).collect::<String>())).small());
+                
+                ui.horizontal(|ui| {
+                    let trunc_url: String = asset.url.chars().take(25).collect::<String>() + "...";
+                    ui.label(RichText::new(trunc_url).small().color(Color32::GRAY));
+                    if ui.button("📋").on_hover_text("Copy URL to clipboard").clicked() {
+                        ui.ctx().copy_text(asset.url.clone());
+                    }
+                });
 
                 ui.vertical(|ui| {
                     if ui.button("💾 SAVE").clicked() {

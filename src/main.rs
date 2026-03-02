@@ -24,18 +24,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let _args = Args::parse();
     
-    let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
-    
-    let (_log_guard, timestamp) = logger::init_logging(log_sender);
-
     let config = match load_config() {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("[CONFIG <-> LOAD] Failed: {}", e);
+            eprintln!("[CONFIG <-> LOAD] Critical Failure: {}", e);
             return Err(e.into());
         }
     };
+
+    let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+    
+    let timestamp = logger::init_logging(log_sender);
 
     let state = AppState::new(config, timestamp);
 

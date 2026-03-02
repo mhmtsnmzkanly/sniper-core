@@ -29,7 +29,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 tracing::info!("[STORAGE <-> COOKIES] Manual creation started.");
             }
             if ui.button("🔄 Refresh All").clicked() {
-                tracing::info!("[STORAGE <-> COOKIES] Fetching from browser...");
+                tracing::info!("[STORAGE <-> COMMAND] Refreshing cookies for tab: {}", ws.title);
                 emit(AppEvent::RequestCookies(tid.clone())); 
             }
         });

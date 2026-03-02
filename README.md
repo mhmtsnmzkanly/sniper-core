@@ -1,65 +1,37 @@
-# Sniper Scraper Studio 1.0.0
+# 🎯 Sniper Studio v1.1.1 Stable
+### *Unified Browser Intelligence & Forensic Automation Studio*
 
-A professional-grade DevTools, Automation, and Scraper Studio built with Rust. Leveraging the **Chrome DevTools Protocol (CDP)**, it provides a powerful GUI for web data extraction, network monitoring, and browser automation while remaining 100% immune to anti-bot systems (Cloudflare, Akamai, etc.) through manual intervention and remote debugging.
+Sniper Studio is a professional-grade, multi-target DevTools environment built in **Rust**. It enables high-performance network interception, media sniffing, and automated scraping across multiple browser tabs simultaneously using the Multiple Document Interface (MDI) architecture.
+
+---
 
 ## 🚀 Key Features
 
-- **Direct Tab Connection:** High-precision tab management using direct WebSocket connections via `chromiumoxide`.
-- **Mirror Mode:** Automatically discover and download all page assets (Images, CSS, JS) for offline browsing.
-- **Automation Builder:** A low-code step engine to build custom scraping pipelines (Navigate, Click, Wait, Extract).
-- **Network Inspector:** Real-time HTTP request/response monitoring with status code highlights and resource filtering.
-- **Script Injection Studio:** Live JavaScript execution on target tabs with instant result capture.
-- **DevTools Studio:** Inspect and fetch session cookies, and emulate different devices via User-Agent and Geolocation spoofing.
-- **Cross-Platform:** Native support for Linux (Manjaro/Arch optimized), Windows, and macOS.
-- **Versioned Config:** Robust `.env` based configuration system with automatic migration support.
-
-## 🛠 Usage Guide
-
-### 1. Browser Preparation
-To allow the studio to control your browser, launch Chrome/Chromium with the remote debugging port:
-```bash
-google-chrome --remote-debugging-port=9222
-```
-
-### 2. Launching the Studio
-```bash
-cargo run --release
-```
-
-### 3. Core Workflow
-1. **SCRAPE Tab:** Set your target URL and click `LAUNCH BROWSER`. 
-2. **Tab Selection:** Once the browser is open, click `REFRESH LIST` in Step 2. Select the tab you want to target.
-3. **Capture:** Click `CAPTURE TARGET PAGE` to save a UTF-8 HTML copy. Enable `Mirror Mode` if you want to download images and styles.
-4. **Automation:** Switch to the `AUTOMATION` tab to add steps like clicking buttons or waiting for elements to load.
-
-## 🏗 Architecture Overview
-
-The project follows a **Layered Event-Driven Architecture**:
-
-- **`src/ui/`**: Modular GUI panels built with `egui`. Contains no business logic.
-- **`src/core/browser/`**: A robust wrapper around `chromiumoxide` for handling CDP commands and tab management.
-- **`src/core/events/`**: The central **Event Bus** using asynchronous channels (`mpsc`) to route messages between the UI and backend.
-- **`src/core/automation/`**: State machine engine for executing sequential automation steps.
-- **`src/config/`**: Handles versioned configuration loading, default values, and schema migrations.
-- **`src/logger/`**: Centralized tracing system that pipes logs to both files (`logs/{TIME}.log`) and the GUI panel.
-
-## 👨‍💻 Developer Guide
-
-### Prerequisites
-- **Rust Toolchain:** Latest stable version.
-- **Cmake & Build-Essential:** Required for compiling `rquest` (BoringSSL).
-  - *Linux (Manjaro):* `sudo pacman -S cmake base-devel`
-  - *Windows:* Install via Visual Studio Build Tools.
-
-### Adding a New Feature
-1. **Define Event:** Add a new variant to `AppEvent` in `src/core/events/mod.rs`.
-2. **Implement Logic:** Add the core logic in `src/core/` (e.g., `browser` or `downloader`).
-3. **Update UI:** Create or update a panel in `src/ui/` to emit the new event.
-4. **Handle Event:** Add a match arm in `src/app.rs` to connect the UI signal to the core logic.
-
-### Optimization Tips
-- **Binary Size:** Use `cargo build --release` to benefit from LTO and symbol stripping.
-- **Async Safety:** Always use `tokio::spawn` for browser interactions to keep the UI thread responsive.
+*   **Multi-Tasking MDI:** Open independent Network, Media, and Storage windows for different browser tabs at once.
+*   **Media Forensic Engine:** Real-time binary sniffing of images, videos, and audio streams with 120x120 previews and batch downloading.
+*   **Target-Centric Capture:** Save clean HTML snapshots or full Mirror replicas (CSS/JS included) into a structured hierarchy.
+*   **Universal Identity:** Intelligent OS detection for using real system profiles or isolated fresh environments.
+*   **Data Governance:** Categorized output at `{OUTPUT_DIR}/{CATEGORY}/{DOMAIN}/{PAGE}/` for enterprise forensic organization.
+*   **Low-Code Automation:** Sequential operation pipeline and live JavaScript injection with real-time console monitoring.
 
 ---
-*Disclaimer: This tool is intended for educational and authorized testing purposes only. Please respect the Terms of Service of any website you interact with.*
+
+## 📂 Storage Standard
+All studio operations follow this strict data protocol:
+*   `MEDIA/` - Intercepted binary assets.
+*   `NETWORK/` - Traffic logs (`traffic.json`).
+*   `HTML/` - Single-page snapshots.
+*   `MIRROR/` - Offline site replicas.
+*   `*.log` - Integrated session and protocol logs.
+
+---
+
+## 🛠 Usage
+1.  **Launch:** `cargo run --release`
+2.  **Setup:** Confirm your `OUTPUT_DIR` and select your Browser Identity.
+3.  **Command:** Select a tab in the Scrape panel gallery and click **MEDIA** or **NETWORK** to spawn an autonomous inspector.
+
+---
+
+## ⚖ License
+MIT License. Created for researchers and developers.

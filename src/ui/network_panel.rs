@@ -73,12 +73,36 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     });
 
                     ui.horizontal(|ui| {
-                        ui.button("REQ").on_hover_ui(|ui| {
-                            ui.label(RichText::new(req.request_body.as_deref().unwrap_or("No payload")).monospace().small());
-                        });
-                        ui.button("RES").on_hover_ui(|ui| {
-                            ui.label(RichText::new(req.response_body.as_deref().unwrap_or("Empty body")).monospace().small().color(Color32::GREEN));
-                        });
+                        if ui.button("REQ").on_hover_text("View Request Payload").clicked() {}
+                        if ui.button("RES").on_hover_text("View Response Body").clicked() {}
+                        
+                        // --- CSS RESOURCE EXTRACTOR ---
+                        let is_css = req.resource_type.to_lowercase().contains("style") || req.url.to_lowercase().ends_with(".css");
+                        if is_css && req.response_body.is_some() {
+                            if ui.button(RichText::new("🔍 EXTRACT").color(Color32::GOLD)).on_hover_text("Extract hidden assets (images, fonts) from this CSS").clicked() {
+                                if let Some(css_body) = &req.response_body {
+                                    let found_urls = crate::core::browser::BrowserManager::extract_resources_from_css(css_body, &req.url);
+                                    let mut added = 0;
+                                    
+                                    // Get access to workspace safely
+                                    let tid_inner = tid.clone();
+                                    for url in found_urls {
+                                        let name = url.split('/').last().unwrap_or("extracted_asset").to_string();
+                                        let mime = if url.ends_with(".woff2") || url.ends_with(".ttf") { "font/woff2".to_string() } else { "image/extracted".to_string() };
+                                        
+                                        crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_inner.clone(), crate::state::MediaAsset {
+                                            name,
+                                            url,
+                                            mime_type: mime,
+                                            size_bytes: 0,
+                                            data: None,
+                                        }));
+                                        added += 1;
+                                    }
+                                    tracing::info!("[CSS <-> EXTRACT] Found and added {} resources from CSS.", added);
+                                }
+                            }
+                        }
                     });
                     ui.end_row();
                 }

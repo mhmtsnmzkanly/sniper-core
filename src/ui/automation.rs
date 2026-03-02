@@ -9,7 +9,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.label(RichText::new("⚠ SELECT A TAB IN THE SCRAPE PANEL TO START AUTOMATION").strong().color(Color32::YELLOW));
+                ui.label(RichText::new("⚠ SELECT A TARGET IN THE SCRAPE PANEL").strong().color(Color32::YELLOW));
             });
             return;
         }
@@ -20,26 +20,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.heading(format!("AUTOMATION STUDIO: {}", ws.title));
     ui.add_space(10.0);
-
-    // LIVE CONSOLE
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("LIVE BROWSER CONSOLE").strong().color(Color32::LIGHT_BLUE));
-            if ui.button("Clear Console").clicked() { ws.console_logs.clear(); }
-        });
-        ui.add_space(5.0);
-        egui::ScrollArea::vertical().max_height(150.0).stick_to_bottom(true).show(ui, |ui| {
-            if ws.console_logs.is_empty() {
-                ui.label(RichText::new("No console logs yet...").italics().color(Color32::GRAY));
-            } else {
-                for log in &ws.console_logs {
-                    ui.label(RichText::new(log).monospace().size(11.0));
-                }
-            }
-        });
-    });
-
-    ui.add_space(15.0);
 
     // PIPELINE BUILDER
     ui.group(|ui| {
@@ -52,7 +32,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 if ui.button("Scroll Bottom").clicked() { ws.auto_steps.push(AutomationStep::ScrollBottom); ui.close_menu(); }
                 if ui.button("Extract Text").clicked() { ws.auto_steps.push(AutomationStep::ExtractText(String::new())); ui.close_menu(); }
             });
-            if ui.button("🗑 Clear All").clicked() { ws.auto_steps.clear(); }
+            if ui.button("🗑 Clear").clicked() { ws.auto_steps.clear(); }
         });
 
         ui.add_space(10.0);
@@ -67,9 +47,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         AutomationStep::Click(sel) => { ui.label("Click:"); ui.text_edit_singleline(sel); }
                         AutomationStep::Wait(secs) => { ui.label("Wait (s):"); ui.add(egui::DragValue::new(secs).range(1..=60)); }
                         AutomationStep::ExtractText(sel) => { ui.label("Extract:"); ui.text_edit_singleline(sel); }
-                        AutomationStep::ScrollBottom => { ui.label("Scroll to bottom of page."); }
+                        AutomationStep::ScrollBottom => { ui.label("Scroll to bottom."); }
                         AutomationStep::InjectJS(s) => { ui.label("Inject JS:"); ui.text_edit_singleline(s); }
-                        AutomationStep::WaitSelector(sel) => { ui.label("Wait for:"); ui.text_edit_singleline(sel); }
+                        AutomationStep::WaitSelector(s) => { ui.label("Wait for:"); ui.text_edit_singleline(s); }
                     }
                     if ui.button("❌").clicked() { to_remove = Some(idx); }
                 });
@@ -87,6 +67,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
         if ui.add_enabled(can_run, egui::Button::new(RichText::new(btn_text).strong()).min_size([ui.available_width(), 40.0].into())).clicked() {
             ws.auto_status = AutomationStatus::Running(0);
+            tracing::info!("[AUTOMATION <-> UI] Starting Pipeline for tab.");
             emit(AppEvent::RequestAutomationRun(tid.clone(), ws.auto_steps.clone()));
         }
     });
@@ -97,7 +78,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.group(|ui| {
         ui.label(RichText::new("SCRIPT INJECTION").strong());
         ui.horizontal(|ui| {
-            if ui.button("📁 Load JS File").clicked() {
+            if ui.button("📁 Load JS").clicked() {
                 if let Some(path) = rfd::FileDialog::new().add_filter("JS", &["js"]).pick_file() {
                     if let Ok(c) = std::fs::read_to_string(&path) { ws.js_script = c; }
                 }
