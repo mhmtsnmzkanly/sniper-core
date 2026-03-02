@@ -128,32 +128,22 @@ impl AutomationEngine {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
                     
-                    // Most robust way to type in modern frameworks (React/Vue/Angular)
-                    let js = format!(
+                    // 1. First, ensure the element is in view and focused using robust JS
+                    let focus_js = format!(
                         "(() => {{ \
                             const el = document.querySelector('{}'); \
                             if (!el) throw new Error('Element not found: {}'); \
+                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
                             el.focus(); \
-                            const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; \
-                            const textAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; \
-                            if (el.tagName === 'TEXTAREA' && textAreaValueSetter) {{ \
-                                textAreaValueSetter.call(el, '{}'); \
-                            }} else if (nativeValueSetter) {{ \
-                                nativeValueSetter.call(el, '{}'); \
-                            }} else {{ \
-                                el.value = '{}'; \
-                            }} \
-                            el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
-                            el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
-                            el.dispatchEvent(new Event('blur', {{ bubbles: true }})); \
+                            el.value = ''; \
                             return true; \
-                        }})()", 
-                        final_sel, final_sel, 
-                        final_val.replace("'", "\\'"), 
-                        final_val.replace("'", "\\'"), 
-                        final_val.replace("'", "\\'")
+                        }})()", final_sel, final_sel
                     );
-                    self.run_js(page, js).await?;
+                    self.run_js(page, focus_js).await?;
+                    
+                    // 2. Use native CDP hardware-level keyboard events
+                    // This simulates actual key presses and is undetectable by most frameworks
+                    page.type(final_sel, final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector);
