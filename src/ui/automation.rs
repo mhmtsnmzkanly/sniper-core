@@ -1,5 +1,5 @@
 use crate::state::{AppState, AutomationStep, AutomationStatus};
-use egui::{Ui, Color32, RichText, Frame, Stroke, CornerRadius};
+use egui::{Ui, Color32, RichText, Frame, Stroke, CornerRadius, vec2};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 
@@ -13,12 +13,13 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
     ui.group(|ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("🤖 SCRATCH AUTOMATION").strong().color(Color32::KHAKI));
+            ui.label(RichText::new("🤖 SCRATCH AUTOMATION").strong().size(18.0).color(Color32::KHAKI));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("🔄 SCAN SELECTORS").on_hover_text("Discover all IDs and Classes from the active tab").clicked() {
+                if ui.button(RichText::new("🔄 SCAN SELECTORS").strong()).on_hover_text("Discover all IDs and Classes from the active tab").clicked() {
                     emit(AppEvent::RequestPageSelectors(tid.to_string()));
                 }
-                ui.menu_button("➕ ADD BLOCK", |ui| {
+                ui.menu_button(RichText::new("➕ ADD BLOCK").strong(), |ui| {
+                    ui.set_min_width(150.0);
                     ui.label("ACTIONS");
                     if ui.button("🌐 Navigate").clicked() { auto_steps.push(AutomationStep::Navigate("https://".into())); ui.close_menu(); }
                     if ui.button("🖱 Click").clicked() { auto_steps.push(AutomationStep::Click("".into())); ui.close_menu(); }
@@ -58,18 +59,25 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         let mut move_to = None;
         let mut delete_idx = None;
 
-        egui::ScrollArea::vertical().max_height(400.0).id_salt("auto_scroll").show(ui, |ui| {
+        egui::ScrollArea::vertical().max_height(500.0).id_salt("auto_scroll").show(ui, |ui| {
             if auto_steps.is_empty() {
-                ui.centered_and_justified(|ui| { ui.label("Add blocks to build your robot..."); });
+                ui.centered_and_justified(|ui| { ui.label(RichText::new("Drag and add blocks to build your robot...").italics().color(Color32::GRAY)); });
             }
 
-            for (idx, step) in auto_steps.iter_mut().enumerate() {
+            let steps_len = auto_steps.len();
+            for idx in 0..steps_len {
                 let item_id = egui::Id::new(("step", idx));
+                
+                // --- DND WRAPPER ---
+                // We wrap the whole block in drag source, but inside we'll use a handle
                 let dnd_res = ui.dnd_drag_source(item_id, idx, |ui| {
-                    render_step_block(ui, step, idx, &mut delete_idx, &discovered_selectors, &mut selector_search);
+                    render_step_block(ui, &mut auto_steps[idx], idx, &mut delete_idx, &discovered_selectors, &mut selector_search);
                 });
 
-                if let Some(payload) = ui.dnd_drop_zone::<usize, _>(Frame::NONE, |ui| { }).1 {
+                // Drop zone logic
+                if let Some(payload) = ui.dnd_drop_zone::<usize, _>(Frame::NONE, |ui| {
+                    // Optional: show a line indicator
+                }).1 {
                     move_from = Some(*payload);
                     move_to = Some(idx);
                 }
@@ -84,16 +92,18 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         }
         if let Some(idx) = delete_idx { auto_steps.remove(idx); }
 
-        ui.add_space(8.0);
+        ui.add_space(12.0);
         let can_run = auto_status == AutomationStatus::Idle && !auto_steps.is_empty();
-        let btn_text = match &auto_status {
-            AutomationStatus::Idle => "▶ RUN AUTOMATION".to_string(),
-            AutomationStatus::Running(i) => format!("🏃 STEP {}...", i + 1),
-            _ => "▶ RUN AGAIN".to_string(),
+        let (btn_text, btn_color) = match &auto_status {
+            AutomationStatus::Idle => ("▶ START AUTOMATION PIPELINE".to_string(), Color32::from_rgb(40, 120, 60)),
+            AutomationStatus::Running(i) => (format!("🏃 EXECUTING BLOCK {}...", i + 1), Color32::from_rgb(180, 120, 20)),
+            _ => ("▶ RE-RUN AUTOMATION".to_string(), Color32::from_rgb(40, 120, 60)),
         };
 
-        if ui.add_enabled(can_run || matches!(auto_status, AutomationStatus::Finished | AutomationStatus::Error(_)), 
-            egui::Button::new(RichText::new(btn_text).strong()).min_size([ui.available_width(), 40.0].into()))
+        if ui.add_enabled(can_run || !matches!(auto_status, AutomationStatus::Running(_)), 
+            egui::Button::new(RichText::new(btn_text).strong().size(15.0))
+                .min_size([ui.available_width(), 45.0].into())
+                .fill(btn_color))
             .clicked() {
             auto_status = AutomationStatus::Running(0);
             emit(AppEvent::RequestAutomationRun(tid.to_string(), auto_steps.clone()));
@@ -109,64 +119,86 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
 fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String], search: &mut String) {
     let (color, title) = match step {
-        AutomationStep::Navigate(_) | AutomationStep::Click(_) | AutomationStep::Type { .. } => (Color32::from_rgb(60, 100, 200), "ACTION"),
-        AutomationStep::Wait(_) | AutomationStep::WaitSelector(_) | AutomationStep::ScrollBottom => (Color32::from_rgb(180, 150, 40), "WAIT"),
-        AutomationStep::If { .. } | AutomationStep::ForEach { .. } => (Color32::from_rgb(200, 80, 40), "CONTROL"),
-        AutomationStep::Extract { .. } | AutomationStep::Export(_) | AutomationStep::NewRow | AutomationStep::SetVariable { .. } => (Color32::from_rgb(40, 150, 80), "DATA"),
+        AutomationStep::Navigate(_) | AutomationStep::Click(_) | AutomationStep::Type { .. } => (Color32::from_rgb(80, 130, 255), "ACTION"),
+        AutomationStep::Wait(_) | AutomationStep::WaitSelector(_) | AutomationStep::ScrollBottom => (Color32::from_rgb(255, 200, 50), "WAIT"),
+        AutomationStep::If { .. } | AutomationStep::ForEach { .. } => (Color32::from_rgb(255, 100, 50), "CONTROL"),
+        AutomationStep::Extract { .. } | AutomationStep::Export(_) | AutomationStep::NewRow | AutomationStep::SetVariable { .. } => (Color32::from_rgb(50, 220, 120), "DATA"),
         _ => (Color32::DARK_GRAY, "OTHER"),
     };
 
     Frame::new()
-        .fill(color.gamma_multiply(0.1))
-        .stroke(Stroke::new(1.0, color))
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(8.0)
+        .fill(color.gamma_multiply(0.08))
+        .stroke(Stroke::new(1.5, color.gamma_multiply(0.5)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(12.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("☰").color(color).strong());
-                ui.label(RichText::new(format!("{}. ", idx + 1)).small());
-                ui.label(RichText::new(title).small().strong().color(color));
+                // --- DRAG HANDLE (Big and clickable) ---
+                let handle = ui.add(egui::Label::new(RichText::new("⣿").size(22.0).color(color).strong()).sense(egui::Sense::drag()));
+                handle.on_hover_text("Drag to reorder");
+                
+                ui.add_space(5.0);
+                ui.label(RichText::new(format!("{}.", idx + 1)).strong().size(14.0));
+                
+                Frame::new().fill(color).corner_radius(CornerRadius::same(4)).inner_margin(vec2(6.0, 2.0)).show(ui, |ui| {
+                    ui.label(RichText::new(title).strong().size(11.0).color(Color32::BLACK));
+                });
+                
+                ui.add_space(10.0);
                 ui.separator();
+                ui.add_space(10.0);
 
-                match step {
-                    AutomationStep::Navigate(url) => { ui.label("Nav:"); ui.text_edit_singleline(url); }
-                    AutomationStep::Click(sel) => { ui.label("Click:"); selector_input(ui, sel, discovered, search); }
-                    AutomationStep::Type { selector, value } => {
-                        ui.label("Type"); ui.text_edit_singleline(value);
-                        ui.label("into"); selector_input(ui, selector, discovered, search);
+                // UI elements now use a higher priority for events
+                ui.scope(|ui| {
+                    match step {
+                        AutomationStep::Navigate(url) => { ui.label("Navigate to:"); ui.add(egui::TextEdit::singleline(url).desired_width(300.0)); }
+                        AutomationStep::Click(sel) => { ui.label("Click on:"); selector_input(ui, sel, discovered, search); }
+                        AutomationStep::Type { selector, value } => {
+                            ui.label("Type"); ui.add(egui::TextEdit::singleline(value).desired_width(120.0));
+                            ui.label("into"); selector_input(ui, selector, discovered, search);
+                        }
+                        AutomationStep::Wait(secs) => { ui.label("Wait for"); ui.add(egui::DragValue::new(secs).range(1..=300)); ui.label("seconds"); }
+                        AutomationStep::WaitSelector(sel) => { ui.label("Wait for element:"); selector_input(ui, sel, discovered, search); }
+                        AutomationStep::Extract { selector, as_key, .. } => {
+                            ui.label("Extract text from"); selector_input(ui, selector, discovered, search);
+                            ui.label("save as"); ui.add(egui::TextEdit::singleline(as_key).desired_width(100.0));
+                        }
+                        AutomationStep::ForEach { selector, body } => {
+                            ui.label("Loop through:"); selector_input(ui, selector, discovered, search);
+                            ui.label(RichText::new(format!("({} inner blocks)", body.len())).italics().color(Color32::GRAY));
+                        }
+                        AutomationStep::If { condition_selector, then_steps } => {
+                            ui.label("If exists:"); selector_input(ui, condition_selector, discovered, search);
+                            ui.label(RichText::new(format!("({} blocks)", then_steps.len())).italics().color(Color32::GRAY));
+                        }
+                        AutomationStep::Export(file) => { ui.label("Export data to:"); ui.add(egui::TextEdit::singleline(file).desired_width(150.0)); }
+                        AutomationStep::SetVariable { key, value } => { 
+                            ui.label("Set"); ui.add(egui::TextEdit::singleline(key).desired_width(80.0)); 
+                            ui.label("="); ui.add(egui::TextEdit::singleline(value).desired_width(120.0)); 
+                        }
+                        AutomationStep::NewRow => { ui.label(RichText::new("➕ START NEW DATA ROW").strong().color(Color32::LIGHT_GREEN)); }
+                        AutomationStep::ScrollBottom => { ui.label("📜 SCROLL TO PAGE BOTTOM"); }
+                        _ => { ui.label("Block"); }
                     }
-                    AutomationStep::Wait(secs) => { ui.label("Wait"); ui.add(egui::DragValue::new(secs)); ui.label("sec"); }
-                    AutomationStep::WaitSelector(sel) => { ui.label("Wait for"); selector_input(ui, sel, discovered, search); }
-                    AutomationStep::Extract { selector, as_key, .. } => {
-                        ui.label("Extract"); selector_input(ui, selector, discovered, search);
-                        ui.label("as"); ui.text_edit_singleline(as_key);
-                    }
-                    AutomationStep::ForEach { selector, body } => {
-                        ui.label("Loop:"); selector_input(ui, selector, discovered, search);
-                        ui.label(RichText::new(format!("({} steps)", body.len())).italics().small());
-                    }
-                    AutomationStep::If { condition_selector, then_steps } => {
-                        ui.label("If exists:"); selector_input(ui, condition_selector, discovered, search);
-                        ui.label(RichText::new(format!("({} steps)", then_steps.len())).italics().small());
-                    }
-                    _ => { ui.label("Block"); }
-                }
+                });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("❌").clicked() { *delete_idx = Some(idx); }
+                    if ui.button(RichText::new("❌").color(Color32::LIGHT_RED)).on_hover_text("Delete this block").clicked() {
+                        *delete_idx = Some(idx);
+                    }
                 });
             });
         });
-    ui.add_space(4.0);
+    ui.add_space(6.0);
 }
 
 fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String], search: &mut String) {
     ui.horizontal(|ui| {
-        ui.text_edit_singleline(value);
-        ui.menu_button("🔍", |ui| {
-            ui.set_max_width(280.0);
-            ui.label(RichText::new("SEARCH SELECTORS").strong().small());
-            ui.add(egui::TextEdit::singleline(search).hint_text("Filter by ID or Class..."));
+        ui.add(egui::TextEdit::singleline(value).desired_width(180.0));
+        let menu_btn = ui.menu_button("🔍", |ui| {
+            ui.set_max_width(300.0);
+            ui.label(RichText::new("SEARCH DISCOVERED SELECTORS").strong());
+            ui.add(egui::TextEdit::singleline(search).hint_text("Filter (e.g. .btn or #login)"));
             ui.separator();
             egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
                 if discovered.is_empty() {
@@ -183,12 +215,11 @@ fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String], search
                             found_any = true;
                         }
                     }
-                    if !found_any {
-                        ui.label(RichText::new("No matches found.").italics().color(Color32::GRAY));
-                    }
+                    if !found_any { ui.label("No matches."); }
                 }
             });
         });
+        menu_btn.response.on_hover_text("Quick select ID/Class from page");
     });
 }
 
