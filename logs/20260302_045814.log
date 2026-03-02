@@ -1,4 +1,0 @@
-[2m2026-03-02T01:58:14.180404Z[0m [32m INFO[0m [2mauto_crawler[0m[2m:[0m 🚀 Sniper Scraper 3.0 Başlatılıyor...
-[2m2026-03-02T01:59:01.831920Z[0m [32m INFO[0m [2mauto_crawler::backend::scraper[0m[2m:[0m 📸 Capturing: https://nmr.novastrum.dev/tr
-[2m2026-03-02T01:59:01.835131Z[0m [32m INFO[0m [2mauto_crawler::ui::scrape[0m[2m:[0m ✅ Saved: "/home/duldul/Masaüstü/auto-crawler/raw/nmr.novastrum.dev/tr.html"
-[2m2026-03-02T01:59:21.041552Z[0m [31mERROR[0m [2mchromiumoxide::handler[0m[2m:[0m WS Connection error: Ws(Protocol(ResetWithoutClosingHandshake))

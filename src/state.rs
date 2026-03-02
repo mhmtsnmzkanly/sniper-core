@@ -35,7 +35,11 @@ pub struct AppState {
     pub available_tabs: Vec<ChromeTabInfo>,
     pub selected_tab_id: Option<String>,
     pub is_browser_running: bool,
+    pub mirror_mode: bool,
     pub last_tab_refresh: f64,
+    
+    // Translate State
+    pub is_translating: bool,
     
     // Logs
     pub logs: Vec<LogEntry>,
@@ -51,7 +55,9 @@ impl AppState {
             available_tabs: Vec::new(),
             selected_tab_id: None,
             is_browser_running: false,
+            mirror_mode: false,
             last_tab_refresh: 0.0,
+            is_translating: false,
             logs: Vec::new(),
         }
     }

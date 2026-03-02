@@ -9,7 +9,7 @@ pub enum AppEvent {
     TabsUpdated(Vec<ChromeTabInfo>),
     
     // UI Komutları
-    RequestCapture(String), // tab_id
+    RequestCapture(String, bool), // tab_id, mirror_mode
     RequestTabRefresh,
     
     // Durum Olayları

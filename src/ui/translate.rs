@@ -12,12 +12,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.label("RAW FOLDER:");
             if ui.button("Browse").clicked() {
                 if let Some(path) = FileDialog::new().pick_folder() {
-                    state.raw_path = Some(path);
+                    state.config.raw_output_dir = path;
                 }
             }
-            if let Some(path) = &state.raw_path {
-                ui.label(egui::RichText::new(path.to_string_lossy()).small());
-            }
+            ui.label(state.config.raw_output_dir.to_string_lossy());
         });
     });
 
@@ -29,12 +27,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.label("OUTPUT FOLDER:");
             if ui.button("Browse").clicked() {
                 if let Some(path) = FileDialog::new().pick_folder() {
-                    state.trans_path = Some(path);
+                    state.config.translator_output_dir = path;
                 }
             }
-            if let Some(path) = &state.trans_path {
-                ui.label(egui::RichText::new(path.to_string_lossy()).small());
-            }
+            ui.label(state.config.translator_output_dir.to_string_lossy());
         });
     });
 
@@ -43,7 +39,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label("GEMINI API KEY:");
-            ui.add(egui::TextEdit::singleline(&mut state.gemini_api_key).password(true));
+            ui.add(egui::TextEdit::singleline(&mut state.config.gemini_api_key).password(true));
         });
     });
 
@@ -55,25 +51,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.label("Translating...");
         });
     } else {
-        let can_translate = state.raw_path.is_some() && state.trans_path.is_some() && !state.gemini_api_key.is_empty();
+        let can_translate = !state.config.gemini_api_key.is_empty();
         let btn = ui.add_enabled(can_translate, egui::Button::new("START TRANSLATION").min_size([ui.available_width(), 40.0].into()));
         
         if btn.clicked() {
-            let raw = state.raw_path.clone().unwrap();
-            let trans = state.trans_path.clone().unwrap();
-            let api_key = state.gemini_api_key.clone();
+            let raw = state.config.raw_output_dir.clone();
+            let trans = state.config.translator_output_dir.clone();
+            let api_key = state.config.gemini_api_key.clone();
             state.is_translating = true;
             
-            tokio::spawn(async move {
-                match crate::backend::GeminiClient::new(Some(api_key)) {
-                    Ok(client) => {
-                        if let Err(e) = client.run_translate_workflow(raw, trans, 3).await {
-                            tracing::error!("Translation workflow error: {}", e);
-                        }
-                    }
-                    Err(e) => tracing::error!("Gemini client error: {}", e),
-                }
-            });
+            // TODO: Arka planda translator workflow başlat (core/translator üzerinden)
+            tracing::info!("Translation requested from {:?} to {:?}", raw, trans);
         }
     }
 }
