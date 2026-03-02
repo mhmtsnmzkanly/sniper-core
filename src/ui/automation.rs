@@ -65,4 +65,38 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             emit(AppEvent::RequestAutomationRun(tid.to_string(), ws.auto_steps.clone()));
         }
     });
+
+    ui.add_space(10.0);
+
+    // LIVE SCRIPT INJECTION (Embedded)
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("🚀 SCRIPT INJECTION").strong().color(Color32::KHAKI));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("📁 Load File").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            ws.js_script = content;
+                        }
+                    }
+                }
+                if ui.button("🗑 Clear").clicked() { ws.js_script.clear(); }
+            });
+        });
+        
+        ui.add_space(5.0);
+        ui.add(egui::TextEdit::multiline(&mut ws.js_script)
+            .font(egui::FontId::monospace(12.0))
+            .desired_rows(6)
+            .desired_width(f32::INFINITY));
+            
+        if ui.button("▶ EXECUTE IN TAB").clicked() {
+            emit(AppEvent::RequestScriptExecution(tid.to_string(), ws.js_script.clone()));
+        }
+        
+        if !ws.js_result.is_empty() {
+            ui.add_space(5.0);
+            ui.label(RichText::new(format!("Last Result: {}", ws.js_result)).color(Color32::GREEN).small());
+        }
+    });
 }

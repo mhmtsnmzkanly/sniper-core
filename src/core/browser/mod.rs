@@ -265,18 +265,22 @@ impl BrowserManager {
 
     pub fn extract_resources_from_css(css_content: &str, base_url: &str) -> Vec<String> {
         let mut urls = Vec::new();
-        let re = regex::Regex::new(r#"url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
+        // More robust regex for url(), supporting quotes and whitespace variations
+        let re = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
         let base = url::Url::parse(base_url).ok();
 
         for cap in re.captures_iter(css_content) {
-            let found_url = &cap[1];
-            if found_url.starts_with("data:") { continue; }
+            let found_url = cap[1].trim();
+            if found_url.is_empty() || found_url.starts_with("data:") || found_url.starts_with("blob:") { continue; }
             
             if let Some(base) = &base {
                 if let Ok(abs_url) = base.join(found_url) {
-                    urls.push(abs_url.to_string());
+                    let url_str = abs_url.to_string();
+                    if !urls.contains(&url_str) {
+                        urls.push(url_str);
+                    }
                 }
-            } else {
+            } else if !urls.contains(&found_url.to_string()) {
                 urls.push(found_url.to_string());
             }
         }

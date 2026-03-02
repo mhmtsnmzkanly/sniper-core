@@ -139,16 +139,27 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         if let Some(url) = ws.active_media_url.clone() {
             if let Some(asset) = ws.media_assets.iter().find(|a| a.url == url) {
                 let mut open = true;
-                egui::Window::new(RichText::new(&asset.name).strong())
+                egui::Window::new(RichText::new(format!("PREVIEW: {}", asset.name)).strong())
                     .open(&mut open)
-                    .default_size([500.0, 500.0])
+                    .default_size([800.0, 600.0])
+                    .max_width(1024.0)
+                    .max_height(720.0)
                     .resizable(true)
+                    .vscroll(true)
+                    .hscroll(true)
                     .show(ui.ctx(), |ui| {
                         if let Some(data) = &asset.data {
+                            // Display image with its actual size, window handles scrolling
                             ui.add(egui::Image::from_bytes(format!("preview://{}", asset.url), data.clone())
-                                .max_size(ui.available_size()));
+                                .corner_radius(4.0));
                         } else {
-                            ui.label("Binary data not available.");
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(20.0);
+                                ui.label(RichText::new("Binary data not available for this resource.").italics());
+                                if ui.button("🌐 Open in Browser").clicked() {
+                                    let _ = open::that(&asset.url);
+                                }
+                            });
                         }
                     });
                 if !open { ws.active_media_url = None; }
