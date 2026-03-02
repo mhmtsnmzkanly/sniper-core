@@ -72,25 +72,47 @@ impl AutomationEngine {
                 }
                 Step::Click { selector } => {
                     let final_sel = self.interpolate(selector);
-                    let js = format!("document.querySelector('{}').click()", final_sel);
+                    let js = format!(
+                        "(() => {{ \
+                            const el = document.querySelector('{}'); \
+                            if (!el) throw new Error('Element not found: {}'); \
+                            el.click(); \
+                            return true; \
+                        }})()", final_sel, final_sel
+                    );
                     BrowserManager::execute_script(port, tid, js).await?;
                 }
                 Step::Type { selector, value } => {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
-                    let js = format!("document.querySelector('{}').value = '{}'", final_sel, final_val);
+                    let js = format!(
+                        "(() => {{ \
+                            const el = document.querySelector('{}'); \
+                            if (!el) throw new Error('Element not found: {}'); \
+                            el.value = '{}'; \
+                            el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                            el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+                            return true; \
+                        }})()", final_sel, final_sel, final_val
+                    );
                     BrowserManager::execute_script(port, tid, js).await?;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector);
                     let timeout = timeout_ms.unwrap_or(5000);
                     let js = format!(
-                        "new Promise((resolve, reject) => {{ 
-                            const start = Date.now(); 
-                            const timer = setInterval(() => {{ 
-                                if (document.querySelector('{}')) {{ clearInterval(timer); resolve(true); }} 
-                                if (Date.now() - start > {}) {{ clearInterval(timer); reject('Timeout waiting for {}'); }} 
-                            }}, 100); 
+                        "new Promise((resolve, reject) => {{ \
+                            const check = () => {{ \
+                                const el = document.querySelector('{}'); \
+                                if (el) {{ resolve(true); return true; }} \
+                                return false; \
+                            }}; \
+                            if (check()) return; \
+                            const start = Date.now(); \
+                            const timer = setInterval(() => {{ \
+                                if (check()) {{ clearInterval(timer); }} \
+                                if (Date.now() - start > {}) {{ clearInterval(timer); reject('Timeout waiting for element: {}'); }} \
+                            }}, 200); \
                         }})", final_sel, timeout, final_sel
                     );
                     BrowserManager::execute_script(port, tid, js).await?;
@@ -100,21 +122,26 @@ impl AutomationEngine {
                     let js = format!(
                         "(() => {{ \
                             const el = document.querySelector('{}'); \
-                            return el ? el.innerText : ''; \
+                            if (!el) return 'NOT_FOUND'; \
+                            return el.innerText || el.value || ''; \
                         }})()", final_sel
                     );
                     match BrowserManager::execute_script(port, tid.clone(), js).await {
                         Ok(text) => {
                             let clean_text = text.trim_matches('"').to_string();
-                            tracing::info!("[AUTO-ENGINE] Extracted '{}': {}", as_key, clean_text);
-                            {
-                                let mut ctx = self.context.lock().unwrap();
-                                ctx.variables.insert(as_key.clone(), clean_text.clone());
-                                if add_to_row.unwrap_or(true) {
-                                    ctx.current_row.insert(as_key.clone(), clean_text.clone());
+                            if clean_text == "NOT_FOUND" {
+                                tracing::warn!("[AUTO-ENGINE] Element not found for extraction: {}", final_sel);
+                            } else {
+                                tracing::info!("[AUTO-ENGINE] Extracted '{}': {}", as_key, clean_text);
+                                {
+                                    let mut ctx = self.context.lock().unwrap();
+                                    ctx.variables.insert(as_key.clone(), clean_text.clone());
+                                    if add_to_row.unwrap_or(true) {
+                                        ctx.current_row.insert(as_key.clone(), clean_text.clone());
+                                    }
                                 }
+                                emit(AppEvent::ConsoleLogAdded(tid, format!("[DATA] {}: {}", as_key, clean_text)));
                             }
-                            emit(AppEvent::ConsoleLogAdded(tid, format!("[DATA] {}: {}", as_key, clean_text)));
                         },
                         Err(e) => tracing::warn!("[AUTO-ENGINE] Extraction failed: {}", e),
                     }
