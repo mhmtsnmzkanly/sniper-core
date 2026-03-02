@@ -60,7 +60,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     for cookie in &state.cookies {
                         ui.label(RichText::new(&cookie.name).color(Color32::LIGHT_BLUE));
                         ui.label(&cookie.domain);
-                        ui.add(egui::Label::new(RichText::new(&cookie.value).small()).truncate(true));
+                        ui.add(egui::Label::new(RichText::new(&cookie.value).small()).truncate());
                         ui.end_row();
                     }
                 });

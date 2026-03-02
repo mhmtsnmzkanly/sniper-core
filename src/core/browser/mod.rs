@@ -48,7 +48,7 @@ impl BrowserManager {
             .arg("--remote-allow-origins=*")
             .arg("--disable-features=OptimizationGuideModelDownloading,OnDeviceModel")
             .arg("--no-first-run")
-            .arg(format!("--user-data-dir={}", final_profile.display()))
+            .arg(format!("--user-data-dir={}", profile.display()))
             .arg(url)
             .stdout(Stdio::from(chrome_log_file.try_clone()?))
             .stderr(Stdio::from(chrome_log_file));
@@ -124,12 +124,13 @@ impl BrowserManager {
     }
 
     pub async fn enable_network_monitoring(port: u16, tab_id: String) -> Result<()> {
-        use chromiumoxide::cdp::browser_protocol::network::Event;
+        use chromiumoxide::cdp::browser_protocol::network::{Event, EnableParams};
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await?;
         let pages = browser.pages().await?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
-        page.execute(chromiumoxide::cdp::browser_protocol::network::EnableParams::default()).await?;
+        
+        page.execute(EnableParams::default()).await?;
         
         let mut events = page.event_listener::<Event>().await?;
         tokio::spawn(async move {
