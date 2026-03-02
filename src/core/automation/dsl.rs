@@ -11,24 +11,24 @@ pub struct AutomationDsl {
 pub enum Step {
     Navigate { url: String },
     Click { selector: String },
-    Type { selector: String, value: String },
-    WaitFor { selector: String, timeout_ms: Option<u64> },
-    Extract { selector: String, as_key: String, add_to_row: Option<bool> },
+    Type { selector: String, value: String, is_variable: bool },
+    Wait { seconds: u64 },
+    WaitSelector { selector: String, timeout_ms: u64 },
+    WaitUntilIdle { timeout_ms: u64 },
+    Extract { selector: String, as_key: String, add_to_row: bool },
     SetVariable { key: String, value: String },
     NewRow,
     Export { filename: String },
+    Screenshot { filename: String },
     ScrollBottom,
     If {
-        condition: Condition,
+        selector: String,
         then_steps: Vec<Step>,
-        else_steps: Option<Vec<Step>>,
     },
     ForEach {
         selector: String,
         body: Vec<Step>,
     },
-    Screenshot { filename: String },
-    WaitUntilIdle { timeout_ms: Option<u64> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

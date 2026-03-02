@@ -22,29 +22,29 @@ pub struct MediaAsset {
 }
 
 /// Atomic operation in the automation pipeline.
+/// SIMMETRIC WITH dsl::Step FOR PERFECT SAVE/LOAD
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum AutomationStep {
     Navigate(String),
     Click(String),
-    Type { selector: String, value: String, use_variable: bool },
+    Type { selector: String, value: String, is_variable: bool },
     Wait(u64),
-    WaitSelector(String),
-    ScrollBottom,
+    WaitSelector { selector: String, timeout_ms: u64 },
+    WaitUntilIdle { timeout_ms: u64 },
     Extract { selector: String, as_key: String, add_to_dataset: bool },
     SetVariable { key: String, value: String },
     NewRow,
     Export(String),
+    Screenshot(String),
+    ScrollBottom,
     If {
-        condition_selector: String,
+        selector: String,
         then_steps: Vec<AutomationStep>,
     },
     ForEach {
         selector: String,
         body: Vec<AutomationStep>,
     },
-    Screenshot(String),
-    WaitUntilIdle,
-    InjectJS(String),
 }
 
 /// Current status of a tab's automation pipeline.
@@ -161,42 +161,4 @@ pub struct LogEntry {
     pub message: String,
     pub level: tracing::Level,
     pub timestamp: String,
-}
-
-pub struct Notification {
-    pub title: String,
-    pub message: String,
-}
-
-pub struct AppState {
-    pub active_tab: Tab,
-    pub config: AppConfig,
-    pub session_timestamp: String,
-    pub output_confirmed: bool,
-    pub profile_confirmed: bool,
-    pub use_custom_profile: bool,
-    pub notification: Option<Notification>,
-    pub available_tabs: Vec<ChromeTabInfo>,
-    pub selected_tab_id: Option<String>,
-    pub is_browser_running: bool,
-    pub last_tab_refresh: f64,
-    pub is_translating: bool,
-    pub workspaces: HashMap<String, TabWorkspace>,
-    pub logs: Vec<LogEntry>,
-}
-
-impl AppState {
-    pub fn new(config: AppConfig, timestamp: String) -> Self {
-        Self {
-            active_tab: Tab::Scrape, config, session_timestamp: timestamp,
-            output_confirmed: false, profile_confirmed: false, use_custom_profile: true,
-            notification: None, available_tabs: Vec::new(), selected_tab_id: None,
-            is_browser_running: false, last_tab_refresh: 0.0, is_translating: false,
-            workspaces: HashMap::new(), logs: Vec::new(),
-        }
-    }
-
-    pub fn notify(&mut self, title: &str, message: &str, _is_error: bool) {
-        self.notification = Some(Notification { title: title.to_string(), message: message.to_string() });
-    }
 }
