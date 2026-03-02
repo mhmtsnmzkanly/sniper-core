@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
-use tracing::info;
 
 pub struct Downloader;
 

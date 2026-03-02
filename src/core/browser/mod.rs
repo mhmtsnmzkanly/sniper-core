@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use tracing::{info, debug, error};
+use tracing::info;
 use std::path::PathBuf;
 use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
@@ -124,7 +124,7 @@ impl BrowserManager {
     }
 
     pub async fn enable_network_monitoring(port: u16, tab_id: String) -> Result<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{Event, EnableParams};
+        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams};
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await?;
         let pages = browser.pages().await?;
@@ -132,28 +132,30 @@ impl BrowserManager {
         
         page.execute(EnableParams::default()).await?;
         
-        let mut events = page.event_listener::<Event>().await?;
+        let mut request_events = page.event_listener::<EventRequestWillBeSent>().await?;
+        let mut response_events = page.event_listener::<EventResponseReceived>().await?;
+        
         tokio::spawn(async move {
             tokio::select! {
                 _ = async {
-                    while let Some(event) = events.next().await {
-                        match event {
-                            Event::RequestWillBeSent(e) => {
-                                let req = crate::state::NetworkRequest {
-                                    request_id: e.request_id.to_string(),
-                                    url: e.request.url.clone(),
-                                    method: e.request.method.clone(),
-                                    resource_type: format!("{:?}", e.r#type),
-                                    status: None,
-                                    timestamp: *e.timestamp,
-                                };
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
-                            }
-                            Event::ResponseReceived(e) => {
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(e.request_id.to_string(), e.response.status as u16));
-                            }
-                            _ => {}
-                        }
+                    while let Some(e) = request_events.next().await {
+                        let req = crate::state::NetworkRequest {
+                            request_id: e.request_id.as_ref().to_string(),
+                            url: e.request.url.clone(),
+                            method: e.request.method.clone(),
+                            resource_type: format!("{:?}", e.r#type),
+                            status: None,
+                            timestamp: 0.0,
+                        };
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
+                    }
+                } => {}
+                _ = async {
+                    while let Some(e) = response_events.next().await {
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
+                            e.request_id.as_ref().to_string(),
+                            e.response.status as u16
+                        ));
                     }
                 } => {}
                 _ = async { while let Some(_) = handler.next().await {} } => {}
