@@ -221,6 +221,7 @@ impl eframe::App for CrawlerApp {
                     });
                 }
                 AppEvent::SelectorsReceived(tid, selectors) => {
+                    tracing::info!("[APP <-> EVENT] Received {} selectors for tab {}.", selectors.len(), tid);
                     if let Some(ws) = self.state.workspaces.get_mut(&tid) {
                         ws.discovered_selectors = selectors;
                     }

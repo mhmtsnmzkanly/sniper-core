@@ -122,7 +122,9 @@ impl BrowserManager {
         })()"#;
         
         let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let selectors: Vec<String> = serde_json::from_value(res.value().clone().cloned().unwrap_or_default()).unwrap_or_default();
+        let value = res.value().clone().cloned().unwrap_or(serde_json::Value::Array(vec![]));
+        let selectors: Vec<String> = serde_json::from_value(value).unwrap_or_default();
+        tracing::info!("[BROWSER <-> DISCOVERY] Found {} unique selectors.", selectors.len());
         Ok(selectors)
     }
 
