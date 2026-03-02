@@ -127,16 +127,31 @@ impl AutomationEngine {
                 Step::Type { selector, value } => {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
+                    
+                    // Most robust way to type in modern frameworks (React/Vue/Angular)
                     let js = format!(
-                        "const el = document.querySelector('{}'); \
-                         if (!el) throw new Error('Element not found: {}'); \
-                         el.focus(); \
-                         el.value = ''; \
-                         el.value = '{}'; \
-                         el.dispatchEvent(new Event('focus', {{ bubbles: true }})); \
-                         el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
-                         el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
-                         el.dispatchEvent(new Event('blur', {{ bubbles: true }}));", final_sel, final_sel, final_val
+                        "(() => {{ \
+                            const el = document.querySelector('{}'); \
+                            if (!el) throw new Error('Element not found: {}'); \
+                            el.focus(); \
+                            const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; \
+                            const textAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; \
+                            if (el.tagName === 'TEXTAREA' && textAreaValueSetter) {{ \
+                                textAreaValueSetter.call(el, '{}'); \
+                            }} else if (nativeValueSetter) {{ \
+                                nativeValueSetter.call(el, '{}'); \
+                            }} else {{ \
+                                el.value = '{}'; \
+                            }} \
+                            el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                            el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+                            el.dispatchEvent(new Event('blur', {{ bubbles: true }})); \
+                            return true; \
+                        }})()", 
+                        final_sel, final_sel, 
+                        final_val.replace("'", "\\'"), 
+                        final_val.replace("'", "\\'"), 
+                        final_val.replace("'", "\\'")
                     );
                     self.run_js(page, js).await?;
                 }
