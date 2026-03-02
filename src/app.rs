@@ -123,14 +123,32 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                AppEvent::AutomationProgress(idx) => {
-                    self.state.auto_status = crate::state::AutomationStatus::Running(idx);
+                AppEvent::AutomationProgress(idx) => { self.state.auto_status = crate::state::AutomationStatus::Running(idx); }
+                AppEvent::AutomationFinished => { self.state.auto_status = crate::state::AutomationStatus::Finished; }
+                AppEvent::AutomationError(msg) => { self.state.auto_status = crate::state::AutomationStatus::Error(msg); }
+                
+                // --- FAZ 6 EVENTS ---
+                AppEvent::RequestCookies(tab_id) => {
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        if let Ok(cookies) = crate::core::browser::BrowserManager::get_cookies(port, tab_id).await {
+                            ui::scrape::emit(AppEvent::CookiesReceived(cookies));
+                        }
+                    });
                 }
-                AppEvent::AutomationFinished => {
-                    self.state.auto_status = crate::state::AutomationStatus::Finished;
+                AppEvent::CookiesReceived(cookies) => {
+                    self.state.cookies = cookies;
+                    tracing::info!("Successfully fetched cookies.");
                 }
-                AppEvent::AutomationError(msg) => {
-                    self.state.auto_status = crate::state::AutomationStatus::Error(msg);
+                AppEvent::RequestEmulation(tab_id, ua, lat, lon) => {
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::core::browser::BrowserManager::set_emulation(port, tab_id, ua, lat, lon).await {
+                            tracing::error!("Emulation failed: {}", e);
+                        } else {
+                            tracing::info!("Emulation settings applied.");
+                        }
+                    });
                 }
                 _ => {}
             }
@@ -142,6 +160,7 @@ impl eframe::App for CrawlerApp {
             ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "SCRAPE");
             ui.selectable_value(&mut self.state.active_tab, Tab::Automation, "AUTOMATION");
             ui.selectable_value(&mut self.state.active_tab, Tab::Network, "NETWORK");
+            ui.selectable_value(&mut self.state.active_tab, Tab::Storage, "STORAGE");
             ui.selectable_value(&mut self.state.active_tab, Tab::Translate, "TRANSLATE");
             ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "SETTINGS");
         });
@@ -155,6 +174,7 @@ impl eframe::App for CrawlerApp {
                 Tab::Scrape => ui::scrape::render(ui, &mut self.state),
                 Tab::Automation => ui::automation::render(ui, &mut self.state),
                 Tab::Network => ui::network_panel::render(ui, &mut self.state),
+                Tab::Storage => ui::storage_panel::render(ui, &mut self.state),
                 Tab::Translate => ui::translate::render(ui, &mut self.state),
                 Tab::Settings => ui::config_panel::render(ui, &mut self.state),
             }

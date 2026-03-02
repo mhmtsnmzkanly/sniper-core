@@ -13,9 +13,12 @@ pub enum AppEvent {
     RequestScriptExecution(String, String), // tab_id, script
     RequestNetworkToggle(String, bool), // tab_id, enabled
     RequestAutomationRun(String, Vec<crate::state::AutomationStep>),
+    RequestCookies(String),
+    RequestEmulation(String, String, f64, f64), // tab_id, ua, lat, lon
     RequestTabRefresh,
     
     // Durum Olayları
+    CookiesReceived(Vec<crate::state::ChromeCookie>),
     AutomationProgress(usize),
     AutomationFinished,
     AutomationError(String),

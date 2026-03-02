@@ -7,6 +7,7 @@ pub enum Tab {
     Scrape,
     Automation,
     Network,
+    Storage,
     Translate,
     Settings,
 }
@@ -14,18 +15,18 @@ pub enum Tab {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum AutomationStep {
     Navigate(String),
-    Click(String),      // Selector
-    Wait(u64),         // Seconds
+    Click(String),
+    Wait(u64),
     WaitSelector(String),
     ScrollBottom,
-    ExtractText(String), // Selector
+    ExtractText(String),
     InjectJS(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AutomationStatus {
     Idle,
-    Running(usize), // Current step index
+    Running(usize),
     Finished,
     Error(String),
 }
@@ -39,6 +40,17 @@ pub struct ChromeTabInfo {
     pub tab_type: String,
     #[serde(rename = "webSocketDebuggerUrl")]
     pub web_socket_url: String,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+pub struct ChromeCookie {
+    pub name: String,
+    pub value: String,
+    pub domain: String,
+    pub path: String,
+    pub expires: f64,
+    pub secure: bool,
+    pub http_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +82,7 @@ pub struct AppState {
     pub mirror_mode: bool,
     pub last_tab_refresh: f64,
     
-    // Automation Builder State
+    // Automation State
     pub js_script: String,
     pub js_result: String,
     pub js_execution_active: bool,
@@ -80,6 +92,14 @@ pub struct AppState {
     // Network State
     pub network_requests: Vec<NetworkRequest>,
     pub network_recording: bool,
+
+    // Storage State
+    pub cookies: Vec<ChromeCookie>,
+    
+    // Emulation Settings
+    pub user_agent_override: String,
+    pub latitude: f64,
+    pub longitude: f64,
     
     // Translate State
     pub is_translating: bool,
@@ -107,6 +127,10 @@ impl AppState {
             auto_status: AutomationStatus::Idle,
             network_requests: Vec::new(),
             network_recording: false,
+            cookies: Vec::new(),
+            user_agent_override: String::new(),
+            latitude: 41.0082, // Default Istanbul
+            longitude: 28.9784,
             is_translating: false,
             logs: Vec::new(),
         }
