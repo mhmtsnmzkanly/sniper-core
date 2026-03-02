@@ -85,7 +85,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
         ui.add_space(8.0);
         
-        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+        egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
             if state.available_tabs.is_empty() {
                 ui.centered_and_justified(|ui| {
                     ui.label(RichText::new("Waiting for tabs... (Auto-refresh active)").italics().color(Color32::GRAY));
@@ -108,6 +108,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         for tab in tabs {
                             let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
                             let font_size = 12.0;
+                            
                             // Col 1: ID
                             let short_id = if tab.id.chars().count() > 8 { 
                                 format!("{}...", tab.id.chars().take(8).collect::<String>()) 
@@ -117,6 +118,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                             if ui.selectable_label(is_selected, RichText::new(short_id).monospace().size(font_size)).clicked() {
                                 state.selected_tab_id = Some(tab.id.clone());
+                            }
+
                             // Col 2: Title
                             let trunc_title = if tab.title.chars().count() > 40 { 
                                 format!("{}...", tab.title.chars().take(40).collect::<String>()) 
@@ -132,7 +135,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 tab.url.clone() 
                             };
                             ui.label(RichText::new(trunc_url).italics().color(Color32::GRAY).size(font_size));
-
+                            
                             ui.end_row();
                         }
                     });
@@ -142,7 +145,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(10.0);
 
-    // Step 3: Available Actions
+    // Step 3: Actions
     ui.group(|ui| {
         ui.label(RichText::new("Step 3: Available Actions").strong().size(14.0));
         ui.add_space(5.0);
