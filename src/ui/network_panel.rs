@@ -8,8 +8,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => { ui.label(RichText::new("NO TARGET SELECTED").strong().color(Color32::RED)); return; }
     };
 
+    let current_title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
+
     if let Some(ws) = state.workspaces.get_mut(&tid) {
-        ui.heading(format!("NETWORK TRAFFIC MONITOR: {}", ws.title));
+        ui.heading(RichText::new(format!("TRAFFIC MONITOR // {}", current_title.to_uppercase())).strong());
         ui.add_space(5.0);
 
         let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(25)).stroke(Stroke::new(1.0, Color32::from_gray(50)));

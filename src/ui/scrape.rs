@@ -166,14 +166,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
             });
 
-            // Extract window states first to avoid borrow conflicts
-            let (show_auto, sniffer_active, ws_title) = if let Some(ws) = state.workspaces.get(&tid) {
-                (ws.show_automation, ws.sniffer_active, ws.title.clone())
+            // Extract window states and title dynamically to stay synced
+            let (show_auto, sniffer_active, current_title) = if let Some(tid_val) = &state.selected_tab_id {
+                let title = state.available_tabs.iter().find(|t| &t.id == tid_val).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
+                let ws = state.workspaces.get(tid_val);
+                (ws.map(|w| w.show_automation).unwrap_or(false), ws.map(|w| w.sniffer_active).unwrap_or(false), title)
             } else { (false, false, "Unknown".into()) };
 
             if show_auto {
                 let mut open = true;
-                egui::Window::new(format!("AUTOMATION // {}", ws_title))
+                egui::Window::new(format!("AUTOMATION // {}", current_title))
                     .open(&mut open)
                     .default_size([900.0, 700.0])
                     .resizable(true)
@@ -185,7 +187,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
             if sniffer_active {
                 let mut open = true;
-                egui::Window::new(format!("CONSOLE // {}", ws_title))
+                egui::Window::new(format!("CONSOLE // {}", current_title))
                     .open(&mut open)
                     .default_size([700.0, 500.0])
                     .resizable(true)

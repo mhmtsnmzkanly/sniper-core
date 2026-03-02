@@ -131,9 +131,12 @@ impl AutomationEngine {
                         "const el = document.querySelector('{}'); \
                          if (!el) throw new Error('Element not found: {}'); \
                          el.focus(); \
+                         el.value = ''; \
                          el.value = '{}'; \
+                         el.dispatchEvent(new Event('focus', {{ bubbles: true }})); \
                          el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
-                         el.dispatchEvent(new Event('change', {{ bubbles: true }}));", final_sel, final_sel, final_val
+                         el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+                         el.dispatchEvent(new Event('blur', {{ bubbles: true }}));", final_sel, final_sel, final_val
                     );
                     self.run_js(page, js).await?;
                 }

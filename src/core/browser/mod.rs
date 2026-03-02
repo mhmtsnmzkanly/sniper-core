@@ -71,34 +71,54 @@ impl BrowserManager {
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         
         let js = r#"(() => {
-            const results = new Set();
-            const importantAttrs = ['name', 'data-id', 'data-testid', 'role', 'type', 'href'];
+            const results = [];
+            const seenElements = new Set();
+            const importantAttrs = ['data-testid', 'data-id', 'name', 'id', 'href', 'role'];
             
-            // Query all elements that might be interesting
-            document.querySelectorAll('a, button, input, select, [id], [class], [data-id], [data-testid]').forEach(el => {
-                const tag = el.tagName.toLowerCase();
-                const id = el.id ? '#' + el.id : '';
-                const classes = Array.from(el.classList).map(c => '.' + c).join('');
-                
-                // 1. Basic combinations
-                if (id) results.add(`${tag}${id}`);
-                if (classes) results.add(`${tag}${classes}`);
-                if (id && classes) results.add(`${tag}${id}${classes}`);
+            // Focus on interactive and structure-heavy elements
+            const elements = document.querySelectorAll('a, button, input, select, textarea, [id], [data-testid]');
+            
+            elements.forEach(el => {
+                if (seenElements.has(el)) return;
+                seenElements.add(el);
 
-                // 2. Attribute combinations
-                importantAttrs.forEach(attr => {
+                const tag = el.tagName.toLowerCase();
+                
+                // Priority 1: ID
+                if (el.id) {
+                    results.push(`${tag}#${el.id}`);
+                    return;
+                }
+
+                // Priority 2: Data Attributes or Name
+                for (const attr of ['data-testid', 'data-id', 'name']) {
                     const val = el.getAttribute(attr);
-                    if (val && val.length < 60) {
-                        const attrStr = `[${attr}="${val}"]`;
-                        results.add(`${tag}${attrStr}`);
-                        if (id) results.add(`${tag}${id}${attrStr}`);
-                        if (classes) results.add(`${tag}${classes}${attrStr}`);
-                        if (id && classes) results.add(`${tag}${id}${classes}${attrStr}`);
+                    if (val && val.length < 50) {
+                        results.push(`${tag}[${attr}="${val}"]`);
+                        return;
                     }
-                });
+                }
+
+                // Priority 3: Classes (if not too many or dynamic-looking)
+                if (el.classList.length > 0) {
+                    const classes = Array.from(el.classList)
+                        .filter(c => !/\d/.test(c)) // Skip classes with numbers (likely dynamic)
+                        .map(c => '.' + c).join('');
+                    if (classes) {
+                        results.push(`${tag}${classes}`);
+                        return;
+                    }
+                }
+
+                // Priority 4: Href (for links)
+                const href = el.getAttribute('href');
+                if (href && href.length < 40 && href !== '#') {
+                    results.push(`${tag}[href="${href}"]`);
+                    return;
+                }
             });
 
-            return Array.from(results).filter(s => s.length < 150).sort();
+            return Array.from(new Set(results)).sort();
         })()"#;
         
         let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
