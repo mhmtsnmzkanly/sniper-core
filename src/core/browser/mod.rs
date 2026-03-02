@@ -127,7 +127,25 @@ impl BrowserManager {
             }
         }
 
-        std::fs::write(&final_path, html.as_bytes())?;
-        Ok(final_path)
-    }
-}
+        /// Belirli bir sekmede JavaScript çalıştırır
+        pub async fn execute_script(port: u16, tab_id: String, script: String) -> Result<String> {
+            let ws_url = Self::get_ws_url(port).await?;
+            let (browser, mut handler) = Browser::connect(ws_url).await?;
+            tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+
+            let pages = browser.pages().await?;
+            let page = pages.into_iter()
+                .find(|p| p.target_id().as_ref() == tab_id)
+                .ok_or(anyhow!("Tab not found"))?;
+
+            let result = page.evaluate(script).await?;
+
+            // Sonucu okunabilir bir metne dönüştür
+            if let Some(val) = result.value() {
+                Ok(format!("{}", val))
+            } else {
+                Ok("Undefined / No return value".to_string())
+            }
+        }
+        }
+

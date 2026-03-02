@@ -10,9 +10,11 @@ pub enum AppEvent {
     
     // UI Komutları
     RequestCapture(String, bool), // tab_id, mirror_mode
+    RequestScriptExecution(String, String), // tab_id, script
     RequestTabRefresh,
     
     // Durum Olayları
+    ScriptFinished(String),
     OperationSuccess(String),
     OperationError(String),
 }

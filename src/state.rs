@@ -4,6 +4,7 @@ use crate::config::AppConfig;
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Scrape,
+    Automation,
     Translate,
     Settings,
 }
@@ -41,6 +42,11 @@ pub struct AppState {
     // Translate State
     pub is_translating: bool,
     
+    // Automation / Script State
+    pub js_script: String,
+    pub js_result: String,
+    pub js_execution_active: bool,
+    
     // Logs
     pub logs: Vec<LogEntry>,
 }
@@ -58,6 +64,9 @@ impl AppState {
             mirror_mode: false,
             last_tab_refresh: 0.0,
             is_translating: false,
+            js_script: "document.title".to_string(),
+            js_result: String::new(),
+            js_execution_active: false,
             logs: Vec::new(),
         }
     }

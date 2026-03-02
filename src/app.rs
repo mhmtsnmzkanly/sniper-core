@@ -109,36 +109,36 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                AppEvent::OperationError(msg) => {
-                    tracing::error!("System Error: {}", msg);
+                AppEvent::RequestScriptExecution(tab_id, script) => {
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::execute_script(port, tab_id, script).await {
+                            Ok(res) => ui::scrape::emit(AppEvent::ScriptFinished(res)),
+                            Err(e) => ui::scrape::emit(AppEvent::ScriptFinished(format!("Error: {}", e))),
+                        }
+                    });
                 }
-                _ => {}
-            }
-        }
-
-        // 4. UI Çizim
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("SCRAPER STUDIO");
-            ui.add_space(10.0);
-            ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "SCRAPE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Translate, "TRANSLATE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "SETTINGS");
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
-            });
-        });
-
-        egui::TopBottomPanel::bottom("log_panel").resizable(true).default_height(350.0).show(ctx, |ui| {
-            ui::log_panel::render(ui, &mut self.state);
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.state.active_tab {
+                AppEvent::ScriptFinished(res) => {
+                    self.state.js_result = res;
+                    self.state.js_execution_active = false;
+                }
+                ...
+                egui::SidePanel::left("side_panel").show(ctx, |ui| {
+                ui.heading("SCRAPER STUDIO");
+                ui.add_space(10.0);
+                ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "🔍 SCRAPE");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Automation, "⚡ AUTOMATION");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Translate, "🌐 TRANSLATE");
+                ...
+                egui::CentralPanel::default().show(ctx, |ui| {
+                match self.state.active_tab {
                 Tab::Scrape => ui::scrape::render(ui, &mut self.state),
+                Tab::Automation => ui::automation::render(ui, &mut self.state),
                 Tab::Translate => ui::translate::render(ui, &mut self.state),
                 Tab::Settings => ui::config_panel::render(ui, &mut self.state),
-            }
-        });
+                }
+                });
+
 
         ctx.request_repaint();
     }
