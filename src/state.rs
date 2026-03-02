@@ -42,6 +42,8 @@ pub enum AutomationStep {
         selector: String,
         body: Vec<AutomationStep>,
     },
+    Screenshot(String),
+    WaitUntilIdle,
     InjectJS(String),
 }
 

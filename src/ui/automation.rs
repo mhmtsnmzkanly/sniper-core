@@ -11,7 +11,6 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         (ws.auto_steps.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone(), ws.variables.clone(), ws.var_edit_key.clone(), ws.var_edit_val.clone(), ws.extracted_data.clone())
     };
 
-    // --- LEFT PANEL: PIPELINE & VARIABLES ---
     ui.columns(2, |cols| {
         // COLUMN 0: Pipeline Builder
         cols[0].group(|ui| {
@@ -20,12 +19,22 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("SCAN").clicked() { emit(AppEvent::RequestPageSelectors(tid.to_string())); }
                     ui.menu_button("➕ ADD", |ui| {
-                        if ui.button("🌐 Nav").clicked() { auto_steps.push(AutomationStep::Navigate("https://".into())); ui.close_menu(); }
+                        ui.set_min_width(150.0);
+                        if ui.button("🌐 Navigate").clicked() { auto_steps.push(AutomationStep::Navigate("https://".into())); ui.close_menu(); }
                         if ui.button("🖱 Click").clicked() { auto_steps.push(AutomationStep::Click("".into())); ui.close_menu(); }
                         if ui.button("⌨ Type").clicked() { auto_steps.push(AutomationStep::Type { selector: "".into(), value: "".into(), use_variable: false }); ui.close_menu(); }
                         ui.separator();
-                        if ui.button("🧪 Ext").clicked() { auto_steps.push(AutomationStep::Extract { selector: "".into(), as_key: "data".into(), add_to_dataset: true }); ui.close_menu(); }
+                        if ui.button("⏳ Wait").clicked() { auto_steps.push(AutomationStep::Wait(1)); ui.close_menu(); }
+                        if ui.button("🔍 Wait Sel").clicked() { auto_steps.push(AutomationStep::WaitSelector("".into())); ui.close_menu(); }
+                        if ui.button("💤 Wait Idle").clicked() { auto_steps.push(AutomationStep::WaitUntilIdle); ui.close_menu(); }
+                        ui.separator();
+                        if ui.button("🧪 Extract").clicked() { auto_steps.push(AutomationStep::Extract { selector: "".into(), as_key: "data".into(), add_to_dataset: true }); ui.close_menu(); }
+                        if ui.button("🆕 New Row").clicked() { auto_steps.push(AutomationStep::NewRow); ui.close_menu(); }
                         if ui.button("🔁 Loop").clicked() { auto_steps.push(AutomationStep::ForEach { selector: "".into(), body: vec![] }); ui.close_menu(); }
+                        ui.separator();
+                        if ui.button("📸 Screenshot").clicked() { auto_steps.push(AutomationStep::Screenshot("capture.png".into())); ui.close_menu(); }
+                        if ui.button("💾 Export").clicked() { auto_steps.push(AutomationStep::Export("result.json".into())); ui.close_menu(); }
+                        if ui.button("📜 Scroll").clicked() { auto_steps.push(AutomationStep::ScrollBottom); ui.close_menu(); }
                     });
                 });
             });
@@ -36,6 +45,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             let mut move_to = None;
 
             egui::ScrollArea::vertical().max_height(400.0).id_salt("auto_steps_scroll").show(ui, |ui| {
+                if auto_steps.is_empty() { ui.label("No blocks added."); }
                 for (idx, step) in auto_steps.iter_mut().enumerate() {
                     let item_id = egui::Id::new(("step", idx));
                     let dnd_res = ui.dnd_drag_source(item_id, idx, |ui| {
@@ -103,26 +113,39 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
     ui.add_space(10.0);
     ui.horizontal(|ui| {
-        let can_run = auto_status == AutomationStatus::Idle && !auto_steps.is_empty();
-        if ui.add_enabled(can_run, egui::Button::new(RichText::new("▶ EXECUTE").strong()).min_size([150.0, 40.0].into())).clicked() {
+        // --- FIX: Button is now clickable if finished or error, allowing re-runs ---
+        let is_running = matches!(auto_status, AutomationStatus::Running(_));
+        let btn_text = match &auto_status {
+            AutomationStatus::Running(i) => format!("🏃 RUNNING STEP {}...", i + 1),
+            AutomationStatus::Finished => "✅ FINISHED (RUN AGAIN)".into(),
+            AutomationStatus::Error(_) => "❌ ERROR (RETRY)".into(),
+            _ => "▶ START EXECUTION".into(),
+        };
+
+        if ui.add_enabled(!is_running && !auto_steps.is_empty(), 
+            egui::Button::new(RichText::new(btn_text).strong()).min_size([200.0, 40.0].into()))
+            .clicked() {
             auto_status = AutomationStatus::Running(0);
             emit(AppEvent::RequestAutomationRun(tid.to_string(), auto_steps.clone()));
         }
-        if ui.button("💾 SAVE DSL").clicked() {
-            let dsl = map_steps_to_dsl(&auto_steps);
-            if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
-                if let Ok(json) = serde_json::to_string_pretty(&dsl) { let _ = std::fs::write(path, json); }
-            }
-        }
-        if ui.button("📁 LOAD DSL").clicked() {
-            if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    if let Ok(dsl) = serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
-                        auto_steps = map_dsl_to_steps(dsl.steps);
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("📁 LOAD").clicked() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        if let Ok(dsl) = serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
+                            auto_steps = map_dsl_to_steps(dsl.steps);
+                        }
                     }
                 }
             }
-        }
+            if ui.button("💾 SAVE").clicked() {
+                let dsl = map_steps_to_dsl(&auto_steps);
+                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
+                    if let Ok(json) = serde_json::to_string_pretty(&dsl) { let _ = std::fs::write(path, json); }
+                }
+            }
+        });
     });
 
     if let Some(ws) = state.workspaces.get_mut(tid) {
@@ -138,7 +161,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String], search: &mut String, vars: &std::collections::HashMap<String, String>) {
     let (color, title) = match step {
         AutomationStep::Navigate(_) | AutomationStep::Click(_) | AutomationStep::Type { .. } => (Color32::from_rgb(80, 130, 255), "ACT"),
-        AutomationStep::Wait(_) | AutomationStep::WaitSelector(_) | AutomationStep::ScrollBottom => (Color32::from_rgb(255, 200, 50), "W8"),
+        AutomationStep::Wait(_) | AutomationStep::WaitSelector(_) | AutomationStep::WaitUntilIdle => (Color32::from_rgb(255, 200, 50), "W8"),
         AutomationStep::If { .. } | AutomationStep::ForEach { .. } => (Color32::from_rgb(255, 100, 50), "CTRL"),
         _ => (Color32::from_rgb(50, 220, 120), "DATA"),
     };
@@ -165,6 +188,13 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                     ui.add(egui::TextEdit::singleline(as_key).desired_width(60.0));
                     ui.checkbox(add_to_dataset, "DB");
                 }
+                AutomationStep::Screenshot(f) => { ui.label("To:"); ui.add(egui::TextEdit::singleline(f).desired_width(100.0)); }
+                AutomationStep::Wait(secs) => { ui.add(egui::DragValue::new(secs)); ui.label("s"); }
+                AutomationStep::WaitSelector(sel) => { selector_input(ui, sel, discovered, search); }
+                AutomationStep::WaitUntilIdle => { ui.label("Until Network Idle"); }
+                AutomationStep::Export(f) => { ui.label("To:"); ui.add(egui::TextEdit::singleline(f).desired_width(100.0)); }
+                AutomationStep::NewRow => { ui.label("START NEW ROW"); }
+                AutomationStep::ScrollBottom => { ui.label("TO BOTTOM"); }
                 _ => { ui.label("Other Step"); }
             }
             if ui.button("x").clicked() { *delete_idx = Some(idx); }
@@ -199,7 +229,11 @@ fn map_steps_to_dsl(steps: &[AutomationStep]) -> crate::core::automation::dsl::A
             },
             AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
             AutomationStep::WaitSelector(sel) => crate::core::automation::dsl::Step::WaitFor { selector: sel.clone(), timeout_ms: Some(5000) },
+            AutomationStep::WaitUntilIdle => crate::core::automation::dsl::Step::WaitUntilIdle { timeout_ms: Some(2000) },
+            AutomationStep::Screenshot(f) => crate::core::automation::dsl::Step::Screenshot { filename: f.clone() },
+            AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
             AutomationStep::Extract { selector, as_key, add_to_dataset } => crate::core::automation::dsl::Step::Extract { selector: selector.clone(), as_key: as_key.clone(), add_to_row: Some(*add_to_dataset) },
+            AutomationStep::SetVariable { key, value } => crate::core::automation::dsl::Step::SetVariable { key: key.clone(), value: value.clone() },
             AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
             AutomationStep::Export(f) => crate::core::automation::dsl::Step::Export { filename: f.clone() },
             AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_steps_to_dsl(body).steps },
@@ -219,7 +253,14 @@ fn map_dsl_to_steps(steps: Vec<crate::core::automation::dsl::Step>) -> Vec<Autom
                 AutomationStep::Type { selector, value, use_variable: false }
             }
         },
+        crate::core::automation::dsl::Step::WaitFor { selector, timeout_ms } => {
+            if selector == "body" { AutomationStep::Wait(timeout_ms.unwrap_or(1000) / 1000) }
+            else { AutomationStep::WaitSelector(selector) }
+        },
+        crate::core::automation::dsl::Step::WaitUntilIdle { .. } => AutomationStep::WaitUntilIdle,
+        crate::core::automation::dsl::Step::Screenshot { filename } => AutomationStep::Screenshot(filename),
         crate::core::automation::dsl::Step::Extract { selector, as_key, add_to_row } => AutomationStep::Extract { selector, as_key, add_to_dataset: add_to_row.unwrap_or(true) },
+        crate::core::automation::dsl::Step::SetVariable { key, value } => AutomationStep::SetVariable { key, value },
         crate::core::automation::dsl::Step::NewRow => AutomationStep::NewRow,
         crate::core::automation::dsl::Step::Export { filename } => AutomationStep::Export(filename),
         crate::core::automation::dsl::Step::ForEach { selector, body } => AutomationStep::ForEach { selector, body: map_dsl_to_steps(body) },
