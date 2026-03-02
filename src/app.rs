@@ -191,7 +191,7 @@ impl eframe::App for CrawlerApp {
                     };
 
                     tokio::spawn(async move {
-                        let mut engine = crate::core::automation::AutomationEngine::new(port, tid_clone);
+                        let mut engine = crate::core::automation::AutomationEngine::new(port, tid_clone, root);
                         let _ = engine.run(dsl).await;
                     });
                 }

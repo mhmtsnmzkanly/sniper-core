@@ -7,10 +7,11 @@ pub struct AutomationContext {
     pub current_step: usize,
     pub port: u16,
     pub tab_id: String,
+    pub output_dir: std::path::PathBuf,
 }
 
 impl AutomationContext {
-    pub fn new(port: u16, tab_id: String) -> Self {
+    pub fn new(port: u16, tab_id: String, output_dir: std::path::PathBuf) -> Self {
         Self {
             variables: HashMap::new(),
             current_row: HashMap::new(),
@@ -18,6 +19,7 @@ impl AutomationContext {
             current_step: 0,
             port,
             tab_id,
+            output_dir,
         }
     }
 

@@ -12,16 +12,16 @@ pub struct AutomationEngine {
 }
 
 impl AutomationEngine {
-    pub fn new(port: u16, tab_id: String) -> Self {
+    pub fn new(port: u16, tab_id: String, output_dir: std::path::PathBuf) -> Self {
         Self {
-            context: Arc::new(Mutex::new(AutomationContext::new(port, tab_id))),
+            context: Arc::new(Mutex::new(AutomationContext::new(port, tab_id, output_dir))),
         }
     }
 
     pub async fn run(&mut self, dsl: AutomationDsl) -> AppResult<()> {
-        let (port, tid) = {
+        let (port, tid, output_dir) = {
             let ctx = self.context.lock().unwrap();
-            (ctx.port, ctx.tab_id.clone())
+            (ctx.port, ctx.tab_id.clone(), ctx.output_dir.clone())
         };
 
         tracing::info!("[AUTO-ENGINE] Connecting to browser for pipeline...");
@@ -43,14 +43,11 @@ impl AutomationEngine {
 
         let page = page.ok_or_else(|| AppError::NotFound(format!("Target page {} not found", tid)))?;
         
-        // --- AUTO-ENGINE ENHANCEMENT: Dialog Handler ---
-        // Automatically accept any alerts or confirm dialogs that might block automation
         page.execute(chromiumoxide::cdp::browser_protocol::page::EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut dialog_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::page::EventJavascriptDialogOpening>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page_for_dialog = page.clone();
         tokio::spawn(async move {
             while let Some(_) = dialog_events.next().await {
-                tracing::warn!("[AUTO-ENGINE] Auto-dismissing JS Dialog.");
                 let _ = page_for_dialog.execute(chromiumoxide::cdp::browser_protocol::page::HandleJavaScriptDialogParams::builder().accept(true).build().unwrap()).await;
             }
         });
@@ -71,13 +68,14 @@ impl AutomationEngine {
                 Err(e) => {
                     tracing::error!("[AUTO-ENGINE] Step {} failed: {}", idx + 1, e);
                     
-                    // --- AUTO-ENGINE ENHANCEMENT: Failure Screenshot ---
                     let ts = chrono::Local::now().format("%H%M%S").to_string();
                     let filename = format!("FAIL_STEP_{}_{}.png", idx + 1, ts);
+                    let full_path = output_dir.join(&filename);
+                    
                     if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
-                        let _ = std::fs::write(&filename, data);
-                        tracing::warn!("[AUTO-ENGINE] Failure screenshot saved to {}", filename);
-                        emit(AppEvent::OperationError(format!("Failure! Screenshot saved as {}", filename)));
+                        let _ = std::fs::write(&full_path, data);
+                        tracing::warn!("[AUTO-ENGINE] Failure screenshot saved to {:?}", full_path);
+                        emit(AppEvent::OperationError(format!("Failure! Saved to: {}", filename)));
                     }
 
                     emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
@@ -127,7 +125,10 @@ impl AutomationEngine {
 
     fn execute_step_internal<'a>(&'a self, step: &'a Step, page: &'a Page) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let tid = { self.context.lock().unwrap().tab_id.clone() };
+            let (tid, output_dir) = { 
+                let ctx = self.context.lock().unwrap();
+                (ctx.tab_id.clone(), ctx.output_dir.clone())
+            };
 
             match step {
                 Step::Navigate { url } => {
@@ -148,7 +149,7 @@ impl AutomationEngine {
                     let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
                     el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
-                Step::Type { selector, value } => {
+                Step::Type { selector, value, .. } => {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
                     let highlight_js = format!(
@@ -156,7 +157,7 @@ impl AutomationEngine {
                             const el = document.querySelector('{}'); \
                             if (!el) throw new Error('Input not found'); \
                             el.style.outline = '3px solid #00ffff'; \
-                            el.scrollInto_view({{behavior: 'instant', block: 'center'}}); \
+                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
                             return true; \
                         }})()", final_sel.replace("'", "\\'")
                     );
@@ -220,6 +221,7 @@ impl AutomationEngine {
                 }
                 Step::Export { filename } => {
                     let final_name = self.interpolate(filename);
+                    let full_path = output_dir.join(&final_name);
                     let data = {
                         let mut ctx = self.context.lock().unwrap();
                         ctx.push_current_row();
@@ -227,19 +229,18 @@ impl AutomationEngine {
                     };
                     if !data.is_empty() {
                         if let Ok(json) = serde_json::to_string_pretty(&data) {
-                            let _ = std::fs::write(&final_name, json);
+                            let _ = std::fs::write(full_path, json);
                         }
                     }
                 }
                 Step::Screenshot { filename } => {
                     let final_name = self.interpolate(filename);
+                    let full_path = output_dir.join(&final_name);
                     if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
-                        let _ = std::fs::write(&final_name, data);
-                        tracing::info!("[AUTO-ENGINE] Manual screenshot saved to {}", final_name);
+                        let _ = std::fs::write(full_path, data);
                     }
                 }
                 Step::WaitUntilIdle { timeout_ms } => {
-                    // Wait for network requests to finish
                     let _ = page.wait_for_navigation().await;
                     tokio::time::sleep(std::time::Duration::from_millis(timeout_ms.unwrap_or(1000))).await;
                 }
