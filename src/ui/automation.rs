@@ -15,7 +15,8 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 ui.menu_button("➕ Add Step", |ui| {
                     if ui.button("Navigate").clicked() { ws.auto_steps.push(AutomationStep::Navigate(String::new())); ui.close_menu(); }
                     if ui.button("Click").clicked() { ws.auto_steps.push(AutomationStep::Click(String::new())); ui.close_menu(); }
-                    if ui.button("Wait").clicked() { ws.auto_steps.push(AutomationStep::Wait(1)); ui.close_menu(); }
+                    if ui.button("Wait (Sec)").clicked() { ws.auto_steps.push(AutomationStep::Wait(1)); ui.close_menu(); }
+                    if ui.button("Wait (Selector)").clicked() { ws.auto_steps.push(AutomationStep::WaitSelector(String::new())); ui.close_menu(); }
                     if ui.button("Scroll Bottom").clicked() { ws.auto_steps.push(AutomationStep::ScrollBottom); ui.close_menu(); }
                     if ui.button("Extract Text").clicked() { ws.auto_steps.push(AutomationStep::ExtractText(String::new())); ui.close_menu(); }
                 });
@@ -74,6 +75,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                         AutomationStep::Navigate(url) => { ui.label("Nav:"); ui.text_edit_singleline(url); }
                         AutomationStep::Click(sel) => { ui.label("Clk:"); ui.text_edit_singleline(sel); }
                         AutomationStep::Wait(secs) => { ui.label("W8:"); ui.add(egui::DragValue::new(secs).range(1..=60)); ui.label("s"); }
+                        AutomationStep::WaitSelector(sel) => { ui.label("W8 Sel:"); ui.text_edit_singleline(sel); }
                         AutomationStep::ExtractText(sel) => { ui.label("Ext:"); ui.text_edit_singleline(sel); }
                         AutomationStep::ScrollBottom => { ui.label("Scroll to bottom"); }
                         _ => {}
