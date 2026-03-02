@@ -102,6 +102,7 @@ pub struct TabWorkspace {
     pub open_time: f64,
     pub active_request_id: Option<String>,
     pub active_media_url: Option<String>,
+    pub blocked_urls: HashSet<String>,
 }
 
 impl TabWorkspace {
@@ -119,6 +120,7 @@ impl TabWorkspace {
             sniffer_active: false, auto_reload_triggered: false, open_time: 0.0,
             active_request_id: None,
             active_media_url: None,
+            blocked_urls: HashSet::new(),
         }
     }
 }

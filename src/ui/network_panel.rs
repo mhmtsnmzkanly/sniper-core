@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use egui::{Ui, Color32, RichText};
+use crate::core::events::AppEvent;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
@@ -37,6 +38,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.label(format!("Captured: {}", ws.network_requests.len()));
             });
         });
+
+        if !ws.blocked_urls.is_empty() {
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Blocked Patterns:").small().color(Color32::LIGHT_RED));
+                let patterns: Vec<String> = ws.blocked_urls.iter().cloned().collect();
+                for p in patterns {
+                    if ui.add(egui::Label::new(RichText::new(&p).small().color(Color32::GRAY)).sense(egui::Sense::click())).on_hover_text("Click to unblock").clicked() {
+                        crate::ui::scrape::emit(AppEvent::RequestUrlUnblock(tid.clone(), p));
+                    }
+                }
+            });
+        }
     });
 
     ui.add_space(5.0);
@@ -78,6 +92,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         }
                         if ui.button("RES").on_hover_text("View Response Body").clicked() {
                             ws.active_request_id = Some(format!("res_{}", req.request_id));
+                        }
+                        
+                        let is_blocked = ws.blocked_urls.contains(&req.url);
+                        if ui.button(if is_blocked { "🔓" } else { "🚫" }).on_hover_text(if is_blocked { "Unblock this URL" } else { "Block this URL" }).clicked() {
+                            if is_blocked {
+                                crate::ui::scrape::emit(AppEvent::RequestUrlUnblock(tid.clone(), req.url.clone()));
+                            } else {
+                                crate::ui::scrape::emit(AppEvent::RequestUrlBlock(tid.clone(), req.url.clone()));
+                            }
                         }
                         
                         // --- CSS RESOURCE EXTRACTOR ---

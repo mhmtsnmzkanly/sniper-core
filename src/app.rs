@@ -138,6 +138,26 @@ impl eframe::App for CrawlerApp {
                         let _ = crate::core::browser::BrowserManager::reload_page(port, tid).await;
                     });
                 }
+                AppEvent::RequestUrlBlock(tid, pattern) => {
+                    let port = self.state.config.remote_debug_port;
+                    let ws = self.ensure_workspace(&tid);
+                    ws.blocked_urls.insert(pattern);
+                    let tid_clone = tid.clone();
+                    let blocked = ws.blocked_urls.iter().cloned().collect::<Vec<_>>();
+                    tokio::spawn(async move {
+                        let _ = crate::core::browser::BrowserManager::set_url_blocking(port, tid_clone, blocked).await;
+                    });
+                }
+                AppEvent::RequestUrlUnblock(tid, pattern) => {
+                    let port = self.state.config.remote_debug_port;
+                    let ws = self.ensure_workspace(&tid);
+                    ws.blocked_urls.remove(&pattern);
+                    let tid_clone = tid.clone();
+                    let blocked = ws.blocked_urls.iter().cloned().collect::<Vec<_>>();
+                    tokio::spawn(async move {
+                        let _ = crate::core::browser::BrowserManager::set_url_blocking(port, tid_clone, blocked).await;
+                    });
+                }
                 AppEvent::RequestScriptExecution(tid, script) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
@@ -178,6 +198,26 @@ impl eframe::App for CrawlerApp {
                                 tracing::error!("[STORAGE <-> ERROR] Cookie fetch failed: {}", e);
                                 ui::scrape::emit(AppEvent::OperationError(e.to_string()));
                             }
+                        }
+                    });
+                }
+                AppEvent::RequestCookieDelete(tid, name, domain) => {
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::delete_cookie(port, tid_clone.clone(), name, domain).await {
+                            Ok(_) => ui::scrape::emit(AppEvent::RequestCookies(tid_clone)),
+                            Err(e) => ui::scrape::emit(AppEvent::OperationError(e.to_string())),
+                        }
+                    });
+                }
+                AppEvent::RequestCookieAdd(tid, cookie) => {
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::add_cookie(port, tid_clone.clone(), cookie).await {
+                            Ok(_) => ui::scrape::emit(AppEvent::RequestCookies(tid_clone)),
+                            Err(e) => ui::scrape::emit(AppEvent::OperationError(e.to_string())),
                         }
                     });
                 }

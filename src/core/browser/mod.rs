@@ -208,6 +208,51 @@ impl BrowserManager {
         Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie { name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(), expires: c.expires, secure: c.secure, http_only: c.http_only }).collect())
     }
 
+    pub async fn delete_cookie(port: u16, tab_id: String, name: String, domain: String) -> AppResult<()> {
+        use chromiumoxide::cdp::browser_protocol::network::DeleteCookiesParams;
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let cmd = DeleteCookiesParams::builder().name(name).domain(domain).build().map_err(|e| AppError::Browser(e))?;
+        page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn add_cookie(port: u16, tab_id: String, cookie: crate::state::ChromeCookie) -> AppResult<()> {
+        use chromiumoxide::cdp::browser_protocol::network::{SetCookieParams, TimeSinceEpoch};
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let mut builder = SetCookieParams::builder()
+            .name(cookie.name)
+            .value(cookie.value)
+            .domain(cookie.domain)
+            .path(cookie.path)
+            .secure(cookie.secure)
+            .http_only(cookie.http_only);
+            
+        if cookie.expires > 0.0 {
+            builder = builder.expires(TimeSinceEpoch::new(cookie.expires));
+        }
+
+        let cmd = builder.build().map_err(|e| AppError::Browser(e))?;
+        page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn set_url_blocking(port: u16, tab_id: String, blocked_urls: Vec<String>) -> AppResult<()> {
+        use chromiumoxide::cdp::browser_protocol::network::{SetBlockedUrLsParams, BlockPattern};
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let url_patterns = blocked_urls.into_iter().map(|url| BlockPattern { url_pattern: url, block: true }).collect();
+        let cmd = SetBlockedUrLsParams { url_patterns: Some(url_patterns) };
+        page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn get_output_path(root: PathBuf, category: &str, url_str: &str) -> AppResult<PathBuf> {
         let parsed = url::Url::parse(url_str).map_err(|e| AppError::Internal(e.to_string()))?;
         let domain = parsed.host_str().unwrap_or("unknown_domain");

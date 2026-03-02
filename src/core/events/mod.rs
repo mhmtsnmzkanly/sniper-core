@@ -17,6 +17,8 @@ pub enum AppEvent {
     RequestAutomationRun(String, Vec<AutomationStep>), // Added back
     RequestTabRefresh,
     RequestPageReload(String),
+    RequestUrlBlock(String, String), // tab_id, url_pattern
+    RequestUrlUnblock(String, String), // tab_id, url_pattern
     TerminateBrowser,
     
     // --- STORAGE COMMANDS ---
