@@ -10,7 +10,7 @@ egui = "0.31"
 rfd = "0.14"
 
 # CDP & Engine
-chromiumoxide = { version = "0.6", features = ["tokio"] }
+chromiumoxide = "0.9.1"
 
 # Async & Networking
 tokio = { version = "1", features = ["full"] }

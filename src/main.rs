@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 1. Kanalları Hazırla
     let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
     
     // 2. Loglama Sistemini Başlat
     let (_log_guard, timestamp) = logger::init_logging(log_sender);

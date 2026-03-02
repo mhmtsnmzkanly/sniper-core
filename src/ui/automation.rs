@@ -65,6 +65,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let btn_text = match &state.auto_status {
             AutomationStatus::Idle => "▶ START PIPELINE",
             AutomationStatus::Running(_i) => "RUNNING...",
+
             AutomationStatus::Finished => "PIPELINE FINISHED",
             AutomationStatus::Error(_) => "PIPELINE FAILED",
         };

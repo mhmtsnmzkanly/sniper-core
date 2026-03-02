@@ -64,7 +64,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
             } else {
                 if ui.button(RichText::new("STOP BROWSER").color(Color32::RED)).clicked() {
-                    emit(AppEvent::BrowserTerminated);
+                    emit(AppEvent::TerminateBrowser);
                 }
             }
         });
@@ -91,17 +91,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.label(RichText::new("Waiting for tabs... (Auto-refresh active)").italics().color(Color32::GRAY));
                 });
             } else {
-                let column_width = (ui.available_width() - 40.0) / 3.0;
-                egui::Grid::new("tab_grid_phase1")
+                let total_width = ui.available_width();
+                let id_width = 80.0;
+                let select_width = 100.0;
+                let info_width = total_width - id_width - select_width - 40.0;
+
+                egui::Grid::new("tab_grid_v5")
                     .num_columns(3)
-                    .min_col_width(column_width)
-                    .max_col_width(column_width)
-                    .spacing([15.0, 12.0])
+                    .spacing([10.0, 12.0])
                     .striped(true)
                     .show(ui, |ui| {
                         ui.label(RichText::new("ID").strong().color(Color32::KHAKI));
-                        ui.label(RichText::new("TITLE").strong().color(Color32::KHAKI));
-                        ui.label(RichText::new("URL").strong().color(Color32::KHAKI));
+                        ui.label(RichText::new("PAGE INFO").strong().color(Color32::KHAKI));
+                        ui.label(RichText::new("ACTION").strong().color(Color32::KHAKI));
                         ui.end_row();
 
                         let tabs = state.available_tabs.clone();
@@ -115,26 +117,20 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             } else { 
                                 tab.id.clone() 
                             };
+                            ui.label(RichText::new(short_id).monospace().size(font_size).color(Color32::DARK_GRAY));
 
-                            if ui.selectable_label(is_selected, RichText::new(short_id).monospace().size(font_size)).clicked() {
+                            // Col 2: Info (Full URL and Title visible)
+                            ui.allocate_ui(egui::vec2(info_width, 40.0), |ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(&tab.title).strong().size(font_size).color(if is_selected { Color32::LIGHT_BLUE } else { Color32::WHITE }));
+                                    ui.label(RichText::new(&tab.url).small().italics().color(Color32::GRAY));
+                                });
+                            });
+
+                            // Col 3: Select
+                            if ui.selectable_label(is_selected, if is_selected { "SELECTED" } else { "SELECT" }).clicked() {
                                 state.selected_tab_id = Some(tab.id.clone());
                             }
-
-                            // Col 2: Title
-                            let trunc_title = if tab.title.chars().count() > 40 { 
-                                format!("{}...", tab.title.chars().take(40).collect::<String>()) 
-                            } else { 
-                                tab.title.clone() 
-                            };
-                            ui.label(RichText::new(trunc_title).strong().size(font_size));
-
-                            // Col 3: URL
-                            let trunc_url = if tab.url.chars().count() > 50 { 
-                                format!("{}...", tab.url.chars().take(50).collect::<String>()) 
-                            } else { 
-                                tab.url.clone() 
-                            };
-                            ui.label(RichText::new(trunc_url).italics().color(Color32::GRAY).size(font_size));
                             
                             ui.end_row();
                         }

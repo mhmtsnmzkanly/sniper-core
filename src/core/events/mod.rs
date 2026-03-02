@@ -16,6 +16,7 @@ pub enum AppEvent {
     RequestCookies(String),
     RequestEmulation(String, String, f64, f64), // tab_id, ua, lat, lon
     RequestTabRefresh,
+    TerminateBrowser, // Command from UI to kill browser
     
     // Durum Olayları
     CookiesReceived(Vec<crate::state::ChromeCookie>),

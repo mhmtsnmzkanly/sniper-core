@@ -1,4 +1,5 @@
 use crate::core::error::{AppError, AppResult};
+use tracing::{info, debug, error, warn};
 use std::path::PathBuf;
 use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
@@ -64,16 +65,14 @@ impl BrowserManager {
 
     pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
         let client = rquest::Client::builder()
-            .timeout(std::time::Duration::from_millis(800))
+            .timeout(std::time::Duration::from_millis(1500))
             .build()?;
             
         let url = format!("http://127.0.0.1:{}/json/list", port);
-        let tabs: Vec<ChromeTabInfo> = client.get(url)
-            .send()
-            .await?
-            .json()
-            .await?;
-
+        let resp = client.get(url).send().await
+            .map_err(|e| AppError::Network(format!("Failed to connect to browser: {}", e)))?;
+            
+        let tabs: Vec<ChromeTabInfo> = resp.json().await?;
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page" && !t.url.is_empty()).collect())
     }
 
@@ -87,17 +86,17 @@ impl BrowserManager {
 
         Ok(json["webSocketDebuggerUrl"]
             .as_str()
-            .ok_or_else(|| AppError::NotFound("WS URL missing in response".into()))?
+            .ok_or_else(|| AppError::NotFound("WS URL missing".into()))?
             .to_string())
     }
 
     pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> AppResult<PathBuf> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url)
-            .await
+        let (browser, mut handler) = Browser::connect(ws_url).await
             .map_err(|e| AppError::Browser(format!("WS Connection failed: {}", e)))?;
             
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter()
@@ -127,11 +126,9 @@ impl BrowserManager {
         let domain = parsed_url.host_str().unwrap_or("unknown");
         let dir = save_root.join(domain);
         std::fs::create_dir_all(&dir).map_err(AppError::Io)?;
-        
         let filename = parsed_url.path().trim_matches('/').replace('/', ".");
         let filename = if filename.is_empty() { "index.html".to_string() } else { format!("{}.html", filename) };
         let final_path = dir.join(filename);
-        
         std::fs::write(&final_path, html.as_bytes()).map_err(AppError::Io)?;
         Ok(final_path)
     }
@@ -140,12 +137,9 @@ impl BrowserManager {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter()
-            .find(|p| p.target_id().as_ref() == tab_id)
-            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
-            
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         let result = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(result.value().map(|v| format!("{}", v)).unwrap_or_else(|| "No return value".to_string()))
     }
@@ -154,21 +148,17 @@ impl BrowserManager {
         use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams};
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
+        tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter()
-            .find(|p| p.target_id().as_ref() == tab_id)
-            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
-        
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         page.execute(EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
         let mut request_events = page.event_listener::<EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut response_events = page.event_listener::<EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
         tokio::spawn(async move {
-            tokio::select! {
-                _ = async {
-                    while let Some(e) = request_events.next().await {
+            loop {
+                tokio::select! {
+                    Some(e) = request_events.next() => {
                         let req = crate::state::NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
@@ -179,16 +169,11 @@ impl BrowserManager {
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
                     }
-                } => {}
-                _ = async {
-                    while let Some(e) = response_events.next().await {
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
-                            e.request_id.as_ref().to_string(),
-                            e.response.status as u16
-                        ));
+                    Some(e) = response_events.next() => {
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(e.request_id.as_ref().to_string(), e.response.status as u16));
                     }
-                } => {}
-                _ = async { while let Some(_) = handler.next().await {} } => {}
+                    else => break,
+                }
             }
         });
         Ok(())
@@ -198,12 +183,9 @@ impl BrowserManager {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter()
-            .find(|p| p.target_id().as_ref() == tab_id)
-            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
-            
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie {
             name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(),
@@ -215,23 +197,13 @@ impl BrowserManager {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter()
-            .find(|p| p.target_id().as_ref() == tab_id)
-            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
-        
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         if !ua.is_empty() {
-            let params = chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::new(ua);
-            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
+            page.execute(chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::new(ua)).await.map_err(|e| AppError::Browser(e.to_string()))?;
         }
-        
-        let geo_params = chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder()
-            .latitude(lat)
-            .longitude(lon)
-            .accuracy(1.0)
-            .build();
-        page.execute(geo_params).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        page.execute(chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder().latitude(lat).longitude(lon).accuracy(1.0).build()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 }

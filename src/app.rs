@@ -3,12 +3,15 @@ use crate::core::events::AppEvent;
 use crate::ui;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
+use chromiumoxide::Browser;
+use futures::StreamExt;
 
 pub struct CrawlerApp {
     pub state: AppState,
     pub log_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::state::LogEntry>,
     pub event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     pub browser_process: Arc<Mutex<Option<std::process::Child>>>,
+    pub browser_handle: Arc<Mutex<Option<Browser>>>,
 }
 
 impl CrawlerApp {
@@ -36,6 +39,7 @@ impl CrawlerApp {
             log_receiver, 
             event_receiver,
             browser_process: Arc::new(Mutex::new(None)),
+            browser_handle: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -74,19 +78,47 @@ impl eframe::App for CrawlerApp {
                     let mut lock = self.browser_process.lock().unwrap();
                     *lock = Some(child);
                     self.state.is_browser_running = true;
+                    
+                    // Persistent connection setup
+                    let port = self.state.config.remote_debug_port;
+                    let handle_store = Arc::clone(&self.browser_handle);
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        if let Ok(ws_url) = crate::core::browser::BrowserManager::get_ws_url(port).await {
+                            if let Ok((browser, mut handler)) = Browser::connect(ws_url).await {
+                                tokio::spawn(async move {
+                                    while let Some(h) = handler.next().await {
+                                        if h.is_err() { break; }
+                                    }
+                                });
+                                let mut handle_lock = handle_store.lock().unwrap();
+                                *handle_lock = Some(browser);
+                                tracing::info!("Persistent browser connection established.");
+                            }
+                        }
+                    });
                 }
-                AppEvent::BrowserTerminated => {
-                    let mut lock = self.browser_process.lock().unwrap();
-                    if let Some(mut child) = lock.take() { Self::kill_browser_group(&mut child); }
+                AppEvent::BrowserTerminated | AppEvent::TerminateBrowser => {
+                    {
+                        let mut lock = self.browser_process.lock().unwrap();
+                        if let Some(mut child) = lock.take() { Self::kill_browser_group(&mut child); }
+                    }
+                    {
+                        let mut handle_lock = self.browser_handle.lock().unwrap();
+                        *handle_lock = None;
+                    }
                     self.state.is_browser_running = false;
                     self.state.available_tabs.clear();
                     self.state.selected_tab_id = None;
+                    tracing::warn!("Browser terminated.");
                 }
                 AppEvent::RequestCapture(tab_id, mirror) => {
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.raw_output_dir.clone();
                     tokio::spawn(async move {
-                        let _ = crate::core::browser::BrowserManager::capture_html(port, tab_id, root, mirror).await;
+                        if let Err(e) = crate::core::browser::BrowserManager::capture_html(port, tab_id, root, mirror).await {
+                            tracing::error!("Capture failed: {}", e);
+                        }
                     });
                 }
                 AppEvent::RequestScriptExecution(tab_id, script) => {
@@ -105,7 +137,9 @@ impl eframe::App for CrawlerApp {
                     if enabled {
                         let port = self.state.config.remote_debug_port;
                         tokio::spawn(async move {
-                            let _ = crate::core::browser::BrowserManager::enable_network_monitoring(port, tab_id).await;
+                            if let Err(e) = crate::core::browser::BrowserManager::enable_network_monitoring(port, tab_id).await {
+                                tracing::error!("Network monitoring failed: {}", e);
+                            }
                         });
                     }
                 }
@@ -127,7 +161,6 @@ impl eframe::App for CrawlerApp {
                 AppEvent::AutomationFinished => { self.state.auto_status = crate::state::AutomationStatus::Finished; }
                 AppEvent::AutomationError(msg) => { self.state.auto_status = crate::state::AutomationStatus::Error(msg); }
                 
-                // --- FAZ 6 EVENTS ---
                 AppEvent::RequestCookies(tab_id) => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
