@@ -4,7 +4,6 @@ use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
 use crate::state::{ChromeTabInfo, ChromeCookie};
 use futures::StreamExt;
-use tracing::{debug, error};
 
 pub struct BrowserManager;
 
@@ -28,7 +27,7 @@ impl BrowserManager {
         }
         #[cfg(target_os = "windows")]
         {
-            let paths = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"];
+            let paths = ["C:\\Windows\\System32\\cmd.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"];
             for p in paths {
                 let path = PathBuf::from(p);
                 if path.exists() { return Ok(path); }
@@ -145,7 +144,7 @@ impl BrowserManager {
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams as NetEnable};
+        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams as NetEnable, GetResponseBodyParams};
         use chromiumoxide::cdp::js_protocol::runtime::{EventConsoleApiCalled, EnableParams as RuntimeEnable};
         
         let ws_url = Self::get_ws_url(port).await?;
@@ -156,7 +155,6 @@ impl BrowserManager {
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         
-        // Enable Domains
         page.execute(NetEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(RuntimeEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         
@@ -164,6 +162,8 @@ impl BrowserManager {
         let mut response_events = page.event_listener::<EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut console_events = page.event_listener::<EventConsoleApiCalled>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         
+        let page_shared = std::sync::Arc::new(page);
+
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -180,11 +180,19 @@ impl BrowserManager {
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
                     }
                     Some(e) = response_events.next() => {
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
-                            e.request_id.as_ref().to_string(), 
-                            e.response.status as u16,
-                            None
-                        ));
+                        let rid = e.request_id.clone();
+                        let page_clone = page_shared.clone();
+                        tokio::spawn(async move {
+                            if let Ok(body_res) = page_clone.execute(GetResponseBodyParams::new(rid.clone())).await {
+                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(
+                                    rid.as_ref().to_string(), 
+                                    e.response.status as u16,
+                                    Some(body_res.result.body)
+                                ));
+                            } else {
+                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(rid.as_ref().to_string(), e.response.status as u16, None));
+                            }
+                        });
                     }
                     Some(e) = console_events.next() => {
                         let msg = e.args.iter().map(|v| format!("{:?}", v.value)).collect::<Vec<_>>().join(" ");
@@ -221,22 +229,10 @@ impl BrowserManager {
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Tab not found".into()))?;
         
         if delete {
-            let params = DeleteCookiesParams::builder()
-                .name(cookie.name)
-                .domain(cookie.domain)
-                .build()
-                .map_err(|e| AppError::Browser(e))?;
+            let params = DeleteCookiesParams::builder().name(cookie.name).domain(cookie.domain).build().map_err(|e| AppError::Browser(e))?;
             page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
         } else {
-            let params = SetCookieParams::builder()
-                .name(cookie.name)
-                .value(cookie.value)
-                .domain(cookie.domain)
-                .path(cookie.path)
-                .secure(cookie.secure)
-                .http_only(cookie.http_only)
-                .build()
-                .map_err(|e| AppError::Browser(e))?;
+            let params = SetCookieParams::builder().name(cookie.name).value(cookie.value).domain(cookie.domain).path(cookie.path).secure(cookie.secure).http_only(cookie.http_only).build().map_err(|e| AppError::Browser(e))?;
             page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
         }
         Ok(())

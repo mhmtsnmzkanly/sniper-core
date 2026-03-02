@@ -6,10 +6,11 @@ mod core;
 mod config;
 
 use app::CrawlerApp;
-use core::events::AppEvent;
+use crate::core::events::AppEvent;
 use state::AppState;
 use config::loader::load_config;
 use clap::Parser;
+use eframe::egui;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -23,34 +24,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let _args = Args::parse();
     
-    // 1. Kanalları Hazırla
     let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
     
-    // 2. Loglama Sistemini Başlat
     let (_log_guard, timestamp) = logger::init_logging(log_sender);
 
-    // 3. Config Yükle
     let config = match load_config() {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("Config loading failed: {}", e);
+            tracing::error!("[CONFIG <-> LOAD] Failed: {}", e);
             return Err(e.into());
         }
     };
 
-    // 4. Uygulama Durumu
     let state = AppState::new(config, timestamp);
 
-    // 5. GUI'yi Başlat
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 800.0])
+            .with_inner_size([1100.0, 850.0])
             .with_min_inner_size([800.0, 600.0]),
         ..Default::default()
     };
 
-    tracing::info!("🚀 Sniper Scraper Studio {} Başlatılıyor...", env!("CARGO_PKG_VERSION"));
+    tracing::info!("[SYSTEM <-> INIT] Sniper Scraper Studio {} starting...", env!("CARGO_PKG_VERSION"));
     
     crate::ui::scrape::set_event_sender(event_sender);
 
@@ -58,6 +54,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Sniper Scraper Studio",
         native_options,
         Box::new(|cc| {
+            // --- UNIVERSAL OS FONT SUPPORT ---
+            let mut fonts = egui::FontDefinitions::default();
+            
+            // Priority list for Universal Unicode & Asian Language Support
+            let system_fonts = [
+                // Linux (Noto is standard for full coverage)
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+                // Windows (Standard UI fonts with Asian support)
+                "C:\\Windows\\Fonts\\msyh.ttc", // Microsoft YaHei
+                "C:\\Windows\\Fonts\\malgun.ttf", // Malgun Gothic (Korean)
+                "C:\\Windows\\Fonts\\seguiemj.ttf", // Segoe UI Emoji
+                // macOS (Standard CJK support)
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+            ];
+
+            for path in system_fonts {
+                if let Ok(font_bytes) = std::fs::read(path) {
+                    fonts.font_data.insert(
+                        "univ_font".to_owned(),
+                        egui::FontData::from_owned(font_bytes).into(),
+                    );
+                    fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
+                        .insert(0, "univ_font".to_owned());
+                    fonts.families.get_mut(&egui::FontFamily::Monospace).unwrap()
+                        .push("univ_font".to_owned());
+                    tracing::info!("[SYSTEM <-> FONT] Loaded native support: {}", path);
+                    break;
+                }
+            }
+
+            cc.egui_ctx.set_fonts(fonts);
             Ok(Box::new(CrawlerApp::new(cc, state, log_receiver, event_receiver)))
         }),
     ).map_err(|e| format!("GUI Error: {}", e))?;
