@@ -1,0 +1,8 @@
+
+DevTools listening on ws://127.0.0.1:9222/devtools/browser/4ce4507a-462b-4dc7-bbb3-cf07e4343f53
+[155782:155807:0302/044624.925217:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: DEPRECATED_ENDPOINT
+[155782:155913:0302/044651.411814:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+[155782:155911:0302/044651.411814:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+[155782:155912:0302/044651.411890:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+[155782:155807:0302/044651.827035:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: DEPRECATED_ENDPOINT
+[155782:155807:0302/044745.948411:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: DEPRECATED_ENDPOINT

@@ -1,0 +1,452 @@
+<!DOCTYPE html><html lang="tr"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Novastrum - Manga, Manhwa, Webtoon ve Novel Oku</title>
+  <meta name="description" content="Manga, manhwa, webtoon ve novel serilerini tek yerde kesfet. Hizli okuma deneyimi ve duzenli guncellemeler.">
+  <meta name="keywords" content="manga oku, manhwa oku, webtoon oku, novel oku, light novel, web novel">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://nmr.novastrum.dev/tr">
+
+  <meta property="og:site_name" content="Novastrum">
+  <meta property="og:locale" content="tr_TR">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Novastrum - Manga, Manhwa, Webtoon ve Novel Oku">
+  <meta property="og:description" content="Manga, manhwa, webtoon ve novel serilerini tek yerde kesfet. Hizli okuma deneyimi ve duzenli guncellemeler.">
+  <meta property="og:url" content="https://nmr.novastrum.dev/tr">
+  <meta property="og:image" content="https://placehold.co/600x400?text=Default\nCover">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Novastrum - Manga, Manhwa, Webtoon ve Novel Oku">
+  <meta name="twitter:description" content="Manga, manhwa, webtoon ve novel serilerini tek yerde kesfet. Hizli okuma deneyimi ve duzenli guncellemeler.">
+  <meta name="twitter:image" content="https://placehold.co/600x400?text=Default\nCover">
+  <meta name="twitter:image" content="https://placehold.co/600x400?text=Default\nCover">
+  <link rel="stylesheet" href="/assets/css/melt.css">
+  <link rel="stylesheet" href="/assets/css/site.css">
+  
+    <link rel="alternate" hreflang="tr" href="https://nmr.novastrum.dev/tr">
+  <link rel="alternate" hreflang="en" href="https://nmr.novastrum.dev/en">
+  <link rel="alternate" hreflang="x-default" href="https://nmr.novastrum.dev/tr">
+
+      <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Novastrum","url":"https://nmr.novastrum.dev/","inLanguage":"tr-TR"}</script>
+    <script>window.__NMR_CONTEXT = {"auth":{"is_logged_in":false,"is_admin":false,"user_id":null,"username":null,"roles":[],"permissions":[],"csrf_token":"6e9b7949f0c4c947c0276604c58cd18f572c65415db52635","preferences":{"theme":"dark","lang":"tr","reader":[]}},"lang_code":"tr","site_config":{"site_name":"Novastrum","site_abbreviation":"NOVA","site_logo":"/assets/img/logo.svg","site_description":"Read manga, manhwa, webtoon and novels for free on Novastrum.","enforce_https":true,"site_address":"https://nmr.novastrum.dev","default_language":"tr","default_theme":"dark","default_profile_image":"//api.dicebear.com/9.x/bottts/svg","default_content_cover_image":"//placehold.co/600x400?text=Default\\nCover","integrations":{"google_analytics_id":"G-BV5Z5DKK1G","google_recaptcha_site_key":"","google_recaptcha_secret_key":"","cloudflare_turnstile_site_key":"0x4AAAAAACj6oDgWUh9_24Qc","cloudflare_turnstile_secret_key":"0x4AAAAAACj6oOYJ-W1onx5VdfHYAPoABEc"}}};</script><input type="hidden" id="_o_dbjbempljhcmhlfpfacalomonjpalpko" data-inspect-config="7"><script type="text/javascript" src="chrome-extension://dbjbempljhcmhlfpfacalomonjpalpko/scripts/inspector.js"></script>
+  <script src="/assets/js/utils.js"></script>
+  <script src="/assets/js/marked.min.js"></script>
+  <script src="/assets/js/melt.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/connection.js?v=1772416732"></script>
+  <script src="/assets/js/main.js"></script>
+  
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async="" defer=""></script>
+    
+      <!-- Google tag (gtag.js) -->
+    <script async="" src="https://www.googletagmanager.com/gtag/js?id=G-BV5Z5DKK1G"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-BV5Z5DKK1G');
+    </script>
+  
+      <script src="/assets/js/home.js"></script>
+  </head>
+<body theme="dark">
+  <app>
+    <header>
+      <div class="container flex items-center justify-between gap-4">
+        <a href="/tr/" class="nav-link logo-text">
+                      <img src="/assets/img/logo.svg" alt="NOVA" class="site-logo-img">
+                  </a>
+
+        <div class="flex-grow max-w-md hide-md">
+          <form id="globalSearchForm" class="position-relative">
+            <input type="text" id="globalSearchInput" class="form-item pr-5" placeholder="Seri veya yazar ara..." autocomplete="off">
+            <button type="submit" class="search-icon-btn">🔍</button>
+            <div id="searchSuggestions" class="search-suggestions-dropdown card hidden"></div>
+          </form>
+        </div>
+
+        <div class="flex items-center gap-4">
+                              <menu id="mainMenu" class="flex items-center gap-2">
+                                <div class="mobile-menu-header">
+                                  <a href="/tr/" class="nav-link logo-text">NOVA</a>
+                                  <button class="mobile-close" onclick="NMR.closeMenu()">✕</button>
+                                </div>
+                                
+                                            <div class="dropdown">
+                                              <button class="nav-link dropdown-toggle btn-none">📚 Kütüphane</button>
+                                              <div class="dropdown-menu card p-2">                                    <a href="/tr/light-novel" class="dropdown-item">📖 Light Novel</a>
+                                    <a href="/tr/web-novel" class="dropdown-item">🌐 Web Novel</a>
+                                    <a href="/tr/novel" class="dropdown-item">📝 Novel</a>
+                                    <hr class="my-1 border-0 border-t opacity-10">
+                                    <a href="/tr/manga" class="dropdown-item">🎨 Manga</a>
+                                    <a href="/tr/manhua" class="dropdown-item">⛩️ Manhua</a>
+                                    <a href="/tr/manhwa" class="dropdown-item">🇰🇷 Manhwa</a>
+                                    <a href="/tr/webtoon" class="dropdown-item">📱 Webtoon</a>
+                                  </div>
+                                </div>
+                                <a href="/tr/blogs" class="nav-link">✍️ Bloglar</a>
+                                
+                                <span class="header-divider hide-md"></span>
+
+                                <div class="dropdown">
+                                  <button class="nav-link dropdown-toggle btn-none">🌐 TR</button>
+                                  <div class="dropdown-menu card p-1 min-w-80">
+                                    <a class="dropdown-item py-1" href="https://nmr.novastrum.dev/tr" onclick="NMR.changeLanguage('tr');">🇹🇷 TR</a>
+                                    <a class="dropdown-item py-1" href="https://nmr.novastrum.dev/en" onclick="NMR.changeLanguage('en');">🇺🇸 EN</a>
+                                  </div>
+                                </div>
+
+                                <span class="header-divider hide-md"></span>
+                                
+                                <div id="headerAuthLinks" class="flex items-center gap-2">
+        <a href="#" class="nav-link" onclick="openModal('loginModal');return false;">Giriş Yap</a>
+        <a href="#" class="btn btn-sm btn-primary" onclick="openModal('registerModal');return false;">Kayıt Ol</a>
+      </div>
+                              </menu>
+                    
+                              <button class="mobile-toggle" id="mobileToggle" onclick="NMR.openMenu()">☰</button>        </div>
+      </div>
+    </header>
+
+    <main class="container pt-5 pb-4">
+      <div id="homeApp" style="opacity: 1;">
+  <div class="grid grid-2 home-grid gap-4">
+    <!-- Explore Content Column (Left - 70%) -->
+    <div class="flex flex-col gap-5">
+      <div>
+        <h2 class="mb-4">🔍 İçerikleri Keşfet</h2>
+        <div class="grid grid-3 home-content-grid content-grid" id="homeExploreGrid">
+      <div class="card p-0 overflow-hidden hover-lift cursor-pointer content-card" onclick="location.href='/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi-2'">
+        <div class="position-relative img-placeholder" style="background-color: #2a2a2a; min-height: 200px;">
+          <img src="/assets/img/covers/one-piece.jpg" onerror="this.onerror=null;this.src='/assets/img/covers/one-piece.jpg';" onload="this.classList.add('loaded')" class="w-100" alt="Büyü Akademisinde Hayatta Kalma Rehberi" loading="lazy">
+          <span class="badge position-absolute top-0 right-0 m-2 text-xs" style="background:var(--success)">NOVEL</span>
+        </div>
+        <div class="p-3">
+          <h4 class="mb-1 truncate" title="Büyü Akademisinde Hayatta Kalma Rehberi">Büyü Akademisinde Hayatta Kalma Rehberi</h4>
+          <p class="text-xs text-muted mb-2 truncate author-text">
+            👤 글쓰는기계
+          </p>
+          <div class="flex justify-between items-center text-xs text-muted">
+            <span>⭐ 0</span>
+            <span>0 Chapters</span>
+          </div>
+        </div>
+      </div>
+    
+      <div class="card p-0 overflow-hidden hover-lift cursor-pointer content-card" onclick="location.href='/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi'">
+        <div class="position-relative img-placeholder" style="background-color: #2a2a2a; min-height: 200px;">
+          <img src="/uploads/chapter.3uf2ptxiizb4ge56nvnd3kubgatlomct.png" onerror="this.onerror=null;this.src='/assets/img/covers/one-piece.jpg';" onload="this.classList.add('loaded')" class="w-100 loaded" alt="Büyü Akademisinde Hayatta Kalma Rehberi" loading="lazy">
+          <span class="badge position-absolute top-0 right-0 m-2 text-xs" style="background:var(--success)">NOVEL</span>
+        </div>
+        <div class="p-3">
+          <h4 class="mb-1 truncate" title="Büyü Akademisinde Hayatta Kalma Rehberi">Büyü Akademisinde Hayatta Kalma Rehberi</h4>
+          <p class="text-xs text-muted mb-2 truncate author-text">
+            👤 글쓰는기계
+          </p>
+          <div class="flex justify-between items-center text-xs text-muted">
+            <span>⭐ 0</span>
+            <span>0 Chapters</span>
+          </div>
+        </div>
+      </div>
+    </div>
+      </div>
+
+      <div>
+        <h2 class="mb-4">🆕 Yeni Bölümü Olan İçerikler</h2>
+        <div class="grid grid-3 home-content-grid content-grid" id="homeUpdatedGrid"><div class="text-muted">Bölüm bulunamadı.</div></div>
+      </div>
+
+      <div>
+        <h2 class="mb-4">✨ Yeni Eklenen İçerikler</h2>
+        <div class="grid grid-3 home-content-grid content-grid" id="homeAddedGrid">
+      <div class="card p-0 overflow-hidden hover-lift cursor-pointer content-card" onclick="location.href='/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi-2'">
+        <div class="position-relative img-placeholder" style="background-color: #2a2a2a; min-height: 200px;">
+          <img src="/assets/img/covers/one-piece.jpg" onerror="this.onerror=null;this.src='/assets/img/covers/one-piece.jpg';" onload="this.classList.add('loaded')" class="w-100" alt="Büyü Akademisinde Hayatta Kalma Rehberi" loading="lazy">
+          <span class="badge position-absolute top-0 right-0 m-2 text-xs" style="background:var(--success)">NOVEL</span>
+        </div>
+        <div class="p-3">
+          <h4 class="mb-1 truncate" title="Büyü Akademisinde Hayatta Kalma Rehberi">Büyü Akademisinde Hayatta Kalma Rehberi</h4>
+          <p class="text-xs text-muted mb-2 truncate author-text">
+            👤 글쓰는기계
+          </p>
+          <div class="flex justify-between items-center text-xs text-muted">
+            <span>⭐ 0</span>
+            <span>0 Chapters</span>
+          </div>
+        </div>
+      </div>
+    
+      <div class="card p-0 overflow-hidden hover-lift cursor-pointer content-card" onclick="location.href='/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi'">
+        <div class="position-relative img-placeholder" style="background-color: #2a2a2a; min-height: 200px;">
+          <img src="/uploads/chapter.3uf2ptxiizb4ge56nvnd3kubgatlomct.png" onerror="this.onerror=null;this.src='/assets/img/covers/one-piece.jpg';" onload="this.classList.add('loaded')" class="w-100 loaded" alt="Büyü Akademisinde Hayatta Kalma Rehberi" loading="lazy">
+          <span class="badge position-absolute top-0 right-0 m-2 text-xs" style="background:var(--success)">NOVEL</span>
+        </div>
+        <div class="p-3">
+          <h4 class="mb-1 truncate" title="Büyü Akademisinde Hayatta Kalma Rehberi">Büyü Akademisinde Hayatta Kalma Rehberi</h4>
+          <p class="text-xs text-muted mb-2 truncate author-text">
+            👤 글쓰는기계
+          </p>
+          <div class="flex justify-between items-center text-xs text-muted">
+            <span>⭐ 0</span>
+            <span>0 Chapters</span>
+          </div>
+        </div>
+      </div>
+    </div>
+      </div>
+    </div>
+
+    <!-- Blogs Column (Right - 30%) -->
+    <div class="flex flex-col gap-4">
+      <!-- Popular Blogs (Top) -->
+      <div>
+        <h2 class="mb-4">Popüler Yazılar</h2>
+        <div class="card p-0 overflow-hidden" style="min-height: 400px;">
+          <div class="blog-card-header">🔥 Popüler Bloglar</div>
+          <div id="popularBlogsList"><div class="p-4 text-muted text-sm">Henüz popüler yazı yok.</div></div>
+        </div>
+      </div>
+
+      <!-- Latest Blogs (Bottom) -->
+      <div class="mt-2">
+        <h2 class="mb-4">Son Güncellemeler</h2>
+        <div class="card p-0 overflow-hidden" style="min-height: 400px;">
+          <div class="blog-card-header">🆕 Son Güncellemeler</div>
+          <div id="latestBlogsList"><div class="p-4 text-muted text-sm">Henüz güncelleme yok.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    </main>
+
+    <footer>
+      <div class="container">
+        <div class="grid grid-3 gap-4 mb-5">
+          <div class="col-span-1">
+            <h3 class="mb-3">Novastrum</h3>
+            <p class="text-muted text-sm leading-relaxed">
+              Read manga, manhwa, webtoon and novels for free on Novastrum.            </p>
+          </div>
+          <div>
+            <h4 class="mb-3">🔥 Popüler İçerikler</h4>
+            <nav class="flex-col gap-1 text-sm" id="footerPopular">
+            <a href="/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi-2" class="nav-link footer-link-small">
+              <span class="text-muted" style="font-size: 0.7rem; font-weight: 700; min-width: 70px">Novel</span>
+              <span class="type-dot" style="--dot-color: var(--success)"></span>
+              <span>Büyü Akademisinde Hayatta Kalma Rehberi</span>
+            </a>
+          
+            <a href="/tr/novel/buyu-akademisinde-hayatta-kalma-rehberi" class="nav-link footer-link-small">
+              <span class="text-muted" style="font-size: 0.7rem; font-weight: 700; min-width: 70px">Novel</span>
+              <span class="type-dot" style="--dot-color: var(--success)"></span>
+              <span>Büyü Akademisinde Hayatta Kalma Rehberi</span>
+            </a>
+          </nav>
+          </div>
+          <div>
+            <h4 class="mb-3">🆕 Son Bölümler</h4>
+            <nav class="flex-col gap-1 text-sm" id="footerLatest"><span class="text-muted">Yüklenemedi.</span></nav>
+          </div>
+        </div>
+
+        <div class="border-t pt-4">
+          <div class="text-center text-xs text-muted mb-3 font-bold uppercase tracking-widest">📚 Türler &amp; Etiketler</div>
+          <div class="flex flex-wrap justify-center gap-1" id="footerTags">
+                          <a href="/tr/tag/contract-marriage" class="tag-chip" style="--chip-color: var(--primary)">Contract Marriage</a>
+                          <a href="/tr/tag/alchemy" class="tag-chip" style="--chip-color: var(--primary)">Alchemy</a>
+                          <a href="/tr/genre/josei" class="tag-chip" style="--chip-color: var(--success)">Josei</a>
+                          <a href="/tr/genre/mystery" class="tag-chip" style="--chip-color: var(--success)">Mystery</a>
+                          <a href="/tr/genre/adventure" class="tag-chip" style="--chip-color: var(--success)">Adventure</a>
+                          <a href="/tr/genre/horror" class="tag-chip" style="--chip-color: var(--success)">Horror</a>
+                          <a href="/tr/genre/historical" class="tag-chip" style="--chip-color: var(--success)">Historical</a>
+                          <a href="/tr/genre/comedy" class="tag-chip" style="--chip-color: var(--success)">Comedy</a>
+                          <a href="/tr/tag/assassin" class="tag-chip" style="--chip-color: var(--primary)">Assassin</a>
+                          <a href="/tr/genre/isekai" class="tag-chip" style="--chip-color: var(--success)">Isekai</a>
+                          <a href="/tr/genre/ecchi" class="tag-chip" style="--chip-color: var(--success)">Ecchi</a>
+                          <a href="/tr/genre/mecha" class="tag-chip" style="--chip-color: var(--success)">Mecha</a>
+                          <a href="/tr/tag/cooking" class="tag-chip" style="--chip-color: var(--primary)">Cooking</a>
+                          <a href="/tr/genre/action" class="tag-chip" style="--chip-color: var(--success)">Action</a>
+                          <a href="/tr/tag/age-gap" class="tag-chip" style="--chip-color: var(--primary)">Age Gap</a>
+                          <a href="/tr/genre/cyberpunk" class="tag-chip" style="--chip-color: var(--success)">Cyberpunk</a>
+                          <a href="/tr/tag/cultivation" class="tag-chip" style="--chip-color: var(--primary)">Cultivation</a>
+                          <a href="/tr/genre/leveling" class="tag-chip" style="--chip-color: var(--success)">Leveling</a>
+                          <a href="/tr/genre/drama" class="tag-chip" style="--chip-color: var(--success)">Drama</a>
+                          <a href="/tr/genre/game-system" class="tag-chip" style="--chip-color: var(--success)">Game System</a>
+                          <a href="/tr/tag/ai" class="tag-chip" style="--chip-color: var(--primary)">AI</a>
+                          <a href="/tr/tag/dark-fantasy" class="tag-chip" style="--chip-color: var(--primary)">Dark Fantasy</a>
+                          <a href="/tr/tag/betrayal" class="tag-chip" style="--chip-color: var(--primary)">Betrayal</a>
+                          <a href="/tr/tag/crafting" class="tag-chip" style="--chip-color: var(--primary)">Crafting</a>
+                          <a href="/tr/genre/dungeon" class="tag-chip" style="--chip-color: var(--success)">Dungeon</a>
+                          <a href="/tr/tag/adventure" class="tag-chip" style="--chip-color: var(--primary)">Adventure</a>
+                          <a href="/tr/genre/martial-arts" class="tag-chip" style="--chip-color: var(--success)">Martial Arts</a>
+                          <a href="/tr/genre/magic" class="tag-chip" style="--chip-color: var(--success)">Magic</a>
+                          <a href="/tr/tag/action" class="tag-chip" style="--chip-color: var(--primary)">Action</a>
+                          <a href="/tr/tag/antihero" class="tag-chip" style="--chip-color: var(--primary)">Antihero</a>
+                          <a href="/tr/tag/blacksmith" class="tag-chip" style="--chip-color: var(--primary)">Blacksmith</a>
+                          <a href="/tr/tag/childhood-friends" class="tag-chip" style="--chip-color: var(--primary)">Childhood Friends</a>
+                          <a href="/tr/tag/crossdressing" class="tag-chip" style="--chip-color: var(--primary)">Crossdressing</a>
+                          <a href="/tr/genre/harem" class="tag-chip" style="--chip-color: var(--success)">Harem</a>
+                          <a href="/tr/tag/cyberpunk-elements" class="tag-chip" style="--chip-color: var(--primary)">Cyberpunk Elements</a>
+                          <a href="/tr/genre/military" class="tag-chip" style="--chip-color: var(--success)">Military</a>
+                          <a href="/tr/tag/angels" class="tag-chip" style="--chip-color: var(--primary)">Angels</a>
+                          <a href="/tr/tag/comedy" class="tag-chip" style="--chip-color: var(--primary)">Comedy</a>
+                          <a href="/tr/tag/academy" class="tag-chip" style="--chip-color: var(--primary)">Academy</a>
+                          <a href="/tr/genre/fantasy" class="tag-chip" style="--chip-color: var(--success)">Fantasy</a>
+                      </div>
+        </div>
+      </div>
+    </footer>
+
+    <div id="loginModal" class="modal-overlay">
+  <div class="modal card">
+    <div class="modal-header"><h3>🔐 Giriş Yap</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <form id="loginForm">
+        <div class="form-group"><label class="form-label">E-posta</label><input type="email" name="email" class="form-item" required=""></div>
+        <div class="form-group"><label class="form-label">Şifre</label><input type="password" name="password" class="form-item" required=""></div>
+        <div class="form-group flex items-center gap-2 mb-2">
+          <input type="checkbox" name="remember" id="loginRemember" style="width:auto;cursor:pointer">
+          <label for="loginRemember" style="cursor:pointer;font-size:0.85rem;user-select:none">Beni Hatırla</label>
+        </div>
+                  <div class="cf-turnstile-wrapper mb-3">
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAACj6oDgWUh9_24Qc" data-theme="dark"><div><input type="hidden" name="cf-turnstile-response" id="cf-chl-widget-ix023_response" value="0.UHTKu_Ug1FNAiuB93JfEo-75Szziyp5THCTTlmyec_MrWm3siXZgeQZHyS9nlqfLKRBEYkCRDUpfeUEjSumOfZ7UJ_9zEiOLA096cRpJphrfGLpTfKceFUAKmSAjuR27CxQ6ilSxUdRkmhrsmD31eLhKak43AI_QUOMSjK4rizxJmOMSOzL1IDhLrQfcvHVy_KDdPXkEcREm2yi1ClP2MuDeJjuyBiP56FNSRF4cXGuo8RRp0ogetsZ26mw_qRaksjlBPgQ_enIz8ICkgPxN1BD8TpSA3TIFHH02qGWVBrncPxhylCkvY6ZJs9oUIYjQn0GKK7hUWry8aeUV5ZvvVMtAc6Mml6vftdQwt6j_VccXjrqCqWiuQXeNHTAXdiMF50ED0ZdPNCNcwKpb8fTgG4axSrlIfb2DzIEj5h-pa1NGuwppM3dNefobeVnMyQDsbwGyIrZ3JFj4D2tmptYzBNB7CgtaKP7UMR7uzHQVgJj82bsUVf0DROdtYJBcyDiPTaMLtQ3jR5PFdHzjEW0FgGvLCokryFKHE6gn3DIKYSZkR_YLiDhNF8M6E1mwiYvbuQbJlMt_C7AOZnyNNLDRpd48vldkB0u9PSrj4BgS5tbOOpKBNrRD7lIuMYLEOzVJx1pQXd6MotkZHU4OAW01bKDMuT9ZLVU0l6mYmeYRveoxt8OdohmyIu0KgSVqeIjTiHBWbMvfeCKQjwmzx8J0P_VB_526IMuLel9iKyFxL4RUb8kpr27QR_Yj-PThQDvB-EOPFN08WZeFfKiZwLZgaFwONQkHdD6v_jBnytgkiVd4-oHnts1ubCF0u5JKYmC6jvjWSHTotefIwTRSwZnVtl6EFGUk0FAkAoKkyiVf0kTFSqIeVvFGd09FL3OH1tdQaCW5SK5QpC5VbgHm8DyXYwNsO_x8ZPbgHgvxgY167uBAgck77nndvJFuXI8SK2B7.qInqAeFSNRfuopula99Grg.7ddbf1534792030a5b90b320ad77ddcea4bf0365ac51069f4ff94cef3f4a6c7b"></div></div>
+          </div>
+                <button type="submit" class="btn btn-primary w-100 mt-2">Giriş Yap</button>
+      </form>
+    </div>
+    <div class="modal-footer"><button class="btn btn-sm btn-outline" onclick="openModal('registerModal')">Hesap Oluştur</button></div>
+  </div>
+</div>
+
+<div id="registerModal" class="modal-overlay">
+  <div class="modal card">
+    <div class="modal-header"><h3>✨ Kayıt Ol</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <form id="registerForm">
+        <div class="form-group"><label class="form-label">Kullanıcı Adı</label><input type="text" name="username" class="form-item" required=""></div>
+        <div class="form-group"><label class="form-label">E-posta</label><input type="email" name="email" class="form-item" required=""></div>
+        <div class="form-group"><label class="form-label">Şifre</label><input type="password" name="password" class="form-item" required=""></div>
+                  <div class="cf-turnstile-wrapper mb-3">
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAACj6oDgWUh9_24Qc" data-theme="dark"><div><input type="hidden" name="cf-turnstile-response" id="cf-chl-widget-6nbxp_response" value="0.M-G5iu079LsAV1QAQpLLElos5fsh7Jo2ZMTDQ7wUvWGHOHSjUSvXsAx7Nsje9xDfcAtnb-voIITwd7f1LQmm_nxo0pYgK_chvwJ9Zz-9WcDk_MHdWB9W0DRnkcktywk2n60bHh8t7jf1_1cICWiD9Q8KasbahAKtxHAqUxEL-ZR-Hc0CJOENT_hs9mc-ZeAOD2_51BDa12l1wZo6W1J5tPzMEEvsO1XffH9ZhCQjzGJYui4yApFrwvCUQKDDVXgoGTtqnKHdVEH4fyrMPXtDS0o7BEz1JB2Y1tU5tnfGfuUKNjFnqELrgu_utkIo8FFYtIjlTM7iVrx1uzdFvvKgrrVTQByKH19oAVedKJ6pLsJLavnVC_GF_AvE6Zg4ydjbW6jYspSzFmvgHA7g5DkAaGNCjnoEivvRH7LywpZAbmtFoVGMW5LnzM70zp5_K_fQh5PjnW96Q_vSOlwKT9HoY2GBnlENU2E_-NtRqT3KD0so5uXT9h6HGiEuHhXqvUMqIdNp3bO0lYJoq_gkokq0EMPGOgG2IkQ8VGJH9j2svBpCzRP0sTZBHeHv717jSjxOtgceYGRzSfYVTZb-0r6wvzHSggQi97igQDGFXhRrMIGCmNYzvJmDxTqM5FmuNkV6cOJKujbsNQvfojTEQRtmPZ7XwbfXkJ2prUWbGSoODAWFXajOz6qefGfbiJqaElBRcJ2g3pLnHVanKsjHUzh_54Tfqyi4e83OOujZ9HxCJvR4XTcZe-583tc3vKR4T6Yfqekz8qfYtQaWihC5RKwmb-oG5yN1KdJ7_ms_nLTAKigLArP6nsCBvqYUxDXSK_G04Dk5BbTbYRLRvu6-LikfHIbFVc2ZY90810CSgbnA7HSYTKL3rc5GrWEQzIxHTsy-uIaqTVXECDHmLmyP_JVxiky3ZhBNnKZoSmUFUjpYg4SkHmtd-KsJ_pZmly1tXVyk.VxP1UHqQatancoI2tgfdWQ.eb11414144600c22f3d4fa36d7f855321462fb50f0d5b9acf5292a5fa63f40a9"></div></div>
+          </div>
+                <button type="submit" class="btn btn-primary w-100 mt-2">Kayıt Ol</button>
+      </form>
+    </div>
+    <div class="modal-footer"><button class="btn btn-sm btn-outline" onclick="openModal('loginModal')">Girişe Dön</button></div>
+  </div>
+</div>
+
+<div id="notifModal" class="modal-overlay">
+  <div class="modal card">
+    <div class="modal-header"><h3>🔔 Bildirimler</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body p-0" style="max-height: 400px; overflow-y: auto;" id="notifModalList">
+      <div class="p-4 text-center text-muted">Yükleniyor...</div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-sm btn-outline w-100" id="markAllReadBtn">Tümünü okundu işaretle</button></div>
+  </div>
+</div>
+
+<div id="readerSettingsModal" class="modal-overlay">
+  <div class="modal card modal-wide">
+    <div class="modal-header"><h3>⚙️ Okuyucu Ayarları</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body p-0"><div class="flex" style="min-height: 400px;">
+      <div class="modal-sidebar border-r p-2" id="readerTabSidebar" style="width: 160px; background: var(--surface)">
+        <button class="btn btn-sm btn-outline w-100 text-left mb-1 active" data-tab="layout">Düzen</button>
+        <button class="btn btn-sm btn-outline w-100 text-left mb-1" data-tab="typography">Tipografi</button>
+        <button class="btn btn-sm btn-outline w-100 text-left mb-1" data-tab="appearance">Görünüm</button>
+      </div>
+      <div class="modal-content-area flex-grow p-4">
+        <div id="tab-layout" class="settings-tab">
+          <div class="form-group mb-3"><label class="text-xs">Sayfa Düzeni</label>
+            <div class="btn-group w-100" id="layoutButtonGroup">
+              <button class="btn btn-sm btn-outline" data-val="single">Tek Sayfa</button>
+              <button class="btn btn-sm btn-outline" data-val="double">Çift Sayfa</button>
+              <button class="btn btn-sm btn-outline" data-val="vertical">Dikey Kaydırma</button>
+            </div>
+          </div>
+          <div class="form-group"><label class="text-xs">Resim Uyumu</label>
+            <select class="form-item" name="reader_image_fit">
+              <option value="width">Genişliğe Sığdır</option>
+              <option value="height">Yüksekliğe Sığdır</option>
+              <option value="original">Orijinal Boyut</option>
+            </select>
+          </div>
+        </div>
+        <div id="tab-typography" class="settings-tab hidden">
+          <div class="form-group mb-3"><label class="text-xs">Yazı Tipi</label>
+            <select class="form-item" name="reader_font_family">
+              <option value="var(--font-sans)">Sans</option>
+              <option value="serif">Serif</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="text-xs">Yazı Boyutu (<span id="fontSizeVal">18</span>px)</label>
+            <input type="range" name="reader_font_size" min="12" max="32" value="18" class="w-100">
+          </div>
+        </div>
+        <div id="tab-appearance" class="settings-tab hidden text-center">
+          <div class="flex flex-wrap gap-2 justify-center">
+            <button class="theme-btn btn btn-outline p-2" data-theme="default">☀️ Default</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="dark">🌑 Dark</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="royal">👑 Royal</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="bootstrap">🅱️ Bootstrap</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="material">Ⓜ️ Material</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="apple">🍎 Apple</button>
+            <button class="theme-btn btn btn-outline p-2" data-theme="glass">💎 Glass</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <div class="modal-footer"><button class="btn btn-sm btn-primary px-5" id="saveAllSettingsBtn">Kaydet ve Uygula</button></div>
+  </div>
+</div>
+
+<div id="userSettingsModal" class="modal-overlay">
+  <div class="modal card">
+    <div class="modal-header"><h3>⚙️ Profil Ayarları</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <form id="userSettingsForm" enctype="multipart/form-data">
+        <div class="form-group mb-3">
+          <label class="form-label">Biyografi</label>
+          <textarea name="bio" class="form-item" rows="3" maxlength="1000" placeholder="Bize kendinden bahset..."></textarea>
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Profil Resmi</label>
+          <input type="file" name="profile_image" class="form-item" accept="image/*">
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Kapak Resmi</label>
+          <input type="file" name="cover_image" class="form-item" accept="image/*">
+        </div>
+        <div class="grid grid-2 gap-2 mb-3">
+          <div class="form-group">
+            <label class="form-label">Tema</label>
+            <select name="theme" class="form-item">
+              <option value="default">Default</option><option value="dark">Dark</option>
+              <option value="royal">Royal</option><option value="bootstrap">Bootstrap</option>
+              <option value="material">Material</option><option value="apple">Apple</option>
+              <option value="glass">Glass</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Dil</label>
+            <select name="lang" class="form-item">
+              <option value="tr">Türkçe</option><option value="en">English</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 mt-2">Profili Güncelle</button>
+      </form>
+    </div>
+  </div>
+</div>
+  </app>
+
+  <div id="mainPopup" class="popup hidden">
+    <span id="popupIcon"></span> <span id="popupMessage"></span>
+  </div>
+<script defer="" src="https://static.cloudflareinsights.com/beacon.min.js/v67327c56f0bb4ef8b305cae61679db8f1769101564043" integrity="sha512-rdcWY47ByXd76cbCFzznIcEaCN71jqkWBBqlwhF1SY7KubdLKZiEGeP7AyieKZlGP9hbY/MhGrwXzJC/HulNyg==" data-cf-beacon="{&quot;version&quot;:&quot;2024.11.0&quot;,&quot;token&quot;:&quot;4783a33e4f0b407fb77af44496d8ed22&quot;,&quot;r&quot;:1,&quot;server_timing&quot;:{&quot;name&quot;:{&quot;cfCacheStatus&quot;:true,&quot;cfEdge&quot;:true,&quot;cfExtPri&quot;:true,&quot;cfL4&quot;:true,&quot;cfOrigin&quot;:true,&quot;cfSpeedBrain&quot;:true},&quot;location_startswith&quot;:null}}" crossorigin="anonymous"></script>
+
+
+</body></html>

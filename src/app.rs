@@ -18,13 +18,7 @@ pub struct CrawlerApp {
 
 impl CrawlerApp {
     fn kill_browser_group(child: &mut std::process::Child) {
-        let pid = child.id();
-        tracing::info!("Force killing browser process group (PID: {})...", pid);
-        unsafe {
-            // Linux'ta negatif PID tüm grubu öldürür
-            libc::kill(-(pid as i32), libc::SIGTERM);
-        }
-        let _ = child.kill(); // Ana süreci de garantiye al
+        crate::backend::utils::kill_process_group(child);
     }
 }
 
