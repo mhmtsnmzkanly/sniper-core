@@ -158,6 +158,41 @@ impl eframe::App for CrawlerApp {
                         let _ = crate::core::browser::BrowserManager::set_url_blocking(port, tid_clone, blocked).await;
                     });
                 }
+                AppEvent::RequestAutomationRun(tid, steps) => {
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    let dsl = crate::core::automation::dsl::AutomationDsl {
+                        dsl_version: 1,
+                        steps: steps.into_iter().map(|s| match s {
+                            crate::state::AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u },
+                            crate::state::AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click { selector: sel },
+                            crate::state::AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
+                            crate::state::AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
+                            crate::state::AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel, as_key: "data".into() },
+                            _ => crate::core::automation::dsl::Step::ScrollBottom,
+                        }).collect(),
+                    };
+
+                    tokio::spawn(async move {
+                        let mut engine = crate::core::automation::AutomationEngine::new(port, tid_clone);
+                        let _ = engine.run(dsl).await;
+                    });
+                }
+                AppEvent::AutomationProgress(tid, step) => {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.auto_status = crate::state::AutomationStatus::Running(step);
+                    }
+                }
+                AppEvent::AutomationFinished(tid) => {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.auto_status = crate::state::AutomationStatus::Finished;
+                    }
+                }
+                AppEvent::AutomationError(tid, err) => {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.auto_status = crate::state::AutomationStatus::Error(err);
+                    }
+                }
                 AppEvent::RequestScriptExecution(tid, script) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();

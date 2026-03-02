@@ -19,6 +19,43 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                     if ui.button("Scroll Bottom").clicked() { ws.auto_steps.push(AutomationStep::ScrollBottom); ui.close_menu(); }
                     if ui.button("Extract Text").clicked() { ws.auto_steps.push(AutomationStep::ExtractText(String::new())); ui.close_menu(); }
                 });
+                
+                if ui.button("💾 Save DSL").on_hover_text("Save this automation pipeline as JSON").clicked() {
+                    let dsl = crate::core::automation::dsl::AutomationDsl {
+                        dsl_version: 1,
+                        steps: ws.auto_steps.iter().map(|s| match s {
+                            AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
+                            AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click { selector: sel.clone() },
+                            AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::WaitFor { selector: "body".into(), timeout_ms: Some(secs * 1000) },
+                            AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
+                            AutomationStep::ExtractText(sel) => crate::core::automation::dsl::Step::Extract { selector: sel.clone(), as_key: "data".into() },
+                            _ => crate::core::automation::dsl::Step::ScrollBottom, // Default fallback
+                        }).collect(),
+                    };
+                    if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("automation.json").save_file() {
+                        if let Ok(json) = serde_json::to_string_pretty(&dsl) {
+                            let _ = std::fs::write(path, json);
+                        }
+                    }
+                }
+
+                if ui.button("📁 Load DSL").on_hover_text("Load an automation pipeline from JSON").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            if let Ok(dsl) = serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
+                                ws.auto_steps = dsl.steps.into_iter().map(|s| match s {
+                                    crate::core::automation::dsl::Step::Navigate { url } => AutomationStep::Navigate(url),
+                                    crate::core::automation::dsl::Step::Click { selector } => AutomationStep::Click(selector),
+                                    crate::core::automation::dsl::Step::ScrollBottom => AutomationStep::ScrollBottom,
+                                    crate::core::automation::dsl::Step::Extract { selector, .. } => AutomationStep::ExtractText(selector),
+                                    crate::core::automation::dsl::Step::WaitFor { timeout_ms, .. } => AutomationStep::Wait(timeout_ms.unwrap_or(1000) / 1000),
+                                    _ => AutomationStep::Wait(1),
+                                }).collect();
+                            }
+                        }
+                    }
+                }
+
                 if ui.button("🗑 Clear").clicked() { ws.auto_steps.clear(); }
             });
         });

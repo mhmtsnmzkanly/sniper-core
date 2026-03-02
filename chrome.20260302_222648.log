@@ -20,3 +20,7 @@ DevTools listening on ws://127.0.0.1:9222/devtools/browser/fca89413-2c4e-4f6b-82
 [25342:25349:0302/223045.134389:ERROR:net/socket/ssl_client_socket_impl.cc:918] handshake failed; returned -1, SSL error code 1, net_error -101
 [25277:25300:0302/223212.650878:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: DEPRECATED_ENDPOINT
 [25277:25300:0302/223559.816435:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: QUOTA_EXCEEDED
+[25342:25349:0302/224410.823262:ERROR:net/socket/ssl_client_socket_impl.cc:918] handshake failed; returned -1, SSL error code 1, net_error -101
+[25277:25315:0302/225441.263830:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+QThreadStorage: entry 2 destroyed before end of thread 0x326c0088b420
+QThreadStorage: entry 1 destroyed before end of thread 0x326c0088b420
