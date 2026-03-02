@@ -1,44 +1,32 @@
-use serde::{Serialize, Deserialize};
-use std::path::PathBuf;
-
 pub mod loader;
-pub mod migration;
-
-pub const CURRENT_CONFIG_VERSION: u32 = 1;
+use std::path::PathBuf;
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub config_version: u32,
-    pub default_launch_url: String,
+    pub output_dir: PathBuf,
     pub default_profile_dir: PathBuf,
     pub remote_debug_port: u16,
-    pub headless: bool,
+    pub default_launch_url: String,
     pub download_timeout: u64,
     pub max_concurrent_download: usize,
-    pub raw_output_dir: PathBuf,
-    pub translator_output_dir: PathBuf,
-    pub log_output_dir: PathBuf,
-    pub write_log_to_file: bool,
-    pub gemini_api_url: String,
     pub gemini_api_key: String,
+    pub gemini_api_url: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: CURRENT_CONFIG_VERSION,
-            default_launch_url: "https://www.google.com".to_string(),
+            config_version: 1,
+            output_dir: PathBuf::from("studio_output"),
             default_profile_dir: PathBuf::from("chrome_profile"),
             remote_debug_port: 9222,
-            headless: false,
+            default_launch_url: "https://www.google.com".to_string(),
             download_timeout: 30,
             max_concurrent_download: 8,
-            raw_output_dir: PathBuf::from("raw"),
-            translator_output_dir: PathBuf::from("translated"),
-            log_output_dir: PathBuf::from("logs"),
-            write_log_to_file: true,
-            gemini_api_url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent".to_string(),
             gemini_api_key: String::new(),
+            gemini_api_url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent".to_string(),
         }
     }
 }

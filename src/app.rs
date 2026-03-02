@@ -1,7 +1,7 @@
-use crate::state::{AppState, Tab};
+use crate::state::{AppState, Tab, TabWorkspace};
 use crate::core::events::AppEvent;
 use crate::ui;
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText, Color32};
 use std::sync::{Arc, Mutex};
 use chromiumoxide::Browser;
 
@@ -16,39 +16,28 @@ pub struct CrawlerApp {
 impl CrawlerApp {
     pub fn kill_browser_group(child: &mut std::process::Child) {
         let pid = child.id();
-        #[cfg(unix)]
-        {
-            unsafe { libc::kill(-(pid as i32), libc::SIGTERM); }
-        }
-        #[cfg(windows)]
-        {
-            let _ = std::process::Command::new("taskkill").arg("/F").arg("/T").arg("/PID").arg(pid.to_string()).spawn();
-        }
+        #[cfg(unix)] { unsafe { libc::kill(-(pid as i32), libc::SIGTERM); } }
+        #[cfg(windows)] { let _ = std::process::Command::new("taskkill").arg("/F").arg("/T").arg("/PID").arg(pid.to_string()).spawn(); }
         let _ = child.kill();
     }
 
-    pub fn new(
-        _cc: &eframe::CreationContext<'_>, 
-        state: AppState, 
-        log_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::state::LogEntry>,
-        event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
-    ) -> Self {
-        Self { 
-            state, 
-            log_receiver, 
-            event_receiver,
-            browser_process: Arc::new(Mutex::new(None)),
-            browser_handle: Arc::new(Mutex::new(None)),
+    pub fn new(_cc: &eframe::CreationContext<'_>, state: AppState, log_receiver: tokio::sync::mpsc::UnboundedReceiver<crate::state::LogEntry>, event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Self {
+        Self { state, log_receiver, event_receiver, browser_process: Arc::new(Mutex::new(None)), browser_handle: Arc::new(Mutex::new(None)) }
+    }
+
+    fn ensure_workspace(&mut self, tid: &str) -> &mut TabWorkspace {
+        if !self.state.workspaces.contains_key(tid) {
+            let title = self.state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| format!("Tab {}", &tid[..8]));
+            self.state.workspaces.insert(tid.to_string(), TabWorkspace::new(tid.to_string(), title));
         }
+        self.state.workspaces.get_mut(tid).unwrap()
     }
 }
 
 impl Drop for CrawlerApp {
     fn drop(&mut self) {
         let mut lock = self.browser_process.lock().unwrap();
-        if let Some(mut child) = lock.take() {
-            Self::kill_browser_group(&mut child);
-        }
+        if let Some(mut child) = lock.take() { Self::kill_browser_group(&mut child); }
     }
 }
 
@@ -58,27 +47,23 @@ impl eframe::App for CrawlerApp {
 
         // --- 1. STARTUP SPLASH ---
         if !self.state.profile_confirmed {
-            egui::Window::new("Sniper Scraper Studio 1.1.0 - Startup")
+            egui::Window::new("Sniper Studio 1.1.0 - Startup")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
+                .collapsible(false).resizable(false).show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.label(RichText::new("Choose Browser Profile Mode").strong().size(18.0));
+                        ui.label(RichText::new("Select Browser Identity").strong().size(18.0));
                         ui.add_space(10.0);
-                        
-                        if ui.button("👤 Use My Real System Profile (Chrome/Chromium)").clicked() {
+                        if ui.button(RichText::new("👤 USE MY SYSTEM PROFILE (Chrome)").strong()).clicked() {
                             self.state.use_custom_profile = true;
+                            self.state.config.default_profile_dir = crate::core::browser::BrowserManager::get_system_profile_path();
                             self.state.profile_confirmed = true;
-                            tracing::info!("Startup: User selected real system profile.");
+                            tracing::info!("[SYSTEM <-> INIT] User selected System Profile: {:?}", self.state.config.default_profile_dir);
                         }
-                        
                         ui.add_space(5.0);
-                        
-                        if ui.button("🆕 Create New Isolated Profile (Temp)").clicked() {
+                        if ui.button("🆕 USE FRESH ISOLATED PROFILE").clicked() {
                             self.state.use_custom_profile = false;
                             self.state.profile_confirmed = true;
-                            tracing::info!("Startup: User selected isolated profile.");
+                            tracing::info!("[SYSTEM <-> INIT] User selected Isolated Profile.");
                         }
                     });
                 });
@@ -96,130 +81,139 @@ impl eframe::App for CrawlerApp {
             });
         }
 
-        while let Ok(log) = self.log_receiver.try_recv() {
-            self.state.logs.push(log);
-        }
+        while let Ok(log) = self.log_receiver.try_recv() { self.state.logs.push(log); }
 
-        // --- 3. EVENT HANDLING ---
+        // --- 3. EVENT ROUTING (TAB-AWARE) ---
         while let Ok(event) = self.event_receiver.try_recv() {
-            let tab_name = self.state.get_selected_tab_name();
             match event {
                 AppEvent::TabsUpdated(tabs) => { self.state.available_tabs = tabs; }
                 AppEvent::BrowserStarted(child) => {
                     let mut lock = self.browser_process.lock().unwrap();
                     *lock = Some(child);
                     self.state.is_browser_running = true;
-                    tracing::info!("SCRAPER <-> Browser Launched on port {}", self.state.config.remote_debug_port);
+                    tracing::info!("[BROWSER <-> STATUS] Instance online.");
                 }
                 AppEvent::BrowserTerminated | AppEvent::TerminateBrowser => {
                     let mut lock = self.browser_process.lock().unwrap();
                     if let Some(mut child) = lock.take() { Self::kill_browser_group(&mut child); }
                     self.state.is_browser_running = false;
                     self.state.available_tabs.clear();
-                    tracing::warn!("SCRAPER <-> Browser Terminated.");
+                    self.state.workspaces.clear();
+                    tracing::warn!("[BROWSER <-> STATUS] Instance terminated.");
                 }
-                AppEvent::ConsoleLogAdded(msg) => {
-                    self.state.console_logs.push(msg);
-                    if self.state.console_logs.len() > 100 { self.state.console_logs.remove(0); }
+                AppEvent::MediaCaptured(tid, asset) => {
+                    let ws = self.ensure_workspace(&tid);
+                    ws.media_assets.push(asset);
+                    tracing::info!("[MEDIA <-> DATA] Intercepted asset for tab {}", tid);
                 }
-                AppEvent::RequestCapture(tab_id, mirror) => {
-                    let port = self.state.config.remote_debug_port;
-                    let root = self.state.config.raw_output_dir.clone();
-                    tracing::info!("SCRAPER <-> Capture started for [{}]", tab_name);
-                    tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::capture_html(port, tab_id, root, mirror).await {
-                            Ok(p) => {
-                                tracing::info!("SCRAPER <-> Capture finished: {:?}", p);
-                                ui::scrape::emit(AppEvent::OperationSuccess(format!("Saved: {:?}", p)));
-                            }
-                            Err(e) => {
-                                tracing::error!("SCRAPER <-> Capture failed: {}", e);
-                                ui::scrape::emit(AppEvent::OperationError(e.to_string()));
-                            }
-                        }
-                    });
+                AppEvent::NetworkRequestSent(tid, req) => {
+                    let ws = self.ensure_workspace(&tid);
+                    ws.network_requests.push(req);
                 }
-                AppEvent::RequestScriptExecution(tab_id, script) => {
-                    let port = self.state.config.remote_debug_port;
-                    tracing::info!("AUTOMATION <-> Injecting script to [{}]", tab_name);
-                    tokio::spawn(async move {
-                        if let Ok(res) = crate::core::browser::BrowserManager::execute_script(port, tab_id, script).await {
-                            ui::scrape::emit(AppEvent::ScriptFinished(res));
-                        }
-                    });
-                }
-                AppEvent::ScriptFinished(res) => {
-                    self.state.js_result = res;
-                    self.state.js_execution_active = false;
-                    tracing::info!("AUTOMATION <-> Script result received.");
-                }
-                AppEvent::RequestNetworkToggle(tab_id, enabled) => {
-                    if enabled {
-                        let port = self.state.config.remote_debug_port;
-                        tracing::info!("NETWORK <-> Monitoring enabled for [{}]", tab_name);
-                        tokio::spawn(async move {
-                            let _ = crate::core::browser::BrowserManager::setup_tab_listeners(port, tab_id).await;
-                        });
-                    }
-                }
-                AppEvent::NetworkRequestSent(req) => { self.state.network_requests.push(req); }
-                AppEvent::NetworkResponseReceived(id, status, body) => {
-                    if let Some(req) = self.state.network_requests.iter_mut().find(|r| r.request_id == id) {
+                AppEvent::NetworkResponseReceived(tid, rid, status, body) => {
+                    let ws = self.ensure_workspace(&tid);
+                    if let Some(req) = ws.network_requests.iter_mut().find(|r| r.request_id == rid) {
                         req.status = Some(status);
                         req.response_body = body;
+                        tracing::info!("[NETWORK <-> DATA] Captured Response: {} ({})", req.url, status);
                     }
                 }
-                AppEvent::RequestCookies(tab_id) => {
+                AppEvent::ConsoleLogAdded(tid, msg) => {
+                    let ws = self.ensure_workspace(&tid);
+                    ws.console_logs.push(msg);
+                }
+                AppEvent::CookiesReceived(tid, cookies) => {
+                    let ws = self.ensure_workspace(&tid);
+                    ws.cookies = cookies;
+                    tracing::info!("[STORAGE <-> DATA] Received {} cookies for tab {}", ws.cookies.len(), tid);
+                }
+                AppEvent::RequestCapture(tid, mirror) => {
                     let port = self.state.config.remote_debug_port;
-                    tracing::info!("STORAGE <-> Fetching cookies from [{}]", tab_name);
+                    let root = self.state.config.output_dir.clone();
+                    tracing::info!("[COMMAND <-> CAPTURE] Requesting HTML for tab {}", tid);
                     tokio::spawn(async move {
-                        if let Ok(cookies) = crate::core::browser::BrowserManager::get_cookies(port, tab_id).await {
-                            ui::scrape::emit(AppEvent::CookiesReceived(cookies));
+                        match crate::core::browser::BrowserManager::capture_html(port, tid, root, mirror).await {
+                            Ok(p) => ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured: {:?}", p))),
+                            Err(e) => ui::scrape::emit(AppEvent::OperationError(e.to_string())),
                         }
                     });
                 }
-                AppEvent::CookiesReceived(cookies) => {
-                    self.state.cookies = cookies;
-                    self.state.notify("Storage", "Cookies updated.", false);
+                AppEvent::RequestCookies(tid) => {
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    tokio::spawn(async move {
+                        if let Ok(cookies) = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await {
+                            ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, cookies));
+                        }
+                    });
                 }
                 AppEvent::OperationSuccess(msg) => { self.state.notify("Success", &msg, false); }
                 AppEvent::OperationError(msg) => { self.state.notify("Error", &msg, true); }
-                AppEvent::RequestCookieDelete(tab_id, name, domain) => {
-                    let port = self.state.config.remote_debug_port;
-                    let mut cookie = crate::state::ChromeCookie::default();
-                    cookie.name = name;
-                    cookie.domain = domain;
-                    tokio::spawn(async move {
-                        if let Ok(_) = crate::core::browser::BrowserManager::manage_cookie(port, tab_id.clone(), cookie, true).await {
-                            ui::scrape::emit(AppEvent::RequestCookies(tab_id));
-                        }
-                    });
-                }
-                AppEvent::RequestCookieAdd(tab_id, cookie) => {
-                    let port = self.state.config.remote_debug_port;
-                    tokio::spawn(async move {
-                        if let Ok(_) = crate::core::browser::BrowserManager::manage_cookie(port, tab_id.clone(), cookie, false).await {
-                            ui::scrape::emit(AppEvent::RequestCookies(tab_id));
-                        }
-                    });
-                }
                 _ => {}
             }
         }
 
-        // --- 4. UI DRAWING ---
+        // --- 4. UI RENDERING ---
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("STUDIO 1.1.0");
-            ui.add_space(10.0);
-            ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "SCRAPE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Automation, "AUTOMATION");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Network, "NETWORK");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Storage, "STORAGE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Translate, "TRANSLATE");
-            ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "SETTINGS");
+            ui.heading(RichText::new("SNIPER STUDIO").strong().color(Color32::KHAKI));
+            ui.label(RichText::new("v1.1.0 Stable").small().color(Color32::DARK_GRAY));
+            ui.add_space(15.0);
+
+            ui.label("CORE TOOLS");
+            ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, " 🎯 SCRAPE");
+            ui.selectable_value(&mut self.state.active_tab, Tab::Automation, " 🤖 AUTOMATION");
+            ui.selectable_value(&mut self.state.active_tab, Tab::Translate, " 🌎 TRANSLATE");
+            ui.add_space(15.0);
+            ui.label("SYSTEM");
+            ui.selectable_value(&mut self.state.active_tab, Tab::Settings, " ⚙ SETTINGS");
+            
+            ui.add_space(20.0);
+            ui.label(RichText::new("ACTIVE INSPECTORS").small().color(Color32::LIGHT_BLUE));
+            
+            let inspector_info: Vec<(String, String, bool, bool, bool)> = self.state.workspaces.iter()
+                .map(|(id, ws)| (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage))
+                .collect();
+
+            for (tid, title, sn, sm, ss) in inspector_info {
+                let short_title: String = title.chars().take(10).collect();
+                if sn && ui.selectable_label(true, format!(" 🌐 Net: {}", short_title)).clicked() { /* Focus */ }
+                if sm && ui.selectable_label(true, format!(" 🖼 Med: {}", short_title)).clicked() { /* Focus */ }
+                if ss && ui.selectable_label(true, format!(" 📦 Sto: {}", short_title)).clicked() { /* Focus */ }
+            }
         });
 
-        egui::TopBottomPanel::bottom("log_panel").resizable(true).default_height(300.0).show(ctx, |ui| {
+        // --- 5. WORKSPACE WINDOWS (MDI) ---
+        let workspace_ids: Vec<String> = self.state.workspaces.keys().cloned().collect();
+        for tid in workspace_ids {
+            let mut show_net = self.state.workspaces.get(&tid).map(|w| w.show_network).unwrap_or(false);
+            if show_net {
+                let title = self.state.workspaces.get(&tid).unwrap().title.clone();
+                egui::Window::new(format!("{} - NETWORK", title)).id(egui::Id::new(format!("{}_net", tid))).open(&mut show_net).default_size([700.0, 500.0]).show(ctx, |ui| {
+                    state_bridge_render_network(ui, &mut self.state, &tid);
+                });
+                if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = show_net; }
+            }
+
+            let mut show_med = self.state.workspaces.get(&tid).map(|w| w.show_media).unwrap_or(false);
+            if show_med {
+                let title = self.state.workspaces.get(&tid).unwrap().title.clone();
+                egui::Window::new(format!("{} - MEDIA", title)).id(egui::Id::new(format!("{}_med", tid))).open(&mut show_med).default_size([800.0, 600.0]).show(ctx, |ui| {
+                    state_bridge_render_media(ui, &mut self.state, &tid);
+                });
+                if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = show_med; }
+            }
+
+            let mut show_sto = self.state.workspaces.get(&tid).map(|w| w.show_storage).unwrap_or(false);
+            if show_sto {
+                let title = self.state.workspaces.get(&tid).unwrap().title.clone();
+                egui::Window::new(format!("{} - STORAGE", title)).id(egui::Id::new(format!("{}_sto", tid))).open(&mut show_sto).default_size([600.0, 400.0]).show(ctx, |ui| {
+                    state_bridge_render_storage(ui, &mut self.state, &tid);
+                });
+                if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = show_sto; }
+            }
+        }
+
+        egui::TopBottomPanel::bottom("log_panel").resizable(true).default_height(150.0).show(ctx, |ui| {
             ui::log_panel::render(ui, &mut self.state);
         });
 
@@ -227,27 +221,34 @@ impl eframe::App for CrawlerApp {
             match self.state.active_tab {
                 Tab::Scrape => ui::scrape::render(ui, &mut self.state),
                 Tab::Automation => ui::automation::render(ui, &mut self.state),
-                Tab::Network => ui::network_panel::render(ui, &mut self.state),
-                Tab::Storage => ui::storage_panel::render(ui, &mut self.state),
                 Tab::Translate => ui::translate::render(ui, &mut self.state),
                 Tab::Settings => ui::config_panel::render(ui, &mut self.state),
+                _ => {}
             }
         });
 
-        // Notifications Modal
-        let mut close_notification = false;
-        if let Some(notif) = &self.state.notification {
-            egui::Window::new(RichText::new(&notif.title).strong())
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(RichText::new(&notif.message).color(if notif.is_error { egui::Color32::RED } else { egui::Color32::GREEN }));
-                        if ui.button("OK").clicked() { close_notification = true; }
-                    });
-                });
-        }
-        if close_notification { self.state.notification = None; }
-
         ctx.request_repaint();
     }
+}
+
+// Bridges to set the active workspace context for panels
+fn state_bridge_render_network(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {
+    let old_id = state.selected_tab_id.clone();
+    state.selected_tab_id = Some(tid.to_string());
+    ui::network_panel::render(ui, state);
+    state.selected_tab_id = old_id;
+}
+
+fn state_bridge_render_media(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {
+    let old_id = state.selected_tab_id.clone();
+    state.selected_tab_id = Some(tid.to_string());
+    ui::media_panel::render(ui, state);
+    state.selected_tab_id = old_id;
+}
+
+fn state_bridge_render_storage(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {
+    let old_id = state.selected_tab_id.clone();
+    state.selected_tab_id = Some(tid.to_string());
+    ui::storage_panel::render(ui, state);
+    state.selected_tab_id = old_id;
 }

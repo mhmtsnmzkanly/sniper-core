@@ -1,66 +1,52 @@
 use crate::state::AppState;
-use egui::Ui;
-use rfd::FileDialog;
+use egui::{Ui, Color32, RichText};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading("AI TRANSLATION (Gemini)");
-    ui.add_space(10.0);
-
-    // Raw Folder Selection
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("RAW FOLDER:");
-            if ui.button("Browse").clicked() {
-                if let Some(path) = FileDialog::new().pick_folder() {
-                    state.config.raw_output_dir = path;
-                }
-            }
-            ui.label(state.config.raw_output_dir.to_string_lossy());
-        });
-    });
-
-    ui.add_space(5.0);
-
-    // Translated Folder Selection
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("OUTPUT FOLDER:");
-            if ui.button("Browse").clicked() {
-                if let Some(path) = FileDialog::new().pick_folder() {
-                    state.config.translator_output_dir = path;
-                }
-            }
-            ui.label(state.config.translator_output_dir.to_string_lossy());
-        });
-    });
-
+    ui.heading("AI TRANSLATION STUDIO");
     ui.add_space(10.0);
 
     ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("GEMINI API KEY:");
-            ui.add(egui::TextEdit::singleline(&mut state.config.gemini_api_key).password(true));
-        });
-    });
-
-    ui.add_space(15.0);
-
-    if state.is_translating {
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.label("Translating...");
-        });
-    } else {
-        let can_translate = !state.config.gemini_api_key.is_empty();
-        let btn = ui.add_enabled(can_translate, egui::Button::new("START TRANSLATION").min_size([ui.available_width(), 40.0].into()));
+        ui.label(RichText::new("1. Folder Configuration").strong());
         
-        if btn.clicked() {
-            let raw = state.config.raw_output_dir.clone();
-            let trans = state.config.translator_output_dir.clone();
-            let api_key = state.config.gemini_api_key.clone();
-            state.is_translating = true;
-            
-            tracing::info!("Translation requested from {:?} to {:?} using key length: {}", raw, trans, api_key.len());
+        ui.horizontal(|ui| {
+            ui.label("Work Directory:");
+            if ui.button("Select").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    state.config.output_dir = path;
+                }
+            }
+            ui.label(state.config.output_dir.to_string_lossy());
+        });
+    });
+
+    ui.add_space(10.0);
+
+    ui.group(|ui| {
+        ui.label(RichText::new("2. Translation Status").strong());
+        ui.add_space(5.0);
+        
+        if state.is_translating {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new());
+                ui.label("Processing files with Gemini AI...");
+            });
+        } else {
+            ui.label("System Idle. Ready to translate local HTML files.");
         }
+    });
+
+    ui.add_space(20.0);
+
+    let can_start = !state.is_translating && !state.config.gemini_api_key.is_empty();
+    
+    if ui.add_enabled(can_start, egui::Button::new(RichText::new("🚀 START BATCH TRANSLATION").strong().size(18.0))
+        .min_size([ui.available_width(), 50.0].into())).clicked() {
+            state.is_translating = true;
+            // Background task logic would go here
+    }
+
+    if state.config.gemini_api_key.is_empty() {
+        ui.add_space(5.0);
+        ui.label(RichText::new("⚠ API Key missing in SETTINGS!").color(Color32::RED).small());
     }
 }

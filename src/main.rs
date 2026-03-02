@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     crate::ui::scrape::set_event_sender(event_sender);
 
     eframe::run_native(
-        "Sniper Scraper Studio",
+        "Sniper Studio 1.1.0",
         native_options,
         Box::new(|cc| {
             // --- UNIVERSAL OS FONT SUPPORT ---
@@ -88,6 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             cc.egui_ctx.set_fonts(fonts);
+            egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(CrawlerApp::new(cc, state, log_receiver, event_receiver)))
         }),
     ).map_err(|e| format!("GUI Error: {}", e))?;

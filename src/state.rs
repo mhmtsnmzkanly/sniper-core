@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::collections::{HashSet, HashMap};
 use crate::config::AppConfig;
 use serde::{Serialize, Deserialize};
 
@@ -6,10 +7,17 @@ use serde::{Serialize, Deserialize};
 pub enum Tab {
     Scrape,
     Automation,
-    Network,
-    Storage,
     Translate,
     Settings,
+}
+
+#[derive(Clone, Debug)]
+pub struct MediaAsset {
+    pub name: String,
+    pub url: String,
+    pub mime_type: String,
+    pub size_bytes: usize,
+    pub data: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -53,7 +61,7 @@ pub struct ChromeCookie {
     pub http_only: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct NetworkRequest {
     pub request_id: String,
     pub url: String,
@@ -62,6 +70,66 @@ pub struct NetworkRequest {
     pub status: Option<u16>,
     pub request_body: Option<String>,
     pub response_body: Option<String>,
+}
+
+pub struct TabWorkspace {
+    pub tab_id: String,
+    pub title: String,
+    
+    // Window Visibility Flags
+    pub show_network: bool,
+    pub show_media: bool,
+    pub show_storage: bool,
+    
+    // Data
+    pub network_requests: Vec<NetworkRequest>,
+    pub media_assets: Vec<MediaAsset>,
+    pub selected_media_urls: HashSet<String>,
+    pub console_logs: Vec<String>,
+    pub cookies: Vec<ChromeCookie>,
+    pub cookie_edit_buffer: ChromeCookie,
+    pub show_cookie_modal: bool,
+    
+    // Automation
+    pub auto_steps: Vec<AutomationStep>,
+    pub auto_status: AutomationStatus,
+    pub js_script: String,
+    pub js_result: String,
+    
+    // Local UI State
+    pub network_search: String,
+    pub media_search: String,
+    pub sniffer_active: bool,
+    pub auto_reload_triggered: bool,
+    pub open_time: f64,
+}
+
+impl TabWorkspace {
+    pub fn new(id: String, title: String) -> Self {
+        Self {
+            tab_id: id,
+            title,
+            show_network: false,
+            show_media: false,
+            show_storage: false,
+            network_requests: Vec::new(),
+            media_assets: Vec::new(),
+            selected_media_urls: HashSet::new(),
+            console_logs: Vec::new(),
+            cookies: Vec::new(),
+            cookie_edit_buffer: ChromeCookie::default(),
+            show_cookie_modal: false,
+            auto_steps: Vec::new(),
+            auto_status: AutomationStatus::Idle,
+            js_script: String::new(),
+            js_result: String::new(),
+            network_search: String::new(),
+            media_search: String::new(),
+            sniffer_active: false,
+            auto_reload_triggered: false,
+            open_time: 0.0,
+        }
+    }
 }
 
 pub struct LogEntry {
@@ -80,46 +148,16 @@ pub struct AppState {
     pub active_tab: Tab,
     pub config: AppConfig,
     pub session_timestamp: String,
-    
-    // Startup Choice
     pub profile_confirmed: bool,
     pub use_custom_profile: bool,
-
-    // UI Feedback
     pub notification: Option<Notification>,
-    
-    // UI State
     pub scrape_url: String,
     pub available_tabs: Vec<ChromeTabInfo>,
     pub selected_tab_id: Option<String>,
     pub is_browser_running: bool,
-    pub mirror_mode: bool,
     pub last_tab_refresh: f64,
-    
-    // Automation State
-    pub js_script: String,
-    pub js_result: String,
-    pub js_execution_active: bool,
-    pub auto_steps: Vec<AutomationStep>,
-    pub auto_status: AutomationStatus,
-    pub console_logs: Vec<String>,
-
-    // Network State
-    pub network_requests: Vec<NetworkRequest>,
-    pub network_recording: bool,
-
-    // Storage State
-    pub cookies: Vec<ChromeCookie>,
-    pub cookie_edit_buffer: ChromeCookie,
-    pub show_cookie_modal: bool,
-    
-    // Emulation
-    pub user_agent_override: String,
-    pub latitude: f64,
-    pub longitude: f64,
-    
-    // Translate
     pub is_translating: bool,
+    pub workspaces: HashMap<String, TabWorkspace>,
     pub logs: Vec<LogEntry>,
 }
 
@@ -136,23 +174,9 @@ impl AppState {
             available_tabs: Vec::new(),
             selected_tab_id: None,
             is_browser_running: false,
-            mirror_mode: false,
             last_tab_refresh: 0.0,
-            js_script: String::new(),
-            js_result: String::new(),
-            js_execution_active: false,
-            auto_steps: Vec::new(),
-            auto_status: AutomationStatus::Idle,
-            console_logs: Vec::new(),
-            network_requests: Vec::new(),
-            network_recording: false,
-            cookies: Vec::new(),
-            cookie_edit_buffer: ChromeCookie::default(),
-            show_cookie_modal: false,
-            user_agent_override: String::new(),
-            latitude: 41.0082,
-            longitude: 28.9784,
             is_translating: false,
+            workspaces: HashMap::new(),
             logs: Vec::new(),
         }
     }
@@ -163,16 +187,5 @@ impl AppState {
             message: message.to_string(),
             is_error,
         });
-    }
-
-    pub fn get_selected_tab_name(&self) -> String {
-        if let Some(id) = &self.selected_tab_id {
-            self.available_tabs.iter()
-                .find(|t| &t.id == id)
-                .map(|t| t.title.clone())
-                .unwrap_or_else(|| "Unknown Tab".to_string())
-        } else {
-            "No Tab".to_string()
-        }
     }
 }
