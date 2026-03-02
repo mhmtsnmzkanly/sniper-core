@@ -1,0 +1,9 @@
+
+DevTools listening on ws://127.0.0.1:9222/devtools/browser/3d3c3bed-3d4e-41ab-be59-26916682d50b
+[169059:169083:0302/055221.040198:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: PHONE_REGISTRATION_ERROR
+[169059:169083:0302/055221.044087:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: PHONE_REGISTRATION_ERROR
+[169059:169083:0302/055221.045976:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: PHONE_REGISTRATION_ERROR
+[169059:169083:0302/055245.771129:ERROR:google_apis/gcm/engine/registration_request.cc:290] Registration response error message: DEPRECATED_ENDPOINT
+[169059:169191:0302/055248.170454:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+[169059:169190:0302/055248.170454:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed
+[169059:169192:0302/055248.170614:ERROR:content/browser/browser_main_loop.cc:290] GLib: g_main_context_pop_thread_default: assertion 'stack != NULL' failed

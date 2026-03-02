@@ -1,0 +1,4 @@
+[2m2026-03-02T02:52:05.829726Z[0m [32m INFO[0m [2mauto_crawler[0m[2m:[0m 🚀 Sniper Scraper Studio 0.5.0 - FAZ 1 Başlatılıyor...
+[2m2026-03-02T02:53:11.718325Z[0m [31mERROR[0m [2mchromiumoxide::handler[0m[2m:[0m WS Connection error: Ws(Protocol(ResetWithoutClosingHandshake))
+[2m2026-03-02T02:53:11.721378Z[0m [31mERROR[0m [2mchromiumoxide::handler[0m[2m:[0m WS Connection error: Ws(Protocol(ResetWithoutClosingHandshake))
+[2m2026-03-02T02:53:11.723917Z[0m [31mERROR[0m [2mchromiumoxide::handler[0m[2m:[0m WS Connection error: Ws(Protocol(ResetWithoutClosingHandshake))

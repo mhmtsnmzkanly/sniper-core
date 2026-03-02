@@ -1,4 +1,4 @@
-# Sniper Scraper Studio 4.0
+# Sniper Scraper Studio 1.0.0
 
 A professional-grade DevTools, Automation, and Scraper Studio built with Rust. Leveraging the **Chrome DevTools Protocol (CDP)**, it provides a powerful GUI for web data extraction, network monitoring, and browser automation while remaining 100% immune to anti-bot systems (Cloudflare, Akamai, etc.) through manual intervention and remote debugging.
 

@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    tracing::info!("🚀 Sniper Scraper Studio {} - FAZ 1 Başlatılıyor...", env!("CARGO_PKG_VERSION"));
+    tracing::info!("🚀 Sniper Scraper Studio {} Başlatılıyor...", env!("CARGO_PKG_VERSION"));
     
     // Event sender'ı statik olarak veya UI üzerinden ulaştırmak için altyapı
     crate::ui::scrape::set_event_sender(event_sender);

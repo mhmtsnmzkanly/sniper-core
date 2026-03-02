@@ -22,7 +22,7 @@ pub fn emit(event: AppEvent) {
 }
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading("SNIPER SCRAPER STUDIO - PHASE 1");
+    ui.heading("SNIPER SCRAPER STUDIO 1.0.0");
     ui.add_space(10.0);
 
     // Config Section
