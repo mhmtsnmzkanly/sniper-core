@@ -96,6 +96,7 @@ pub struct TabWorkspace {
     pub show_network: bool,
     pub show_media: bool,
     pub show_storage: bool,
+    pub show_automation: bool,
     pub network_requests: Vec<NetworkRequest>,
     pub media_assets: Vec<MediaAsset>,
     pub selected_media_urls: HashSet<String>,
@@ -115,6 +116,7 @@ pub struct TabWorkspace {
     pub active_request_id: Option<String>,
     pub active_media_url: Option<String>,
     pub blocked_urls: HashSet<String>,
+    pub discovered_selectors: Vec<String>,
     pub media_sort_col: String,
     pub media_sort_asc: bool,
 }
@@ -123,7 +125,7 @@ impl TabWorkspace {
     pub fn new(_id: String, title: String) -> Self {
         Self {
             title,
-            show_network: false, show_media: false, show_storage: false,
+            show_network: false, show_media: false, show_storage: false, show_automation: false,
             network_requests: Vec::new(), media_assets: Vec::new(),
             selected_media_urls: HashSet::new(), console_logs: Vec::new(),
             cookies: Vec::new(), cookie_edit_buffer: ChromeCookie::default(),
@@ -135,6 +137,7 @@ impl TabWorkspace {
             active_request_id: None,
             active_media_url: None,
             blocked_urls: HashSet::new(),
+            discovered_selectors: Vec::new(),
             media_sort_col: "name".to_string(),
             media_sort_asc: true,
         }

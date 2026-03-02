@@ -19,6 +19,8 @@ pub enum AppEvent {
     RequestPageReload(String),
     RequestUrlBlock(String, String), // tab_id, url_pattern
     RequestUrlUnblock(String, String), // tab_id, url_pattern
+    RequestPageSelectors(String), // tab_id
+    SelectorsReceived(String, Vec<String>), // tab_id, selectors
     TerminateBrowser,
     
     // --- STORAGE COMMANDS ---

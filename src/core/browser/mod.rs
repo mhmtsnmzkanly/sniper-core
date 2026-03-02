@@ -48,9 +48,10 @@ impl BrowserManager {
         Err(AppError::Browser("Chromium executable not found.".into()))
     }
 
-    pub async fn launch(url: &str, profile: PathBuf, port: u16, timestamp: String) -> AppResult<Child> {
+    pub async fn launch(url: &str, profile: PathBuf, port: u16, log_dir: PathBuf, timestamp: String) -> AppResult<Child> {
         let exec_path = Self::find_executable()?;
-        let chrome_log_file = std::fs::File::create(format!("chrome.{}.log", timestamp)).map_err(AppError::Io)?;
+        let _ = std::fs::create_dir_all(&log_dir);
+        let chrome_log_file = std::fs::File::create(log_dir.join(format!("chrome.{}.log", timestamp))).map_err(AppError::Io)?;
         let mut cmd = std::process::Command::new(exec_path);
         cmd.arg("--no-sandbox")
             .arg(format!("--remote-debugging-port={}", port))
@@ -62,6 +63,23 @@ impl BrowserManager {
             .stderr(Stdio::from(chrome_log_file));
         #[cfg(unix)] { use std::os::unix::process::CommandExt; cmd.process_group(0); }
         cmd.spawn().map_err(AppError::Io)
+    }
+
+    pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let js = r#"(() => {
+            const ids = Array.from(document.querySelectorAll('[id]')).map(el => '#' + el.id);
+            const classes = Array.from(document.querySelectorAll('[class]'))
+                .flatMap(el => Array.from(el.classList).map(c => '.' + c));
+            return Array.from(new Set([...ids, ...classes])).sort();
+        })()"#;
+        
+        let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let selectors: Vec<String> = serde_json::from_value(res.value().clone().cloned().unwrap_or_default()).unwrap_or_default();
+        Ok(selectors)
     }
 
     async fn get_ws_url(port: u16) -> AppResult<String> {

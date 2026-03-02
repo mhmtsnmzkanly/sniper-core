@@ -52,13 +52,13 @@ impl eframe::App for CrawlerApp {
                     ui.label(RichText::new("Unified Output Directory").strong());
                     if ui.button("✅ USE DEFAULT").clicked() {
                         self.state.output_confirmed = true;
-                        crate::logger::set_log_path(self.state.config.output_dir.join("logs"));
+                        crate::logger::set_log_path(self.state.config.output_dir.clone());
                     }
                     if ui.button("📁 CHOOSE FOLDER").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.state.config.output_dir = path;
                             self.state.output_confirmed = true;
-                            crate::logger::set_log_path(self.state.config.output_dir.join("logs"));
+                            crate::logger::set_log_path(self.state.config.output_dir.clone());
                         }
                     }
                 });
@@ -205,6 +205,21 @@ impl eframe::App for CrawlerApp {
                 AppEvent::AutomationError(tid, err) => {
                     if let Some(ws) = self.state.workspaces.get_mut(&tid) {
                         ws.auto_status = crate::state::AutomationStatus::Error(err);
+                    }
+                }
+                AppEvent::RequestPageSelectors(tid) => {
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::get_page_selectors(port, tid_clone.clone()).await {
+                            Ok(selectors) => ui::scrape::emit(AppEvent::SelectorsReceived(tid_clone, selectors)),
+                            Err(_) => {}
+                        }
+                    });
+                }
+                AppEvent::SelectorsReceived(tid, selectors) => {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.discovered_selectors = selectors;
                     }
                 }
                 AppEvent::RequestScriptExecution(tid, script) => {

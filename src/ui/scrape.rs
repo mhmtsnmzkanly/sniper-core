@@ -37,8 +37,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let profile = if state.use_custom_profile { state.config.default_profile_dir.clone() } else { std::env::current_dir().unwrap().join("temp_profile") };
                     let port = state.config.remote_debug_port;
                     let ts = state.session_timestamp.clone();
+                    let log_dir = state.config.output_dir.clone();
                     tokio::spawn(async move {
-                        if let Ok(child) = crate::core::browser::BrowserManager::launch(&url, profile, port, ts).await {
+                        if let Ok(child) = crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts).await {
                             emit(AppEvent::BrowserStarted(child));
                         }
                     });
@@ -123,7 +124,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
             ui.add_space(8.0);
 
-            ui.columns(3, |cols| {
+            ui.columns(4, |cols| {
                 if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("🌐 NETWORK").strong().color(Color32::LIGHT_GRAY)).min_size([cols[0].available_width(), 40.0].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
@@ -136,65 +137,83 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ws.show_media = true;
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
-                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("💻 CONSOLE & SCRIPT").strong().color(Color32::LIGHT_BLUE)).min_size([cols[2].available_width(), 40.0].into())).clicked() {
+                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🤖 AUTO").strong().color(Color32::KHAKI)).min_size([cols[2].available_width(), 40.0].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
-                    ws.sniffer_active = true; // Use this flag for Console window
+                    ws.show_automation = true;
+                }
+                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("💻 CONSOLE").strong().color(Color32::LIGHT_BLUE)).min_size([cols[3].available_width(), 40.0].into())).clicked() {
+                    let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
+                    let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
+                    ws.sniffer_active = true; 
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
             });
 
-            ui.add_space(10.0);
-            if can_action {
-                crate::ui::automation::render_embedded(ui, state, &tid);
+            // Extract window states first to avoid borrow conflicts
+            let (show_auto, sniffer_active, ws_title) = if let Some(ws) = state.workspaces.get(&tid) {
+                (ws.show_automation, ws.sniffer_active, ws.title.clone())
+            } else { (false, false, "Unknown".into()) };
+
+            if show_auto {
+                let mut open = true;
+                egui::Window::new(format!("{} - SCRATCH AUTOMATION", ws_title))
+                    .open(&mut open)
+                    .default_size([800.0, 600.0])
+                    .resizable(true)
+                    .show(ui.ctx(), |ui| {
+                        crate::ui::automation::render_embedded(ui, state, &tid);
+                    });
+                if let Some(ws) = state.workspaces.get_mut(&tid) { ws.show_automation = open; }
             }
 
-            if let Some(ws) = state.selected_tab_id.as_ref().and_then(|id| state.workspaces.get_mut(id)) {
-                if ws.sniffer_active {
-                    egui::Window::new(format!("{} - CONSOLE & SCRIPT", ws.title))
-                        .open(&mut ws.sniffer_active)
-                        .default_size([700.0, 500.0])
-                        .resizable(true)
-                        .show(ui.ctx(), |ui| {
-                        
-                        ui.label("JS SCRIPT INJECTION");
-                        ui.add(egui::TextEdit::multiline(&mut ws.js_script)
-                            .font(egui::FontId::monospace(12.0))
-                            .desired_rows(5)
-                            .desired_width(f32::INFINITY));
-                        if ui.button("🚀 INJECT SCRIPT").clicked() {
-                            emit(AppEvent::RequestScriptExecution(tid.clone(), ws.js_script.clone()));
-                        }
-                        if !ws.js_result.is_empty() {
-                            ui.label(RichText::new(format!("Result: {}", ws.js_result)).color(Color32::GREEN));
-                        }
-                        
-                        ui.separator();
-                        
-                        ui.horizontal(|ui| {
-                            ui.label("LIVE CONSOLE LOGS");
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("🗑 Clear").clicked() { ws.console_logs.clear(); }
-                                if ui.button("💾 Save to File").clicked() {
-                                    let content = ws.console_logs.join("\n");
-                                    if let Some(path) = rfd::FileDialog::new().set_file_name("console.log").save_file() {
-                                        let _ = std::fs::write(path, content);
+            if sniffer_active {
+                let mut open = true;
+                egui::Window::new(format!("{} - CONSOLE & SCRIPT", ws_title))
+                    .open(&mut open)
+                    .default_size([700.0, 500.0])
+                    .resizable(true)
+                    .show(ui.ctx(), |ui| {
+                        if let Some(ws) = state.workspaces.get_mut(&tid) {
+                            ui.label("JS SCRIPT INJECTION");
+                            ui.add(egui::TextEdit::multiline(&mut ws.js_script)
+                                .font(egui::FontId::monospace(12.0))
+                                .desired_rows(5)
+                                .desired_width(f32::INFINITY));
+                            if ui.button("🚀 INJECT SCRIPT").clicked() {
+                                emit(AppEvent::RequestScriptExecution(tid.clone(), ws.js_script.clone()));
+                            }
+                            if !ws.js_result.is_empty() {
+                                ui.label(RichText::new(format!("Result: {}", ws.js_result)).color(Color32::GREEN));
+                            }
+                            
+                            ui.separator();
+                            
+                            ui.horizontal(|ui| {
+                                ui.label("LIVE CONSOLE LOGS");
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button("🗑 Clear").clicked() { ws.console_logs.clear(); }
+                                    if ui.button("💾 Save to File").clicked() {
+                                        let content = ws.console_logs.join("\n");
+                                        if let Some(path) = rfd::FileDialog::new().set_file_name("console.log").save_file() {
+                                            let _ = std::fs::write(path, content);
+                                        }
                                     }
-                                }
-                                if ui.button("📋 Copy All").clicked() {
-                                    ui.ctx().copy_text(ws.console_logs.join("\n"));
+                                    if ui.button("📋 Copy All").clicked() {
+                                        ui.ctx().copy_text(ws.console_logs.join("\n"));
+                                    }
+                                });
+                            });
+
+                            ui.add_space(5.0);
+                            egui::ScrollArea::vertical().stick_to_bottom(true).max_height(f32::INFINITY).show(ui, |ui| {
+                                for log in &ws.console_logs {
+                                    ui.label(RichText::new(log).small().font(egui::FontId::monospace(11.0)));
                                 }
                             });
-                        });
-
-                        ui.add_space(5.0);
-                        egui::ScrollArea::vertical().stick_to_bottom(true).max_height(f32::INFINITY).show(ui, |ui| {
-                            for log in &ws.console_logs {
-                                ui.label(RichText::new(log).small().font(egui::FontId::monospace(11.0)));
-                            }
-                        });
+                        }
                     });
-                }
+                if let Some(ws) = state.workspaces.get_mut(&tid) { ws.sniffer_active = open; }
             }
         });
     });
