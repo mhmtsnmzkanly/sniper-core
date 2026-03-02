@@ -128,7 +128,7 @@ impl AutomationEngine {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
                     
-                    // 1. First, ensure the element is in view and focused using robust JS
+                    // 1. Ensure focused and cleared via JS
                     let focus_js = format!(
                         "(() => {{ \
                             const el = document.querySelector('{}'); \
@@ -141,9 +141,9 @@ impl AutomationEngine {
                     );
                     self.run_js(page, focus_js).await?;
                     
-                    // 2. Use native CDP hardware-level keyboard events
-                    // This simulates actual key presses and is undetectable by most frameworks
-                    page.type(final_sel, final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    // 2. Find element and use native type_str
+                    let el = page.find_element(final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    el.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector);
