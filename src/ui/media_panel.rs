@@ -1,39 +1,39 @@
 use crate::state::AppState;
-use egui::{Ui, Color32, RichText};
+use egui::{Ui, Color32, RichText, Frame, Stroke};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
         Some(id) => id.clone(),
-        None => { ui.label("No tab selected."); return; }
-    };
-    
-    let (ws_title, media_count, media_assets, selected_media_urls, media_search) = {
-        if !state.workspaces.contains_key(&tid) { return; }
-        let ws = &state.workspaces[&tid];
-        (ws.title.clone(), ws.media_assets.len(), ws.media_assets.clone(), ws.selected_media_urls.clone(), ws.media_search.clone())
+        None => { ui.label(RichText::new("NO TARGET SELECTED").strong().color(Color32::RED)); return; }
     };
 
-    ui.heading(format!("MEDIA FORENSIC ENGINE: {}", ws_title));
-    ui.add_space(5.0);
+    // Extract state to avoid borrow conflicts
+    let (media_assets, media_count, selected_media_urls, media_search, sort_col, sort_asc) = if let Some(ws) = state.workspaces.get(&tid) {
+        (ws.media_assets.clone(), ws.media_assets.len(), ws.selected_media_urls.clone(), ws.media_search.clone(), ws.media_sort_col.clone(), ws.media_sort_asc)
+    } else {
+        (Vec::new(), 0, std::collections::HashSet::new(), String::new(), "name".to_string(), true)
+    };
 
-    ui.group(|ui| {
+    let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(25)).stroke(Stroke::new(1.0, Color32::from_gray(50)));
+
+    frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
-            if ui.button("🗑 CLEAR ALL").clicked() {
+            if ui.add(egui::Button::new(RichText::new("CLEAR ASSETS").strong().color(Color32::LIGHT_RED))).clicked() {
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     ws.media_assets.clear();
                     ws.selected_media_urls.clear();
                 }
             }
-            if ui.button("🔄 FORCE RELOAD").clicked() {
+            if ui.add(egui::Button::new(RichText::new("FORCE RELOAD").strong())).clicked() {
                 emit(AppEvent::RequestPageReload(tid.clone()));
             }
             
             ui.separator();
             
             // --- AUTOMATIC CSS SCAN ---
-            if ui.button(RichText::new("🔍 DEEP SCAN (CSS)").color(Color32::GOLD)).on_hover_text("Automatically extract resources from all captured CSS files").clicked() {
+            if ui.add(egui::Button::new(RichText::new("DEEP SCAN (CSS)").strong().color(Color32::GOLD))).on_hover_text("Automatically extract resources from all captured CSS files").clicked() {
                 let css_requests: Vec<(String, String)> = {
                     let ws = &state.workspaces[&tid];
                     ws.network_requests.iter()
@@ -55,92 +55,55 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             }
 
             ui.separator();
-            ui.label("🔍 FILTER:");
+            ui.label(RichText::new("FILTER:").strong().color(Color32::LIGHT_BLUE));
             if let Some(ws) = state.workspaces.get_mut(&tid) {
-                ui.text_edit_singleline(&mut ws.media_search);
+                ui.add(egui::TextEdit::singleline(&mut ws.media_search).desired_width(200.0));
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("Assets: {}", media_count));
+                ui.label(RichText::new(format!("TOTAL ASSETS: {}", media_count)).monospace().color(Color32::GREEN));
             });
         });
     });
 
-    ui.add_space(5.0);
-
-    ui.horizontal(|ui| {
-        if ui.button("✅ Select All").clicked() {
-            if let Some(ws) = state.workspaces.get_mut(&tid) {
-                for asset in &ws.media_assets { ws.selected_media_urls.insert(asset.url.clone()); }
-            }
-        }
-        if ui.button("⬜ Deselect").clicked() {
-            if let Some(ws) = state.workspaces.get_mut(&tid) {
-                ws.selected_media_urls.clear();
-            }
-        }
-        
-        let selected_count = selected_media_urls.len();
-        if ui.add_enabled(selected_count > 0, egui::Button::new(RichText::new(format!("💾 DOWNLOAD SELECTED ({})", selected_count)).strong())).clicked() {
-            if let Some(first_asset) = media_assets.iter().find(|a| selected_media_urls.contains(&a.url)) {
-                let root = state.config.output_dir.clone();
-                if let Ok(dir) = crate::core::browser::BrowserManager::get_output_path(root, "MEDIA", &first_asset.url) {
-                    let mut saved = 0;
-                    for asset in &media_assets {
-                        if selected_media_urls.contains(&asset.url) {
-                            if let Some(data) = &asset.data {
-                                let _ = std::fs::write(dir.join(&asset.name), data);
-                                saved += 1;
-                            }
-                        }
-                    }
-                    state.notify("Batch Download", &format!("Successfully saved {} files to {:?}", saved, dir), false);
-                }
-            }
-        }
-    });
-
-    ui.add_space(5.0);
+    ui.add_space(8.0);
 
     // --- SORTING LOGIC ---
     let mut media_assets = media_assets;
-    if let Some(ws) = state.workspaces.get_mut(&tid) {
-        let asc = ws.media_sort_asc;
-        match ws.media_sort_col.as_str() {
-            "name" => media_assets.sort_by(|a, b| if asc { a.name.to_lowercase().cmp(&b.name.to_lowercase()) } else { b.name.to_lowercase().cmp(&a.name.to_lowercase()) }),
-            "size" => media_assets.sort_by(|a, b| if asc { a.size_bytes.cmp(&b.size_bytes) } else { b.size_bytes.cmp(&a.size_bytes) }),
-            "type" => media_assets.sort_by(|a, b| if asc { a.mime_type.cmp(&b.mime_type) } else { b.mime_type.cmp(&a.mime_type) }),
-            _ => {}
-        }
+    match sort_col.as_str() {
+        "name" => media_assets.sort_by(|a, b| if sort_asc { a.name.to_lowercase().cmp(&b.name.to_lowercase()) } else { b.name.to_lowercase().cmp(&a.name.to_lowercase()) }),
+        "size" => media_assets.sort_by(|a, b| if sort_asc { a.size_bytes.cmp(&b.size_bytes) } else { b.size_bytes.cmp(&a.size_bytes) }),
+        "type" => media_assets.sort_by(|a, b| if sort_asc { a.mime_type.cmp(&b.mime_type) } else { b.mime_type.cmp(&a.mime_type) }),
+        _ => {}
     }
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         let search = media_search.to_lowercase();
-        egui::Grid::new("media_grid_v8").striped(true).num_columns(7).spacing([15.0, 20.0]).show(ui, |ui| {
+        egui::Grid::new("media_grid_v9").striped(true).num_columns(7).spacing([15.0, 12.0]).show(ui, |ui| {
             // --- HEADER WITH SORTING ---
             ui.label(""); 
-            ui.label("PREVIEW");
+            ui.label(RichText::new("PREVIEW").strong().color(Color32::LIGHT_GRAY));
             
-            if ui.button(RichText::new("NAME ↕").strong()).clicked() {
+            if ui.button(RichText::new("NAME").strong()).clicked() {
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     if ws.media_sort_col == "name" { ws.media_sort_asc = !ws.media_sort_asc; }
                     else { ws.media_sort_col = "name".to_string(); ws.media_sort_asc = true; }
                 }
             }
-            if ui.button(RichText::new("TYPE ↕").strong()).clicked() {
+            if ui.button(RichText::new("TYPE").strong()).clicked() {
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     if ws.media_sort_col == "type" { ws.media_sort_asc = !ws.media_sort_asc; }
                     else { ws.media_sort_col = "type".to_string(); ws.media_sort_asc = true; }
                 }
             }
-            if ui.button(RichText::new("SIZE ↕").strong()).clicked() {
+            if ui.button(RichText::new("SIZE").strong()).clicked() {
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     if ws.media_sort_col == "size" { ws.media_sort_asc = !ws.media_sort_asc; }
                     else { ws.media_sort_col = "size".to_string(); ws.media_sort_asc = true; }
                 }
             }
-            ui.label(RichText::new("SOURCE URL (CLICK TO COPY)").strong());
-            ui.label("ACTION");
+            ui.label(RichText::new("SOURCE URL").strong().color(Color32::LIGHT_GRAY));
+            ui.label(RichText::new("ACTION").strong().color(Color32::LIGHT_GRAY));
             ui.end_row();
 
             for asset in media_assets {
@@ -154,34 +117,34 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
 
-                ui.allocate_ui(egui::vec2(120.0, 120.0), |ui| {
+                ui.allocate_ui(egui::vec2(100.0, 80.0), |ui| {
                     if asset.mime_type.starts_with("image/") {
                         if let Some(data) = &asset.data {
                             let resp = ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
-                                .max_size(egui::vec2(110.0, 110.0)).corner_radius(8.0).sense(egui::Sense::click()));
+                                .max_size(egui::vec2(90.0, 90.0)).corner_radius(4.0).sense(egui::Sense::click()));
                             if resp.clicked() {
                                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                                     ws.active_media_url = Some(asset.url.clone());
                                 }
                             }
                         }
-                    } else { ui.label("🎬 MEDIA"); }
+                    } else { ui.label("NO PREVIEW"); }
                 });
 
-                let short_name: String = if asset.name.chars().count() > 12 { asset.name.chars().take(12).collect::<String>() + "..." } else { asset.name.clone() };
+                let short_name: String = if asset.name.chars().count() > 15 { asset.name.chars().take(12).collect::<String>() + "..." } else { asset.name.clone() };
                 ui.add(egui::Label::new(RichText::new(short_name).strong())).on_hover_text(&asset.name);
                 ui.label(RichText::new(&asset.mime_type).small().color(Color32::LIGHT_BLUE));
                 ui.label(RichText::new(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0)).monospace().color(Color32::YELLOW));
                 
                 ui.horizontal(|ui| {
-                    let trunc_url: String = if asset.url.chars().count() > 60 { asset.url.chars().take(57).collect::<String>() + "..." } else { asset.url.clone() };
-                    if ui.add(egui::Label::new(RichText::new(trunc_url).small().color(Color32::GRAY)).sense(egui::Sense::click())).on_hover_text("Click to copy URL").clicked() {
+                    let trunc_url: String = if asset.url.chars().count() > 50 { asset.url.chars().take(47).collect::<String>() + "..." } else { asset.url.clone() };
+                    if ui.add(egui::Label::new(RichText::new(trunc_url).small().color(Color32::from_gray(180))).sense(egui::Sense::click())).on_hover_text("Click to copy URL").clicked() {
                         ui.ctx().copy_text(asset.url.clone());
                     }
                 });
 
                 ui.vertical(|ui| {
-                    if ui.button("💾 SAVE").clicked() {
+                    if ui.button("SAVE FILE").clicked() {
                         if let Some(data) = &asset.data {
                             if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
                                 let _ = std::fs::write(&path, data);
@@ -209,7 +172,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     .hscroll(true)
                     .show(ui.ctx(), |ui| {
                         if let Some(data) = &asset.data {
-                            // Display image with its actual size, window handles scrolling
                             ui.add(egui::Image::from_bytes(format!("preview://{}", asset.url), data.clone())
                                 .corner_radius(4.0));
                         } else {
