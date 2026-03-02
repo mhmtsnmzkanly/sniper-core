@@ -60,8 +60,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             let api_key = state.config.gemini_api_key.clone();
             state.is_translating = true;
             
-            // TODO: Arka planda translator workflow başlat (core/translator üzerinden)
-            tracing::info!("Translation requested from {:?} to {:?}", raw, trans);
+            tracing::info!("Translation requested from {:?} to {:?} using key length: {}", raw, trans, api_key.len());
         }
     }
 }

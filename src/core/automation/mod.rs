@@ -37,7 +37,7 @@ impl AutomationEngine {
                     sleep(Duration::from_secs(secs)).await;
                 }
                 AutomationStep::WaitSelector(selector) => {
-                    page.wait_for_navigation().await?; // Basit bekleme
+                    page.wait_for_navigation().await?;
                     let _ = page.find_element(&selector).await?;
                 }
                 AutomationStep::ScrollBottom => {
@@ -51,19 +51,10 @@ impl AutomationEngine {
                     page.evaluate(script).await?;
                 }
             }
-            sleep(Duration::from_millis(500)).await; // Adımlar arası nefes al
+            sleep(Duration::from_millis(500)).await;
         }
 
         emit(AppEvent::AutomationFinished);
         Ok(())
-    }
-}
-
-impl crate::core::browser::BrowserManager {
-    pub async fn get_ws_url(port: u16) -> Result<String> {
-        let client = rquest::Client::new();
-        let json: serde_json::Value = client.get(format!("http://127.0.0.1:{}/json/version", port))
-            .send().await?.json().await?;
-        Ok(json["webSocketDebuggerUrl"].as_str().ok_or(anyhow!("WS URL missing"))?.to_string())
     }
 }

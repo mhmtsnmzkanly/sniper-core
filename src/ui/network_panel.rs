@@ -35,7 +35,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(10.0);
 
     // Request Table
-    egui::Frame::none().fill(Color32::from_black_alpha(20)).show(ui, |ui| {
+    egui::Frame::default().fill(Color32::from_black_alpha(20)).show(ui, |ui| {
         let column_width = (ui.available_width() - 40.0) / 4.0;
         
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

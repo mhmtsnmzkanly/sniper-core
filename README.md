@@ -1,46 +1,65 @@
-# Sniper Scraper 3.0 (Precision Mode)
+# Sniper Scraper Studio 4.0
 
-Auto-Crawler projesinin evrimleşmiş, anti-bot sistemlerine (Cloudflare vb.) karşı %100 dayanıklı ve kullanıcı kontrollü yeni sürümü. Artık "Otomatik Kazıma" yerine, insanın navigasyon gücü ile makinenin kayıt hızını birleştiren bir **Keskin Nişancı (Sniper)** modunda çalışır.
+A professional-grade DevTools, Automation, and Scraper Studio built with Rust. Leveraging the **Chrome DevTools Protocol (CDP)**, it provides a powerful GUI for web data extraction, network monitoring, and browser automation while remaining 100% immune to anti-bot systems (Cloudflare, Akamai, etc.) through manual intervention and remote debugging.
 
-## 🚀 Öne Çıkan Özellikler
+## 🚀 Key Features
 
-- **Anti-Bot Precision:** Cloudflare ve Captcha engellerini, gerçek tarayıcınızda (Chrome/Chromium) manuel olarak geçip programa sadece "Kaydet" emri vererek aşarsınız.
-- **Multi-Tab Support:** Belirlediğiniz port üzerinden tarayıcıdaki tüm açık sekmeleri görür, istediğiniz sekmeyi seçip anlık HTML kopyasını alırsınız.
-- **UTF-8 Full Support:** Türkçe, Korece ve diğer tüm dillerde karakter bozulması olmadan kayıt ve görüntüleme.
-- **Sistem Profili Entegrasyonu:** Kendi tarayıcı profilinizi (çerezler, şifreler) otomatik tespit edip kullanabilme.
-- **Orphan Process Protection:** Program kapandığında tarayıcı ve tüm sekmelerini otomatik olarak sonlandırır.
-- **AI Translation:** Kazınan ham HTML dosyalarını toplu olarak Google Gemini API üzerinden profesyonel kalitede Türkçeye çevirme.
+- **Direct Tab Connection:** High-precision tab management using direct WebSocket connections via `chromiumoxide`.
+- **Mirror Mode:** Automatically discover and download all page assets (Images, CSS, JS) for offline browsing.
+- **Automation Builder:** A low-code step engine to build custom scraping pipelines (Navigate, Click, Wait, Extract).
+- **Network Inspector:** Real-time HTTP request/response monitoring with status code highlights and resource filtering.
+- **Script Injection Studio:** Live JavaScript execution on target tabs with instant result capture.
+- **DevTools Studio:** Inspect and fetch session cookies, and emulate different devices via User-Agent and Geolocation spoofing.
+- **Cross-Platform:** Native support for Linux (Manjaro/Arch optimized), Windows, and macOS.
+- **Versioned Config:** Robust `.env` based configuration system with automatic migration support.
 
-## 🛠 Kurulum ve Kullanım (Sniper Modu)
+## 🛠 Usage Guide
 
-### 1. Adım: Tarayıcı Hazırlığı
-Programın tarayıcınıza bağlanabilmesi için Chrome/Chromium'u Remote Debugging portu ile başlatmalısınız:
+### 1. Browser Preparation
+To allow the studio to control your browser, launch Chrome/Chromium with the remote debugging port:
 ```bash
 google-chrome --remote-debugging-port=9222
 ```
 
-### 2. Adım: Programı Başlatın
+### 2. Launching the Studio
 ```bash
-cargo run
+cargo run --release
 ```
 
-### 3. Adım: Operasyon
-1. **Output Dir:** Kayıt edilecek ana klasörü seçin.
-2. **Step 1:** URL girip `LAUNCH BROWSER` deyin (Veya hali hazırda açıksa sadece portu kontrol edin).
-3. **Step 2:** Tarayıcıda romanın bölümünü açın. GUI'de `REFRESH LIST` diyerek sekmeyi seçin.
-4. **Step 3:** `CAPTURE TARGET PAGE` butonuna basın. 
-   - *Sonuç:* `site.com/bolum.adi.html` şeklinde UTF-8 HTML dosyanız hazır!
+### 3. Core Workflow
+1. **SCRAPE Tab:** Set your target URL and click `LAUNCH BROWSER`. 
+2. **Tab Selection:** Once the browser is open, click `REFRESH LIST` in Step 2. Select the tab you want to target.
+3. **Capture:** Click `CAPTURE TARGET PAGE` to save a UTF-8 HTML copy. Enable `Mirror Mode` if you want to download images and styles.
+4. **Automation:** Switch to the `AUTOMATION` tab to add steps like clicking buttons or waiting for elements to load.
 
-## 🌐 AI Çeviri (Translate Tab)
-1. **Raw Folder:** Kazınan HTML'lerin olduğu klasörü seçin.
-2. **Output Folder:** Çevirilerin kaydedileceği yeri seçin.
-3. **API Key:** Gemini API anahtarınızı girin.
-4. **Start:** Program tüm dosyaları sırayla okur ve AI ile yerelleştirir.
+## 🏗 Architecture Overview
 
-## 📜 Loglama
-Program her çalışma için `logs/` klasörü altında iki adet log tutar:
-- `logs/{TIME}.log`: Uygulama adımları ve başarı durumları.
-- `logs/chrome.{TIME}.log`: Tarayıcıdan gelen içsel mesajlar ve hatalar.
+The project follows a **Layered Event-Driven Architecture**:
+
+- **`src/ui/`**: Modular GUI panels built with `egui`. Contains no business logic.
+- **`src/core/browser/`**: A robust wrapper around `chromiumoxide` for handling CDP commands and tab management.
+- **`src/core/events/`**: The central **Event Bus** using asynchronous channels (`mpsc`) to route messages between the UI and backend.
+- **`src/core/automation/`**: State machine engine for executing sequential automation steps.
+- **`src/config/`**: Handles versioned configuration loading, default values, and schema migrations.
+- **`src/logger/`**: Centralized tracing system that pipes logs to both files (`logs/{TIME}.log`) and the GUI panel.
+
+## 👨‍💻 Developer Guide
+
+### Prerequisites
+- **Rust Toolchain:** Latest stable version.
+- **Cmake & Build-Essential:** Required for compiling `rquest` (BoringSSL).
+  - *Linux (Manjaro):* `sudo pacman -S cmake base-devel`
+  - *Windows:* Install via Visual Studio Build Tools.
+
+### Adding a New Feature
+1. **Define Event:** Add a new variant to `AppEvent` in `src/core/events/mod.rs`.
+2. **Implement Logic:** Add the core logic in `src/core/` (e.g., `browser` or `downloader`).
+3. **Update UI:** Create or update a panel in `src/ui/` to emit the new event.
+4. **Handle Event:** Add a match arm in `src/app.rs` to connect the UI signal to the core logic.
+
+### Optimization Tips
+- **Binary Size:** Use `cargo build --release` to benefit from LTO and symbol stripping.
+- **Async Safety:** Always use `tokio::spawn` for browser interactions to keep the UI thread responsive.
 
 ---
-**Geliştirici Notu:** Bu araç eğitim amaçlı geliştirilmiştir. Kullanırken ilgili sitelerin kullanım koşullarına uyunuz.
+*Disclaimer: This tool is intended for educational and authorized testing purposes only. Please respect the Terms of Service of any website you interact with.*

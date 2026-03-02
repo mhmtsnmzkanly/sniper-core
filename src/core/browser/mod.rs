@@ -48,7 +48,7 @@ impl BrowserManager {
             .arg("--remote-allow-origins=*")
             .arg("--disable-features=OptimizationGuideModelDownloading,OnDeviceModel")
             .arg("--no-first-run")
-            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg(format!("--user-data-dir={}", final_profile.display()))
             .arg(url)
             .stdout(Stdio::from(chrome_log_file.try_clone()?))
             .stderr(Stdio::from(chrome_log_file));
@@ -64,7 +64,8 @@ impl BrowserManager {
 
     pub async fn list_tabs(port: u16) -> Result<Vec<ChromeTabInfo>> {
         let client = rquest::Client::builder().timeout(std::time::Duration::from_millis(800)).build()?;
-        let tabs: Vec<ChromeTabInfo> = client.get(format!("http://127.0.0.1:{}/json/list", port)).send().await?.json().await?;
+        let url = format!("http://127.0.0.1:{}/json/list", port);
+        let tabs: Vec<ChromeTabInfo> = client.get(url).send().await?.json().await?;
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page" && !t.url.is_empty()).collect())
     }
 
@@ -129,6 +130,7 @@ impl BrowserManager {
         let pages = browser.pages().await?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
         page.execute(chromiumoxide::cdp::browser_protocol::network::EnableParams::default()).await?;
+        
         let mut events = page.event_listener::<Event>().await?;
         tokio::spawn(async move {
             tokio::select! {
@@ -142,7 +144,7 @@ impl BrowserManager {
                                     method: e.request.method.clone(),
                                     resource_type: format!("{:?}", e.r#type),
                                     status: None,
-                                    timestamp: e.timestamp.clone().into(),
+                                    timestamp: *e.timestamp,
                                 };
                                 crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(req));
                             }
@@ -178,10 +180,18 @@ impl BrowserManager {
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
         let pages = browser.pages().await?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
+        
         if !ua.is_empty() {
-            page.execute(chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::builder().user_agent(ua).build()?).await?;
+            let params = chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::new(ua);
+            page.execute(params).await?;
         }
-        page.execute(chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder().latitude(lat).longitude(lon).accuracy(1.0).build()?).await?;
+        
+        let geo_params = chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder()
+            .latitude(lat)
+            .longitude(lon)
+            .accuracy(1.0)
+            .build();
+        page.execute(geo_params).await?;
         Ok(())
     }
 }
