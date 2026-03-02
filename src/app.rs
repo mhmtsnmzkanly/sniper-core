@@ -115,6 +115,23 @@ impl eframe::App for CrawlerApp {
                         req.status = Some(status);
                     }
                 }
+                AppEvent::RequestAutomationRun(tab_id, steps) => {
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::core::automation::AutomationEngine::run_pipeline(port, tab_id, steps).await {
+                            ui::scrape::emit(AppEvent::AutomationError(e.to_string()));
+                        }
+                    });
+                }
+                AppEvent::AutomationProgress(idx) => {
+                    self.state.auto_status = crate::state::AutomationStatus::Running(idx);
+                }
+                AppEvent::AutomationFinished => {
+                    self.state.auto_status = crate::state::AutomationStatus::Finished;
+                }
+                AppEvent::AutomationError(msg) => {
+                    self.state.auto_status = crate::state::AutomationStatus::Error(msg);
+                }
                 _ => {}
             }
         }

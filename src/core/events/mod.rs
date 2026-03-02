@@ -12,9 +12,13 @@ pub enum AppEvent {
     RequestCapture(String, bool), // tab_id, mirror_mode
     RequestScriptExecution(String, String), // tab_id, script
     RequestNetworkToggle(String, bool), // tab_id, enabled
+    RequestAutomationRun(String, Vec<crate::state::AutomationStep>),
     RequestTabRefresh,
     
     // Durum Olayları
+    AutomationProgress(usize),
+    AutomationFinished,
+    AutomationError(String),
     NetworkRequestSent(crate::state::NetworkRequest),
     NetworkResponseReceived(String, u16), // request_id, status
     ScriptFinished(String),

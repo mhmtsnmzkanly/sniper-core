@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use crate::config::AppConfig;
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -8,6 +9,25 @@ pub enum Tab {
     Network,
     Translate,
     Settings,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum AutomationStep {
+    Navigate(String),
+    Click(String),      // Selector
+    Wait(u64),         // Seconds
+    WaitSelector(String),
+    ScrollBottom,
+    ExtractText(String), // Selector
+    InjectJS(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AutomationStatus {
+    Idle,
+    Running(usize), // Current step index
+    Finished,
+    Error(String),
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -50,10 +70,12 @@ pub struct AppState {
     pub mirror_mode: bool,
     pub last_tab_refresh: f64,
     
-    // Automation State
+    // Automation Builder State
     pub js_script: String,
     pub js_result: String,
     pub js_execution_active: bool,
+    pub auto_steps: Vec<AutomationStep>,
+    pub auto_status: AutomationStatus,
 
     // Network State
     pub network_requests: Vec<NetworkRequest>,
@@ -81,6 +103,8 @@ impl AppState {
             js_script: "document.title".to_string(),
             js_result: String::new(),
             js_execution_active: false,
+            auto_steps: Vec::new(),
+            auto_status: AutomationStatus::Idle,
             network_requests: Vec::new(),
             network_recording: false,
             is_translating: false,
