@@ -82,7 +82,7 @@ impl BrowserManager {
         Ok(selectors)
     }
 
-    async fn get_ws_url(port: u16) -> AppResult<String> {
+    pub async fn get_ws_url(port: u16) -> AppResult<String> {
         let client = rquest::Client::new();
         let resp = client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await?;
         let json: serde_json::Value = resp.json().await?;
