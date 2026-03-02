@@ -26,21 +26,19 @@ impl AutomationEngine {
 
         tracing::info!("[AUTO-ENGINE] Connecting to browser for pipeline...");
         
-        // Single persistent connection for the whole pipeline
         let ws_url = crate::core::browser::BrowserManager::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let _handler_job = tokio::spawn(async move { while let Some(_) = handler.next().await {} });
         
-        // Wait for page attachment
         let mut page = None;
-        for _ in 0..10 {
+        for _ in 0..15 {
             if let Ok(pages) = browser.pages().await {
                 if let Some(p) = pages.into_iter().find(|p| p.target_id().as_ref() == tid) {
                     page = Some(p);
                     break;
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         }
 
         let page = page.ok_or_else(|| AppError::NotFound(format!("Target page {} not found", tid)))?;
@@ -81,7 +79,6 @@ impl AutomationEngine {
     }
 
     async fn run_js(&self, page: &Page, script: String) -> AppResult<String> {
-        // Robust JS runner with error handling
         let wrapped_js = format!(
             "(() => {{ try {{ \
                 const result = (async () => {{ {} }})(); \
@@ -115,61 +112,71 @@ impl AutomationEngine {
                     page.goto(final_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::Click { selector } => {
-                    let final_sel = self.interpolate(selector);
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
                     let js = format!(
                         "const el = document.querySelector('{}'); \
-                         if (!el) throw new Error('Element not found: {}'); \
-                         el.scrollIntoView({{behavior: 'smooth', block: 'center'}}); \
-                         el.click();", final_sel, final_sel
+                         if (!el) throw new Error('Element not found'); \
+                         el.style.outline = '3px solid #ff00ff'; \
+                         el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
+                         setTimeout(() => {{ el.click(); el.style.outline = ''; }}, 150); \
+                         return true;", final_sel
                     );
                     self.run_js(page, js).await?;
                 }
                 Step::Type { selector, value } => {
-                    let final_sel = self.interpolate(selector);
-                    let final_val = self.interpolate(value);
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
+                    let final_val = self.interpolate(value).replace("'", "\\'");
                     
-                    // 1. Ensure focused and cleared via JS
-                    let focus_js = format!(
-                        "(() => {{ \
-                            const el = document.querySelector('{}'); \
-                            if (!el) throw new Error('Element not found: {}'); \
-                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
-                            el.focus(); \
-                            el.value = ''; \
-                            return true; \
-                        }})()", final_sel, final_sel
+                    // The most robust way to type: Focus, Clear (React-safe), then Native Type
+                    let focus_and_clear_js = format!(
+                        "const el = document.querySelector('{}'); \
+                         if (!el) throw new Error('Input not found'); \
+                         el.style.outline = '3px solid #00ffff'; \
+                         el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
+                         el.focus(); \
+                         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set \
+                                     || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set; \
+                         if (setter) setter.call(el, ''); else el.value = ''; \
+                         el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+                         return true;", final_sel
                     );
-                    self.run_js(page, focus_js).await?;
+                    self.run_js(page, focus_and_clear_js).await?;
                     
-                    // 2. Find element and use native type_str
-                    let el = page.find_element(final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    el.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    // Native CDP keyboard typing
+                    let element = page.find_element(selector).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    element.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    
+                    // Cleanup highlight
+                    let cleanup_js = format!("document.querySelector('{}').style.outline = '';", final_sel);
+                    let _ = self.run_js(page, cleanup_js).await;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
-                    let final_sel = self.interpolate(selector);
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
                     let timeout = timeout_ms.unwrap_or(5000);
                     let js = format!(
                         "return new Promise((resolve, reject) => {{ \
                             const check = () => {{ \
                                 const el = document.querySelector('{}'); \
-                                if (el) {{ resolve('found'); return true; }} \
+                                if (el) {{ el.style.outline = '2px dashed #00ff00'; resolve(true); return true; }} \
                                 return false; \
                             }}; \
                             if (check()) return; \
                             const start = Date.now(); \
                             const timer = setInterval(() => {{ \
                                 if (check()) {{ clearInterval(timer); }} \
-                                if (Date.now() - start > {}) {{ clearInterval(timer); reject('Timeout waiting for: {}'); }} \
+                                if (Date.now() - start > {}) {{ clearInterval(timer); reject('Timeout waiting for element'); }} \
                             }}, 200); \
-                        }})", final_sel, timeout, final_sel
+                        }})", final_sel, timeout
                     );
                     self.run_js(page, js).await?;
                 }
                 Step::Extract { selector, as_key, add_to_row } => {
-                    let final_sel = self.interpolate(selector);
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
                     let js = format!(
                         "const el = document.querySelector('{}'); \
-                         return el ? (el.innerText || el.value || '') : 'NOT_FOUND';", final_sel
+                         if (!el) return 'NOT_FOUND'; \
+                         el.style.backgroundColor = 'rgba(0, 255, 0, 0.2)'; \
+                         return el.innerText || el.value || '';", final_sel
                     );
                     let text = self.run_js(page, js).await?;
                     if text != "NOT_FOUND" {
@@ -180,7 +187,7 @@ impl AutomationEngine {
                         }
                         emit(AppEvent::ConsoleLogAdded(tid, format!("[DATA] {}: {}", as_key, text)));
                     } else {
-                        return Err(AppError::Browser(format!("Element not found for extraction: {}", final_sel)));
+                        return Err(AppError::Browser(format!("Element not found: {}", final_sel)));
                     }
                 }
                 Step::NewRow => {
@@ -216,7 +223,7 @@ impl AutomationEngine {
                     }
                 }
                 Step::ForEach { selector, body } => {
-                    let final_sel = self.interpolate(selector);
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
                     let count_str = self.run_js(page, format!("document.querySelectorAll('{}').length", final_sel)).await?;
                     let count = count_str.parse::<usize>().unwrap_or(0);
                     for i in 0..count {
@@ -238,13 +245,13 @@ impl AutomationEngine {
     async fn evaluate_condition_internal(&self, condition: &crate::core::automation::dsl::Condition, page: &Page) -> AppResult<bool> {
         match condition {
             crate::core::automation::dsl::Condition::Exists { selector } => {
-                let final_sel = self.interpolate(selector);
+                let final_sel = self.interpolate(selector).replace("'", "\\'");
                 let res = self.run_js(page, format!("!!document.querySelector('{}')", final_sel)).await?;
                 Ok(res == "true")
             }
             crate::core::automation::dsl::Condition::TextContains { selector, value } => {
-                let final_sel = self.interpolate(selector);
-                let final_val = self.interpolate(value);
+                let final_sel = self.interpolate(selector).replace("'", "\\'");
+                let final_val = self.interpolate(value).replace("'", "\\'");
                 let js = format!(
                     "(() => {{ \
                         const el = document.querySelector('{}'); \
