@@ -124,31 +124,30 @@ impl AutomationEngine {
                     self.run_js(page, js).await?;
                 }
                 Step::Type { selector, value } => {
-                    let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let final_val = self.interpolate(value).replace("'", "\\'");
+                    let final_sel = self.interpolate(selector);
+                    let final_val = self.interpolate(value);
                     
-                    // The most robust way to type: Focus, Clear (React-safe), then Native Type
-                    let focus_and_clear_js = format!(
-                        "const el = document.querySelector('{}'); \
-                         if (!el) throw new Error('Input not found'); \
-                         el.style.outline = '3px solid #00ffff'; \
-                         el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
-                         el.focus(); \
-                         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set \
-                                     || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set; \
-                         if (setter) setter.call(el, ''); else el.value = ''; \
-                         el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
-                         return true;", final_sel
+                    // 1. Highlight and scroll via JS
+                    let highlight_js = format!(
+                        "(() => {{ \
+                            const el = document.querySelector('{}'); \
+                            if (!el) throw new Error('Input not found'); \
+                            el.style.outline = '3px solid #00ffff'; \
+                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
+                            return true; \
+                        }})()", final_sel.replace("'", "\\'")
                     );
-                    self.run_js(page, focus_and_clear_js).await?;
+                    self.run_js(page, highlight_js).await?;
                     
-                    // Native CDP keyboard typing
-                    let element = page.find_element(selector).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    element.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    // 2. PHYSICAL CLICK (Crucial for modern sites to accept input)
+                    page.click(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                     
-                    // Cleanup highlight
-                    let cleanup_js = format!("document.querySelector('{}').style.outline = '';", final_sel);
-                    let _ = self.run_js(page, cleanup_js).await;
+                    // 3. NATIVE KEYBOARD TYPING
+                    page.keyboard().type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    
+                    // 4. Cleanup highlight
+                    let _ = self.run_js(page, format!("document.querySelector('{}').style.outline = '';", final_sel.replace("'", "\\'"))).await;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
