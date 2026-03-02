@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Result};
-use tracing::info;
+use crate::core::error::{AppError, AppResult};
 use std::path::PathBuf;
 use std::process::{Stdio, Child};
 use chromiumoxide::Browser;
@@ -9,7 +8,7 @@ use futures::StreamExt;
 pub struct BrowserManager;
 
 impl BrowserManager {
-    pub fn find_executable() -> Result<PathBuf> {
+    pub fn find_executable() -> AppResult<PathBuf> {
         #[cfg(target_os = "linux")]
         {
             let paths = ["/usr/bin/chromium", "/usr/bin/google-chrome", "/usr/bin/chrome"];
@@ -34,13 +33,14 @@ impl BrowserManager {
                 if path.exists() { return Ok(path); }
             }
         }
-        Err(anyhow!("Chromium executable not found."))
+        Err(AppError::Browser("Chromium executable not found.".into()))
     }
 
-    pub async fn launch(url: &str, profile: PathBuf, port: u16, timestamp: String) -> Result<Child> {
+    pub async fn launch(url: &str, profile: PathBuf, port: u16, timestamp: String) -> AppResult<Child> {
         let exec_path = Self::find_executable()?;
         let _ = std::fs::create_dir_all("logs");
-        let chrome_log_file = std::fs::File::create(format!("logs/chrome.{}.log", timestamp))?;
+        let chrome_log_file = std::fs::File::create(format!("logs/chrome.{}.log", timestamp))
+            .map_err(AppError::Io)?;
 
         let mut cmd = std::process::Command::new(exec_path);
         cmd.arg("--no-sandbox")
@@ -50,7 +50,7 @@ impl BrowserManager {
             .arg("--no-first-run")
             .arg(format!("--user-data-dir={}", profile.display()))
             .arg(url)
-            .stdout(Stdio::from(chrome_log_file.try_clone()?))
+            .stdout(Stdio::from(chrome_log_file.try_clone().map_err(AppError::Io)?))
             .stderr(Stdio::from(chrome_log_file));
 
         #[cfg(unix)]
@@ -59,32 +59,53 @@ impl BrowserManager {
             cmd.process_group(0);
         }
 
-        Ok(cmd.spawn()?)
+        cmd.spawn().map_err(AppError::Io)
     }
 
-    pub async fn list_tabs(port: u16) -> Result<Vec<ChromeTabInfo>> {
-        let client = rquest::Client::builder().timeout(std::time::Duration::from_millis(800)).build()?;
+    pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
+        let client = rquest::Client::builder()
+            .timeout(std::time::Duration::from_millis(800))
+            .build()?;
+            
         let url = format!("http://127.0.0.1:{}/json/list", port);
-        let tabs: Vec<ChromeTabInfo> = client.get(url).send().await?.json().await?;
+        let tabs: Vec<ChromeTabInfo> = client.get(url)
+            .send()
+            .await?
+            .json()
+            .await?;
+
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page" && !t.url.is_empty()).collect())
     }
 
-    pub async fn get_ws_url(port: u16) -> Result<String> {
+    pub async fn get_ws_url(port: u16) -> AppResult<String> {
         let client = rquest::Client::new();
-        let json: serde_json::Value = client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await?.json().await?;
-        Ok(json["webSocketDebuggerUrl"].as_str().ok_or(anyhow!("WS URL missing"))?.to_string())
+        let json: serde_json::Value = client.get(format!("http://127.0.0.1:{}/json/version", port))
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        Ok(json["webSocketDebuggerUrl"]
+            .as_str()
+            .ok_or_else(|| AppError::NotFound("WS URL missing in response".into()))?
+            .to_string())
     }
 
-    pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> Result<PathBuf> {
+    pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> AppResult<PathBuf> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await?;
+        let (browser, mut handler) = Browser::connect(ws_url)
+            .await
+            .map_err(|e| AppError::Browser(format!("WS Connection failed: {}", e)))?;
+            
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
 
-        let pages = browser.pages().await?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter()
+            .find(|p| p.target_id().as_ref() == tab_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
 
-        let url_str = page.url().await?.unwrap_or_default();
-        let html = page.content().await?;
+        let url_str = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         
         if mirror_mode {
             let assets = crate::core::dom::DomProcessor::discover_assets(&html, &url_str);
@@ -105,35 +126,44 @@ impl BrowserManager {
         let parsed_url = url::Url::parse(&url_str)?;
         let domain = parsed_url.host_str().unwrap_or("unknown");
         let dir = save_root.join(domain);
-        std::fs::create_dir_all(&dir)?;
+        std::fs::create_dir_all(&dir).map_err(AppError::Io)?;
+        
         let filename = parsed_url.path().trim_matches('/').replace('/', ".");
         let filename = if filename.is_empty() { "index.html".to_string() } else { format!("{}.html", filename) };
         let final_path = dir.join(filename);
-        std::fs::write(&final_path, html.as_bytes())?;
+        
+        std::fs::write(&final_path, html.as_bytes()).map_err(AppError::Io)?;
         Ok(final_path)
     }
 
-    pub async fn execute_script(port: u16, tab_id: String, script: String) -> Result<String> {
+    pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await?;
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        let pages = browser.pages().await?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
-        let result = page.evaluate(script).await?;
+        
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter()
+            .find(|p| p.target_id().as_ref() == tab_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
+            
+        let result = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(result.value().map(|v| format!("{}", v)).unwrap_or_else(|| "No return value".to_string()))
     }
 
-    pub async fn enable_network_monitoring(port: u16, tab_id: String) -> Result<()> {
+    pub async fn enable_network_monitoring(port: u16, tab_id: String) -> AppResult<()> {
         use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EnableParams};
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await?;
-        let pages = browser.pages().await?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         
-        page.execute(EnableParams::default()).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter()
+            .find(|p| p.target_id().as_ref() == tab_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
         
-        let mut request_events = page.event_listener::<EventRequestWillBeSent>().await?;
-        let mut response_events = page.event_listener::<EventResponseReceived>().await?;
+        page.execute(EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        let mut request_events = page.event_listener::<EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut response_events = page.event_listener::<EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         
         tokio::spawn(async move {
             tokio::select! {
@@ -164,29 +194,36 @@ impl BrowserManager {
         Ok(())
     }
 
-    pub async fn get_cookies(port: u16, tab_id: String) -> Result<Vec<crate::state::ChromeCookie>> {
+    pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<crate::state::ChromeCookie>> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await?;
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        let pages = browser.pages().await?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
-        let cookies = page.get_cookies().await?;
+        
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter()
+            .find(|p| p.target_id().as_ref() == tab_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
+            
+        let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie {
             name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(),
             expires: c.expires, secure: c.secure, http_only: c.http_only,
         }).collect())
     }
 
-    pub async fn set_emulation(port: u16, tab_id: String, ua: String, lat: f64, lon: f64) -> Result<()> {
+    pub async fn set_emulation(port: u16, tab_id: String, ua: String, lat: f64, lon: f64) -> AppResult<()> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await?;
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        let pages = browser.pages().await?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or(anyhow!("Tab not found"))?;
+        
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter()
+            .find(|p| p.target_id().as_ref() == tab_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tab {} not found", tab_id)))?;
         
         if !ua.is_empty() {
             let params = chromiumoxide::cdp::browser_protocol::network::SetUserAgentOverrideParams::new(ua);
-            page.execute(params).await?;
+            page.execute(params).await.map_err(|e| AppError::Browser(e.to_string()))?;
         }
         
         let geo_params = chromiumoxide::cdp::browser_protocol::emulation::SetGeolocationOverrideParams::builder()
@@ -194,7 +231,7 @@ impl BrowserManager {
             .longitude(lon)
             .accuracy(1.0)
             .build();
-        page.execute(geo_params).await?;
+        page.execute(geo_params).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 }

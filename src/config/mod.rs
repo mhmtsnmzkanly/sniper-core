@@ -4,6 +4,8 @@ use std::path::PathBuf;
 pub mod loader;
 pub mod migration;
 
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub config_version: u32,
@@ -24,7 +26,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 1,
+            config_version: CURRENT_CONFIG_VERSION,
             default_launch_url: "https://www.google.com".to_string(),
             default_profile_dir: PathBuf::from("chrome_profile"),
             remote_debug_port: 9222,

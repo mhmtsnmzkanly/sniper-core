@@ -1,16 +1,25 @@
-use super::AppConfig;
+use super::{AppConfig, CURRENT_CONFIG_VERSION};
 use tracing::info;
 
 pub fn migrate(mut config: AppConfig) -> AppConfig {
-    let current_version = config.config_version;
-    let target_version = AppConfig::default().config_version;
+    let mut version = config.config_version;
 
-    if current_version < target_version {
-        info!("Migrating config from version {} to {}", current_version, target_version);
-        // Migration logic for future versions:
-        // if current_version == 1 { ... config.new_field = default; config.version = 2; }
+    // Örnek Migration Akışı
+    if version == 0 {
+        info!("Migrating config from v0 to v1...");
+        // v1'e özel başlangıç ayarları burada yapılabilir
+        version = 1;
     }
 
-    config.config_version = target_version;
+    // Gelecekteki versiyonlar için:
+    /*
+    if version == 1 {
+        info!("Migrating config from v1 to v2...");
+        // Yeni eklenen alanlar config.new_field = ... şeklinde doldurulur
+        version = 2;
+    }
+    */
+
+    config.config_version = CURRENT_CONFIG_VERSION;
     config
 }

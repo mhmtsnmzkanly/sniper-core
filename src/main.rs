@@ -6,6 +6,7 @@ mod core;
 mod config;
 
 use app::CrawlerApp;
+use core::events::AppEvent;
 use state::AppState;
 use config::loader::load_config;
 use clap::Parser;
@@ -18,7 +19,10 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv::dotenv().ok();
+    let _args = Args::parse();
+    
     // 1. Kanalları Hazırla
     let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -26,12 +30,12 @@ async fn main() -> anyhow::Result<()> {
     // 2. Loglama Sistemini Başlat
     let (_log_guard, timestamp) = logger::init_logging(log_sender);
 
-    // 3. Config Yükle (Versiyonlu & Migrated)
+    // 3. Config Yükle
     let config = match load_config() {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Config loading failed: {}", e);
-            return Err(e);
+            return Err(e.into());
         }
     };
 
@@ -48,17 +52,15 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("🚀 Sniper Scraper Studio {} Başlatılıyor...", env!("CARGO_PKG_VERSION"));
     
-    // Event sender'ı statik olarak veya UI üzerinden ulaştırmak için altyapı
     crate::ui::scrape::set_event_sender(event_sender);
 
     eframe::run_native(
         "Sniper Scraper Studio",
         native_options,
         Box::new(|cc| {
-            // Font ve stil ayarları burada yapılabilir
             Ok(Box::new(CrawlerApp::new(cc, state, log_receiver, event_receiver)))
         }),
-    ).map_err(|e| anyhow::anyhow!("GUI Error: {}", e))?;
+    ).map_err(|e| format!("GUI Error: {}", e))?;
 
     Ok(())
 }
