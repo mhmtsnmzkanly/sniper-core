@@ -145,7 +145,8 @@ impl AutomationEngine {
                     );
                     self.run_js(page, js).await?;
                     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                    page.click(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::Type { selector, value } => {
                     let final_sel = self.interpolate(selector);
@@ -155,14 +156,15 @@ impl AutomationEngine {
                             const el = document.querySelector('{}'); \
                             if (!el) throw new Error('Input not found'); \
                             el.style.outline = '3px solid #00ffff'; \
-                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
+                            el.scrollInto_view({{behavior: 'instant', block: 'center'}}); \
                             return true; \
                         }})()", final_sel.replace("'", "\\'")
                     );
                     self.run_js(page, highlight_js).await?;
-                    page.click(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    page.keyboard().type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    el.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::WaitFor { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
