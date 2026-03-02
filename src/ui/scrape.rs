@@ -108,17 +108,31 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         for tab in tabs {
                             let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
                             let font_size = 12.0;
-                            
-                            let short_id = if tab.id.len() > 8 { format!("{}...", &tab.id[..8]) } else { tab.id.clone() };
+                            // Col 1: ID
+                            let short_id = if tab.id.chars().count() > 8 { 
+                                format!("{}...", tab.id.chars().take(8).collect::<String>()) 
+                            } else { 
+                                tab.id.clone() 
+                            };
+
                             if ui.selectable_label(is_selected, RichText::new(short_id).monospace().size(font_size)).clicked() {
                                 state.selected_tab_id = Some(tab.id.clone());
-                            }
-
-                            let trunc_title = if tab.title.len() > 35 { format!("{}...", &tab.title[..35]) } else { tab.title.clone() };
+                            // Col 2: Title
+                            let trunc_title = if tab.title.chars().count() > 40 { 
+                                format!("{}...", tab.title.chars().take(40).collect::<String>()) 
+                            } else { 
+                                tab.title.clone() 
+                            };
                             ui.label(RichText::new(trunc_title).strong().size(font_size));
 
-                            let trunc_url = if tab.url.len() > 40 { format!("{}...", &tab.url[..40]) } else { tab.url.clone() };
+                            // Col 3: URL
+                            let trunc_url = if tab.url.chars().count() > 50 { 
+                                format!("{}...", tab.url.chars().take(50).collect::<String>()) 
+                            } else { 
+                                tab.url.clone() 
+                            };
                             ui.label(RichText::new(trunc_url).italics().color(Color32::GRAY).size(font_size));
+
                             ui.end_row();
                         }
                     });

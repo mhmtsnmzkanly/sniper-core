@@ -66,7 +66,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         
                         ui.label(RichText::new(&req.resource_type).small());
                         
-                        let trunc_url = if req.url.len() > 80 { format!("{}...", &req.url[..80]) } else { req.url.clone() };
+                        let trunc_url = if req.url.chars().count() > 80 { 
+                            format!("{}...", req.url.chars().take(80).collect::<String>()) 
+                        } else { 
+                            req.url.clone() 
+                        };
                         ui.label(RichText::new(trunc_url).small().color(Color32::GRAY));
                         
                         ui.end_row();

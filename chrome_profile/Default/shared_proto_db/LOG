@@ -1,2 +1,3 @@
-2026/03/02-05:52:18.320 29476 Creating DB /home/duldul/Masaüstü/auto-crawler/chrome_profile/Default/shared_proto_db since it was missing.
-2026/03/02-05:52:18.347 29476 Reusing MANIFEST /home/duldul/Masaüstü/auto-crawler/chrome_profile/Default/shared_proto_db/MANIFEST-000001
+2026/03/02-06:07:06.995 2e46 Reusing MANIFEST /home/duldul/Masaüstü/auto-crawler/chrome_profile/Default/shared_proto_db/MANIFEST-000001
+2026/03/02-06:07:06.995 2e46 Recovering log #3
+2026/03/02-06:07:06.998 2e46 Reusing old log /home/duldul/Masaüstü/auto-crawler/chrome_profile/Default/shared_proto_db/000003.log 
