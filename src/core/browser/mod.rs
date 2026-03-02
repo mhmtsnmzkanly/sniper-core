@@ -193,8 +193,30 @@ impl BrowserManager {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        let result = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        Ok(format!("{:?}", result.value()))
+        
+        // Wrap script to catch JS errors and return them to Rust
+        let wrapped_js = format!(
+            "(() => {{ try {{ \
+                const result = {}; \
+                return JSON.stringify({{ success: true, data: result }}); \
+            }} catch (e) {{ \
+                return JSON.stringify({{ success: false, error: e.message }}); \
+            }} }})()", script
+        );
+
+        let result = page.evaluate(wrapped_js).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let val_str = result.value().clone().cloned().unwrap_or_default().to_string();
+        
+        // Check if JS reported an error
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val_str) {
+            if json["success"].as_bool() == Some(false) {
+                let err_msg = json["error"].as_str().unwrap_or("Unknown JS error");
+                return Err(AppError::Browser(format!("JS Error: {}", err_msg)));
+            }
+            return Ok(json["data"].to_string());
+        }
+        
+        Ok(val_str)
     }
 
     pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> AppResult<PathBuf> {
