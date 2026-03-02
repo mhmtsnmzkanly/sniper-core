@@ -71,10 +71,28 @@ impl BrowserManager {
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         
         let js = r#"(() => {
-            const ids = Array.from(document.querySelectorAll('[id]')).map(el => '#' + el.id);
-            const classes = Array.from(document.querySelectorAll('[class]'))
-                .flatMap(el => Array.from(el.classList).map(c => '.' + c));
-            return Array.from(new Set([...ids, ...classes])).sort();
+            const results = new Set();
+            
+            // 1. Discover IDs
+            document.querySelectorAll('[id]').forEach(el => results.add('#' + el.id));
+            
+            // 2. Discover individual Classes
+            document.querySelectorAll('[class]').forEach(el => {
+                el.classList.forEach(c => results.add('.' + c));
+            });
+            
+            // 3. Discover Important Attributes
+            const attrs = ['name', 'data-id', 'data-testid', 'role', 'type', 'href'];
+            attrs.forEach(attr => {
+                document.querySelectorAll(`[${attr}]`).forEach(el => {
+                    const val = el.getAttribute(attr);
+                    if (val && val.length < 50) { // Limit length for sanity
+                        results.add(`${el.tagName.toLowerCase()}[${attr}="${val}"]`);
+                    }
+                });
+            });
+
+            return Array.from(results).sort();
         })()"#;
         
         let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
