@@ -22,11 +22,13 @@ pub struct MediaAsset {
 }
 
 /// Atomic operation in the automation pipeline.
-/// SIMMETRIC WITH dsl::Step FOR PERFECT SAVE/LOAD
+/// SYMMETRIC WITH dsl::Step FOR PERFECT SAVE/LOAD
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum AutomationStep {
     Navigate(String),
     Click(String),
+    RightClick(String),
+    Hover(String),
     Type {
         selector: String,
         value: String,
@@ -39,6 +41,10 @@ pub enum AutomationStep {
     },
     WaitUntilIdle {
         timeout_ms: u64,
+    },
+    WaitNetworkIdle {
+        timeout_ms: u64,
+        min_idle_ms: u64,
     },
     Extract {
         selector: String,
@@ -53,6 +59,7 @@ pub enum AutomationStep {
     Export(String),
     Screenshot(String),
     ScrollBottom,
+    SwitchFrame(String),
     If {
         selector: String,
         then_steps: Vec<AutomationStep>,

@@ -125,7 +125,7 @@ impl AutomationEngine {
 
     fn execute_step_internal<'a>(&'a self, step: &'a Step, page: &'a Page) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let (tid, output_dir) = { 
+            let (_tid, output_dir) = { 
                 let ctx = self.context.lock().unwrap();
                 (ctx.tab_id.clone(), ctx.output_dir.clone())
             };
@@ -148,6 +148,22 @@ impl AutomationEngine {
                     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                     let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
                     el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
+                }
+                Step::RightClick { selector } => {
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
+                    let js = format!(
+                        "const el = document.querySelector('{}'); \
+                         if (!el) throw new Error('Element not found'); \
+                         const ev = new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, view: window, button: 2 }}); \
+                         el.dispatchEvent(ev); \
+                         return true;", final_sel
+                    );
+                    let _ = self.run_js(page, js).await?;
+                }
+                Step::Hover { selector } => {
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
+                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    el.hover().await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
                 Step::Type { selector, value, .. } => {
                     let final_sel = self.interpolate(selector);
@@ -247,6 +263,29 @@ impl AutomationEngine {
                     let _ = page.wait_for_navigation().await;
                     tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await;
                 }
+                Step::WaitNetworkIdle { timeout_ms, min_idle_ms } => {
+                    use chromiumoxide::cdp::browser_protocol::network::EnableParams;
+                    let _ = page.execute(EnableParams::default()).await;
+                    let mut request_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let mut response_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let mut failed_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFailed>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+
+                    let start = std::time::Instant::now();
+                    let mut last_activity = std::time::Instant::now();
+                    let mut active_requests: i32 = 0;
+
+                    loop {
+                        if start.elapsed().as_millis() > *timeout_ms as u128 { break; }
+                        if active_requests == 0 && last_activity.elapsed().as_millis() > *min_idle_ms as u128 { break; }
+
+                        tokio::select! {
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+                            Some(_) = request_events.next() => { active_requests += 1; last_activity = std::time::Instant::now(); }
+                            Some(_) = response_events.next() => { active_requests = active_requests.saturating_sub(1); last_activity = std::time::Instant::now(); }
+                            Some(_) = failed_events.next() => { active_requests = active_requests.saturating_sub(1); last_activity = std::time::Instant::now(); }
+                        }
+                    }
+                }
                 Step::SetVariable { key, value } => {
                     let final_val = self.interpolate(value);
                     let mut ctx = self.context.lock().unwrap();
@@ -254,6 +293,15 @@ impl AutomationEngine {
                 }
                 Step::ScrollBottom => {
                     self.run_js(page, "window.scrollTo(0, document.body.scrollHeight)".into()).await?;
+                }
+                Step::SwitchFrame { selector } => {
+                    if selector.is_empty() {
+                        let _ = page.mainframe();
+                    } else {
+                        let final_sel = self.interpolate(selector).replace("'", "\\'");
+                        let js = format!("document.querySelector('{}').contentWindow.focus()", final_sel);
+                        let _ = self.run_js(page, js).await?;
+                    }
                 }
                 Step::If { selector, then_steps } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
