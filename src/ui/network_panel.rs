@@ -49,9 +49,26 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(5.0);
 
         // TABLE AREA
-        let search = ws.network_search.to_lowercase();
+        let search_raw = ws.network_search.trim();
         let filtered_requests: Vec<_> = ws.network_requests.iter()
-            .filter(|r| search.is_empty() || r.url.to_lowercase().contains(&search))
+            .filter(|r| {
+                if search_raw.is_empty() { return true; }
+                
+                if let Some(req_query) = search_raw.strip_prefix("req:") {
+                    let q = req_query.trim().to_lowercase();
+                    if q.is_empty() { return true; }
+                    return r.request_body.as_ref().map(|b| b.to_lowercase().contains(&q)).unwrap_or(false);
+                }
+                
+                if let Some(res_query) = search_raw.strip_prefix("res:") {
+                    let q = res_query.trim().to_lowercase();
+                    if q.is_empty() { return true; }
+                    return r.response_body.as_ref().map(|b| b.to_lowercase().contains(&q)).unwrap_or(false);
+                }
+
+                // Default: Search in URL
+                r.url.to_lowercase().contains(&search_raw.to_lowercase())
+            })
             .collect();
 
         ui.push_id("network_table_area", |ui| {
