@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use egui::{Ui, Color32, RichText, Frame, Stroke};
+use egui_extras::{TableBuilder, Column};
 use crate::core::events::AppEvent;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
@@ -47,20 +48,37 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
         ui.add_space(5.0);
 
-        egui::Frame::default().fill(Color32::from_black_alpha(30)).show(ui, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
-                let search = ws.network_search.to_lowercase();
-                egui::Grid::new("network_grid_v9").striped(true).num_columns(5).spacing([10.0, 8.0]).show(ui, |ui| {
-                    ui.label(RichText::new("METHOD").strong().color(Color32::LIGHT_GRAY));
-                    ui.label(RichText::new("STATUS").strong().color(Color32::LIGHT_GRAY));
-                    ui.label(RichText::new("TYPE").strong().color(Color32::LIGHT_GRAY));
-                    ui.label(RichText::new("URL (CLICK TO INSPECT)").strong().color(Color32::LIGHT_GRAY));
-                    ui.label(RichText::new("ACTIONS").strong().color(Color32::LIGHT_GRAY));
-                    ui.end_row();
+        // TABLE AREA
+        let search = ws.network_search.to_lowercase();
+        let filtered_requests: Vec<_> = ws.network_requests.iter()
+            .filter(|r| search.is_empty() || r.url.to_lowercase().contains(&search))
+            .collect();
 
-                    for req in &ws.network_requests {
-                        if !search.is_empty() && !req.url.to_lowercase().contains(&search) { continue; }
+        ui.push_id("network_table_area", |ui| {
+            let table = TableBuilder::new(ui)
+                .striped(true)
+                .resizable(true)
+                .auto_shrink([false, false])
+                .stick_to_bottom(true)
+                .column(Column::auto().at_least(60.0))  // METHOD
+                .column(Column::auto().at_least(50.0))  // STATUS
+                .column(Column::auto().at_least(80.0))  // TYPE
+                .column(Column::remainder().at_least(200.0)) // URL
+                .column(Column::auto().at_least(120.0)); // ACTIONS
 
+            table.header(20.0, |mut header| {
+                header.col(|ui| { ui.strong("METHOD"); });
+                header.col(|ui| { ui.strong("STATUS"); });
+                header.col(|ui| { ui.strong("TYPE"); });
+                header.col(|ui| { ui.strong("URL"); });
+                header.col(|ui| { ui.strong("ACTIONS"); });
+            })
+            .body(|body| {
+                body.rows(25.0, filtered_requests.len(), |mut row| {
+                    let idx = row.index();
+                    let req = filtered_requests[idx];
+
+                    row.col(|ui| {
                         let method_color = match req.method.as_str() {
                             "GET" => Color32::LIGHT_BLUE,
                             "POST" => Color32::LIGHT_GREEN,
@@ -69,7 +87,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             _ => Color32::GRAY,
                         };
                         ui.label(RichText::new(&req.method).strong().color(method_color));
+                    });
 
+                    row.col(|ui| {
                         let status_color = match req.status {
                             Some(s) if (200..300).contains(&s) => Color32::GREEN,
                             Some(s) if (300..400).contains(&s) => Color32::YELLOW,
@@ -77,66 +97,57 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             _ => Color32::GRAY,
                         };
                         ui.label(RichText::new(req.status.map(|s| s.to_string()).unwrap_or_else(|| "-".into())).strong().color(status_color));
+                    });
 
+                    row.col(|ui| {
                         ui.label(RichText::new(&req.resource_type).small());
+                    });
 
-                        let trunc_url: String = if req.url.chars().count() > 80 { req.url.chars().take(77).collect::<String>() + "..." } else { req.url.clone() };
-                        if ui.add(egui::Label::new(RichText::new(trunc_url).small().monospace().color(Color32::LIGHT_GRAY)).sense(egui::Sense::click())).clicked() {
+                    row.col(|ui| {
+                        if ui.add(egui::Label::new(RichText::new(&req.url).small().monospace().color(Color32::LIGHT_GRAY)).truncate().sense(egui::Sense::click())).clicked() {
                              ui.ctx().copy_text(req.url.clone());
                         }
+                    });
 
+                    row.col(|ui| {
                         ui.horizontal(|ui| {
-                            if ui.button("REQ").on_hover_text("View Request Payload").clicked() {
+                            if ui.small_button("REQ").clicked() {
                                 ws.active_request_id = Some(format!("req_{}", req.request_id));
                             }
-                            if ui.button("RES").on_hover_text("View Response Body").clicked() {
+                            if ui.small_button("RES").clicked() {
                                 ws.active_request_id = Some(format!("res_{}", req.request_id));
                             }
                             
                             let is_blocked = ws.blocked_urls.contains(&req.url);
-                            let block_btn = if is_blocked { 
-                                egui::Button::new(RichText::new("UNBLOCK").color(Color32::GREEN)) 
-                            } else { 
-                                egui::Button::new(RichText::new("BLOCK").color(Color32::RED)) 
-                            };
-                            
-                            if ui.add(block_btn).clicked() {
-                                if is_blocked {
+                            if is_blocked {
+                                if ui.small_button(RichText::new("🔓").color(Color32::GREEN)).clicked() {
                                     crate::ui::scrape::emit(AppEvent::RequestUrlUnblock(tid.clone(), req.url.clone()));
-                                } else {
+                                }
+                            } else {
+                                if ui.small_button(RichText::new("🚫").color(Color32::RED)).clicked() {
                                     crate::ui::scrape::emit(AppEvent::RequestUrlBlock(tid.clone(), req.url.clone()));
                                 }
                             }
                             
-                            // --- CSS RESOURCE EXTRACTOR ---
+                            // CSS RESOURCE EXTRACTOR
                             let is_css = req.resource_type.to_lowercase().contains("style") || req.url.to_lowercase().ends_with(".css");
                             if is_css && req.response_body.is_some() {
-                                if ui.add(egui::Button::new(RichText::new("EXTRACT").color(Color32::GOLD))).on_hover_text("Extract hidden assets").clicked() {
+                                if ui.small_button(RichText::new("✨").color(Color32::GOLD)).on_hover_text("Extract Assets").clicked() {
                                     if let Some(css_body) = &req.response_body {
                                         let found_urls = crate::core::browser::BrowserManager::extract_resources_from_css(css_body, &req.url);
                                         let mut added = 0;
-                                        
-                                        let tid_inner = tid.clone();
                                         for url in found_urls {
                                             let name = url.split('/').last().unwrap_or("extracted_asset").to_string();
                                             let mime = if url.ends_with(".woff2") || url.ends_with(".ttf") { "font/woff2".to_string() } else { "image/extracted".to_string() };
-                                            
-                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_inner.clone(), crate::state::MediaAsset {
-                                                name,
-                                                url,
-                                                mime_type: mime,
-                                                size_bytes: 0,
-                                                data: None,
-                                            }));
+                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid.clone(), crate::state::MediaAsset { name, url, mime_type: mime, size_bytes: 0, data: None }));
                                             added += 1;
                                         }
-                                        tracing::info!("[CSS <-> EXTRACT] Found and added {} resources from CSS.", added);
+                                        tracing::info!("[CSS] Extracted {} assets.", added);
                                     }
                                 }
                             }
                         });
-                        ui.end_row();
-                    }
+                    });
                 });
             });
         });

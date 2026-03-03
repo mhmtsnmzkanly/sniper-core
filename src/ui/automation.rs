@@ -1,5 +1,6 @@
 use crate::state::{AppState, AutomationStep, AutomationStatus};
 use egui::{Ui, Color32, RichText, Frame, Stroke};
+use egui_extras::{TableBuilder, Column};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 
@@ -11,15 +12,17 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         (ws.auto_steps.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone(), ws.variables.clone(), ws.var_edit_key.clone(), ws.var_edit_val.clone(), ws.extracted_data.clone())
     };
 
+    // Use a vertical layout for the top part to allow scrolling if too many steps
     ui.columns(2, |cols| {
-        cols[0].group(|ui| {
+        // COLUMN 0: PIPELINE
+        cols[0].vertical(|ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(":: PIPELINE").strong().color(Color32::KHAKI));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("SCAN").clicked() { emit(AppEvent::RequestPageSelectors(tid.to_string())); }
                     ui.menu_button("➕ ADD", |ui| {
                         if ui.button("🌐 Nav").clicked() { auto_steps.push(AutomationStep::Navigate("https://".into())); ui.close_menu(); }
-                        if ui.button("🖱 Click").clicked() { auto_steps.push(AutomationStep::Click("".into())); ui.close_menu(); }
+                        if ui.button("鼠标 Click").clicked() { auto_steps.push(AutomationStep::Click("".into())); ui.close_menu(); }
                         if ui.button("⌨ Type").clicked() { auto_steps.push(AutomationStep::Type { selector: "".into(), value: "".into(), is_variable: false }); ui.close_menu(); }
                         ui.separator();
                         if ui.button("⏳ Wait").clicked() { auto_steps.push(AutomationStep::Wait(1)); ui.close_menu(); }
@@ -43,10 +46,15 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             let mut move_from = None;
             let mut move_to = None;
 
-            egui::ScrollArea::vertical().max_height(400.0).id_salt("auto_steps_scroll").show(ui, |ui| {
+            // SCROLLABLE PIPELINE AREA
+            egui::ScrollArea::vertical()
+                .id_salt("auto_steps_scroll")
+                .auto_shrink([false, false])
+                .max_height(ui.available_height() * 0.6)
+                .show(ui, |ui| {
                 for (idx, step) in auto_steps.iter_mut().enumerate() {
                     let item_id = egui::Id::new(("step", idx));
-                    let dnd_res = ui.dnd_drag_source(item_id, idx, |ui| {
+                    let _dnd_res = ui.dnd_drag_source(item_id, idx, |ui| {
                         render_step_block(ui, step, idx, &mut delete_idx, &discovered_selectors, &mut selector_search, &variables);
                     });
                     if let Some(payload) = ui.dnd_drop_zone::<usize, _>(Frame::NONE, |_ui| { }).1 {
@@ -61,24 +69,27 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             if let Some(idx) = delete_idx { auto_steps.remove(idx); }
         });
 
+        // COLUMN 1: VARIABLES & DATASET
         cols[1].vertical(|ui| {
             ui.group(|ui| {
                 ui.label(RichText::new(":: VARIABLES").strong().color(Color32::LIGHT_BLUE));
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut var_key).hint_text("Key").desired_width(80.0));
-                    ui.add(egui::TextEdit::singleline(&mut var_val).hint_text("Val").desired_width(100.0));
+                    ui.add(egui::TextEdit::singleline(&mut var_key).hint_text("Key").desired_width(ui.available_width() * 0.4));
+                    ui.add(egui::TextEdit::singleline(&mut var_val).hint_text("Val").desired_width(ui.available_width() * 0.4));
                     if ui.button("+").clicked() && !var_key.is_empty() {
                         variables.insert(var_key.clone(), var_val.clone());
                         var_key.clear(); var_val.clear();
                     }
                 });
-                egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
                     let mut to_remove = None;
                     for (k, v) in &variables {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(k).small().color(Color32::GOLD));
                             ui.label(RichText::new(v).small());
-                            if ui.button("x").clicked() { to_remove = Some(k.clone()); }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("x").clicked() { to_remove = Some(k.clone()); }
+                            });
                         });
                     }
                     if let Some(k) = to_remove { variables.remove(&k); }
@@ -87,22 +98,42 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
             ui.add_space(10.0);
 
+            // DATASET TABLE
             ui.group(|ui| {
                 ui.label(RichText::new(":: DATASET PREVIEW").strong().color(Color32::GREEN));
-                egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
-                    if extracted_data.is_empty() { ui.label("No data captured yet."); }
-                    else {
-                        for (i, row) in extracted_data.iter().enumerate() {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}.", i + 1));
-                                for (k, v) in row {
-                                    ui.label(RichText::new(format!("{}:", k)).small().color(Color32::GRAY));
-                                    ui.label(RichText::new(v).small());
-                                }
-                            });
+                ui.add_space(5.0);
+                
+                if extracted_data.is_empty() {
+                    ui.label("No data captured yet.");
+                } else {
+                    let keys: Vec<String> = extracted_data[0].keys().cloned().collect();
+                    let table = TableBuilder::new(ui)
+                        .striped(true)
+                        .resizable(true)
+                        .auto_shrink([false, false])
+                        .column(Column::auto().at_least(30.0)) // ID
+                        .columns(Column::remainder(), keys.len());
+
+                    table.header(20.0, |mut header| {
+                        header.col(|ui| { ui.strong("#"); });
+                        for k in &keys {
+                            header.col(|ui| { ui.strong(k); });
                         }
-                    }
-                });
+                    })
+                    .body(|body| {
+                        body.rows(20.0, extracted_data.len(), |mut row| {
+                            let idx = row.index();
+                            let data_row = &extracted_data[idx];
+                            row.col(|ui| { ui.label(format!("{}", idx + 1)); });
+                            for k in &keys {
+                                row.col(|ui| {
+                                    let val = data_row.get(k).cloned().unwrap_or_default();
+                                    ui.label(RichText::new(val).small());
+                                });
+                            }
+                        });
+                    });
+                }
             });
         });
     });
@@ -173,7 +204,7 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
             ui.label(RichText::new(title).small().strong().color(color));
             
             match step {
-                AutomationStep::Navigate(url) => { ui.add(egui::TextEdit::singleline(url).desired_width(150.0)); }
+                AutomationStep::Navigate(url) => { ui.add(egui::TextEdit::singleline(url).desired_width(ui.available_width() * 0.7)); }
                 AutomationStep::Click(sel) => { selector_input(ui, sel, discovered, search); }
                 AutomationStep::Type { selector, value, is_variable } => {
                     if *is_variable {
@@ -204,22 +235,26 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                 AutomationStep::If { selector, .. } => { ui.label("If"); selector_input(ui, selector, discovered, search); }
                 AutomationStep::ForEach { selector, .. } => { ui.label("Each"); selector_input(ui, selector, discovered, search); }
             }
-            if ui.button("x").clicked() { *delete_idx = Some(idx); }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("x").clicked() { *delete_idx = Some(idx); }
+            });
         });
     });
 }
 
 fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String], search: &mut String) {
     ui.horizontal(|ui| {
-        ui.add(egui::TextEdit::singleline(value).desired_width(120.0));
+        ui.add(egui::TextEdit::singleline(value).desired_width(ui.available_width() * 0.4));
         ui.menu_button("Q", |ui| {
             ui.add(egui::TextEdit::singleline(search));
             let filter = search.to_lowercase();
-            for s in discovered {
-                if filter.is_empty() || s.to_lowercase().contains(&filter) {
-                    if ui.button(RichText::new(s).small()).clicked() { *value = s.clone(); ui.close_menu(); }
+            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                for s in discovered {
+                    if filter.is_empty() || s.to_lowercase().contains(&filter) {
+                        if ui.button(RichText::new(s).small()).clicked() { *value = s.clone(); ui.close_menu(); }
+                    }
                 }
-            }
+            });
         });
     });
 }

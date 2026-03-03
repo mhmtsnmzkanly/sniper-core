@@ -1,13 +1,13 @@
 [package]
 name = "sniper-core"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2021"
 
 [dependencies]
 # UI Framework
 eframe = "0.31"
 egui = "0.31"
-egui_extras = { version = "0.31", features = ["image"] }
+egui_extras = { version = "0.31", features = ["image", "serde"] }
 image = { version = "0.25", features = ["webp", "png", "jpeg"] }
 rfd = "0.14"
 

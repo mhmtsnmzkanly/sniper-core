@@ -1,7 +1,9 @@
 use crate::state::AppState;
 use egui::{Ui, Color32, RichText};
+use egui_extras::{TableBuilder, Column};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
+use url::Url;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
@@ -17,13 +19,32 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     if !state.workspaces.contains_key(&tid) { return; }
     
-    // We need to be careful with borrowing here.
-    // Let's extract what we need first or use a scoped borrow.
+    // Get current tab domain for filtering
+    let current_tab_url = state.available_tabs.iter()
+        .find(|t| t.id == tid)
+        .map(|t| t.url.clone())
+        .unwrap_or_default();
     
+    let target_domain = Url::parse(&current_tab_url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_string()))
+        .unwrap_or_default();
+
     let (mut cookies, title, mut show_modal, mut edit_buffer) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (ws.cookies.clone(), ws.title.clone(), ws.show_cookie_modal, ws.cookie_edit_buffer.clone())
     };
+
+    // FILTER COOKIES BY DOMAIN
+    // We show cookies where the cookie domain is a suffix of the target domain or vice-versa
+    let filtered_cookies: Vec<(usize, crate::state::ChromeCookie)> = cookies.iter().enumerate()
+        .filter(|(_, c)| {
+            if target_domain.is_empty() { return true; }
+            let c_domain = c.domain.trim_start_matches('.');
+            target_domain.contains(c_domain) || c_domain.contains(&target_domain)
+        })
+        .map(|(i, c)| (i, c.clone()))
+        .collect();
 
     ui.horizontal(|ui| {
         ui.heading(RichText::new(format!("COOKIE MANAGER: {}", title)).color(Color32::KHAKI));
@@ -31,61 +52,67 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             if ui.button("🔄 REFRESH").clicked() {
                 emit(AppEvent::RequestCookies(tid.clone()));
             }
+            ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(Color32::GRAY));
         });
     });
     ui.add_space(10.0);
 
-    egui::ScrollArea::vertical().max_height(ui.available_height() - 60.0).show(ui, |ui| {
-        egui::Grid::new("cookie_manager_grid")
+    let mut cookie_to_delete = None;
+    let mut cookie_to_update = None;
+
+    // RESPONSIVE TABLE
+    ui.push_id("cookie_table_area", |ui| {
+        let table = TableBuilder::new(ui)
             .striped(true)
-            .num_columns(4)
-            .spacing([10.0, 8.0])
-            .min_col_width(80.0)
-            .show(ui, |ui| {
-                ui.label(RichText::new("DOMAIN").strong().color(Color32::GRAY));
-                ui.label(RichText::new("KEY").strong().color(Color32::GRAY));
-                ui.label(RichText::new("VALUE").strong().color(Color32::GRAY));
-                ui.label(RichText::new("").strong());
-                ui.end_row();
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::auto().at_least(100.0).resizable(true)) // DOMAIN
+            .column(Column::auto().at_least(100.0).resizable(true)) // KEY
+            .column(Column::remainder().at_least(200.0))           // VALUE
+            .column(Column::auto().at_least(40.0));                // DELETE
 
-                let mut cookie_to_delete = None;
-                let mut cookie_to_update = None;
-
-                for (idx, cookie) in cookies.iter_mut().enumerate() {
-                    // DOMAIN (Read-only usually, but let's keep it simple)
-                    ui.label(RichText::new(&cookie.domain).small());
-
-                    // KEY (NAME) - Editable
-                    if ui.add(egui::TextEdit::singleline(&mut cookie.name).desired_width(120.0)).changed() {
-                        cookie_to_update = Some(idx);
+        table.header(20.0, |mut header| {
+            header.col(|ui| { ui.strong("DOMAIN"); });
+            header.col(|ui| { ui.strong("KEY"); });
+            header.col(|ui| { ui.strong("VALUE"); });
+            header.col(|ui| { ui.strong(""); });
+        })
+        .body(|body| {
+            body.rows(25.0, filtered_cookies.len(), |mut row| {
+                let row_idx = row.index();
+                let (original_idx, _cookie) = &filtered_cookies[row_idx];
+                let original_idx = *original_idx;
+                
+                let cookie = &mut cookies[original_idx];
+                
+                row.col(|ui| { ui.label(&cookie.domain); });
+                row.col(|ui| {
+                    if ui.add(egui::TextEdit::singleline(&mut cookie.name).desired_width(f32::INFINITY)).changed() {
+                        cookie_to_update = Some(original_idx);
                     }
-
-                    // VALUE - Editable
-                    ui.horizontal(|ui| {
-                        if ui.add(egui::TextEdit::singleline(&mut cookie.value).desired_width(300.0)).changed() {
-                            cookie_to_update = Some(idx);
-                        }
-                        if ui.button(RichText::new("🗑").color(Color32::RED)).on_hover_text("Delete Cookie").clicked() {
-                            cookie_to_delete = Some(idx);
-                        }
-                    });
-                    
-                    ui.end_row();
-                }
-
-                if let Some(idx) = cookie_to_delete {
-                    let c = &cookies[idx];
-                    emit(AppEvent::RequestCookieDelete(tid.clone(), c.name.clone(), c.domain.clone()));
-                }
-
-                if let Some(idx) = cookie_to_update {
-                    // In a real app we might want a "Save" button to avoid spamming CDP, 
-                    // but user asked for "Key and Value press to change". 
-                    // We'll send update on every change for now as requested.
-                    emit(AppEvent::RequestCookieAdd(tid.clone(), cookies[idx].clone()));
-                }
+                });
+                row.col(|ui| {
+                    if ui.add(egui::TextEdit::singleline(&mut cookie.value).desired_width(f32::INFINITY)).changed() {
+                        cookie_to_update = Some(original_idx);
+                    }
+                });
+                row.col(|ui| {
+                    if ui.button(RichText::new("🗑").color(Color32::RED)).clicked() {
+                        cookie_to_delete = Some(original_idx);
+                    }
+                });
             });
+        });
     });
+
+    if let Some(idx) = cookie_to_delete {
+        let c = &cookies[idx];
+        emit(AppEvent::RequestCookieDelete(tid.clone(), c.name.clone(), c.domain.clone()));
+    }
+
+    if let Some(idx) = cookie_to_update {
+        emit(AppEvent::RequestCookieAdd(tid.clone(), cookies[idx].clone()));
+    }
 
     ui.add_space(15.0);
     ui.separator();
@@ -97,7 +124,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .min_size([200.0, 35.0].into())
             .fill(Color32::from_rgb(0, 120, 215))).clicked() {
             edit_buffer = crate::state::ChromeCookie {
-                domain: "example.com".to_string(),
+                domain: if target_domain.is_empty() { "example.com".into() } else { target_domain.clone() },
                 path: "/".to_string(),
                 ..Default::default()
             };
@@ -136,5 +163,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     if let Some(ws) = state.workspaces.get_mut(&tid) {
         ws.show_cookie_modal = show_modal;
         ws.cookie_edit_buffer = edit_buffer;
+        ws.cookies = cookies;
     }
 }
