@@ -1,5 +1,5 @@
 use crate::state::{AppState, AutomationStep, AutomationStatus};
-use egui::{Ui, Color32, RichText, Frame, Stroke, vec2};
+use egui::{Ui, Color32, RichText, Frame, Stroke};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 
@@ -203,7 +203,6 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                 AutomationStep::ScrollBottom => { ui.label("BOTTOM"); }
                 AutomationStep::If { selector, .. } => { ui.label("If"); selector_input(ui, selector, discovered, search); }
                 AutomationStep::ForEach { selector, .. } => { ui.label("Each"); selector_input(ui, selector, discovered, search); }
-                _ => { ui.label("Unknown Step"); }
             }
             if ui.button("x").clicked() { *delete_idx = Some(idx); }
         });
@@ -243,7 +242,6 @@ fn map_steps_to_dsl(steps: &[AutomationStep]) -> crate::core::automation::dsl::A
             AutomationStep::Screenshot(f) => crate::core::automation::dsl::Step::Screenshot { filename: f.clone() },
             AutomationStep::If { selector, then_steps } => crate::core::automation::dsl::Step::If { selector: selector.clone(), then_steps: map_steps_to_dsl(then_steps).steps },
             AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_steps_to_dsl(body).steps },
-            _ => crate::core::automation::dsl::Step::ScrollBottom,
         }).collect(),
     }
 }

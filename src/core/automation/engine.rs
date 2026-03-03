@@ -167,9 +167,12 @@ impl AutomationEngine {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     el.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
                 }
-                Step::WaitFor { selector, timeout_ms } => {
+                Step::Wait { seconds } => {
+                    tokio::time::sleep(std::time::Duration::from_secs(*seconds)).await;
+                }
+                Step::WaitSelector { selector, timeout_ms } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let timeout = timeout_ms.unwrap_or(5000);
+                    let timeout = *timeout_ms;
                     let js = format!(
                         "return new Promise((resolve, reject) => {{ \
                             const check = () => {{ \
@@ -200,7 +203,7 @@ impl AutomationEngine {
                         let (tid_clone, current_rows) = {
                             let mut ctx = self.context.lock().unwrap();
                             ctx.variables.insert(as_key.clone(), text.clone());
-                            if add_to_row.unwrap_or(true) {
+                            if *add_to_row {
                                 ctx.current_row.insert(as_key.clone(), text.clone());
                             }
                             (ctx.tab_id.clone(), ctx.extracted_data.clone())
@@ -242,7 +245,7 @@ impl AutomationEngine {
                 }
                 Step::WaitUntilIdle { timeout_ms } => {
                     let _ = page.wait_for_navigation().await;
-                    tokio::time::sleep(std::time::Duration::from_millis(timeout_ms.unwrap_or(1000))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await;
                 }
                 Step::SetVariable { key, value } => {
                     let final_val = self.interpolate(value);
@@ -252,11 +255,11 @@ impl AutomationEngine {
                 Step::ScrollBottom => {
                     self.run_js(page, "window.scrollTo(0, document.body.scrollHeight)".into()).await?;
                 }
-                Step::If { condition, then_steps, else_steps } => {
-                    if self.evaluate_condition_internal(condition, page).await? {
+                Step::If { selector, then_steps } => {
+                    let final_sel = self.interpolate(selector).replace("'", "\\'");
+                    let res = self.run_js(page, format!("!!document.querySelector('{}')", final_sel)).await?;
+                    if res == "true" {
                         for s in then_steps { self.execute_step_internal(s, page).await?; }
-                    } else if let Some(steps) = else_steps {
-                        for s in steps { self.execute_step_internal(s, page).await?; }
                     }
                 }
                 Step::ForEach { selector, body } => {
@@ -277,27 +280,5 @@ impl AutomationEngine {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             Ok(())
         })
-    }
-
-    async fn evaluate_condition_internal(&self, condition: &crate::core::automation::dsl::Condition, page: &Page) -> AppResult<bool> {
-        match condition {
-            crate::core::automation::dsl::Condition::Exists { selector } => {
-                let final_sel = self.interpolate(selector).replace("'", "\\'");
-                let res = self.run_js(page, format!("!!document.querySelector('{}')", final_sel)).await?;
-                Ok(res == "true")
-            }
-            crate::core::automation::dsl::Condition::TextContains { selector, value } => {
-                let final_sel = self.interpolate(selector).replace("'", "\\'");
-                let final_val = self.interpolate(value).replace("'", "\\'");
-                let js = format!(
-                    "(() => {{ \
-                        const el = document.querySelector('{}'); \
-                        return el && el.innerText.includes('{}'); \
-                    }})()", final_sel, final_val
-                );
-                let res = self.run_js(page, js).await?;
-                Ok(res == "true")
-            }
-        }
     }
 }

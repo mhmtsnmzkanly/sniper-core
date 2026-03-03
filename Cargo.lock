@@ -597,36 +597,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "auto-crawler"
-version = "1.2.0"
-dependencies = [
- "base64",
- "chromiumoxide",
- "chrono",
- "clap",
- "dotenv",
- "eframe",
- "egui",
- "egui_extras",
- "futures",
- "image",
- "lazy_static",
- "libc",
- "regex",
- "rfd",
- "rquest",
- "scraper",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4513,6 +4483,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "sniper-core"
+version = "1.2.1"
+dependencies = [
+ "base64",
+ "chromiumoxide",
+ "chrono",
+ "clap",
+ "dotenv",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "futures",
+ "image",
+ "lazy_static",
+ "libc",
+ "regex",
+ "rfd",
+ "rquest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
