@@ -38,7 +38,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     .min_size([250.0, 40.0].into())
                     .fill(Color32::from_rgb(0, 100, 200))).clicked() {
                     let url = state.config.default_launch_url.clone();
-                    let profile = if state.use_custom_profile { state.config.default_profile_dir.clone() } else { std::env::current_dir().unwrap().join("temp_profile") };
+                    let profile = if state.use_custom_profile { 
+                        state.config.output_dir.join("isolated_profile") 
+                    } else { 
+                        crate::core::browser::BrowserManager::get_system_profile_path()
+                    };
                     let port = state.config.remote_debug_port;
                     let ts = state.session_timestamp.clone();
                     let log_dir = state.config.output_dir.clone();

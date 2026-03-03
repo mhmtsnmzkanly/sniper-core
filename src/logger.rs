@@ -36,14 +36,32 @@ where
         // Always send to GUI
         let _ = self.sender.send(entry.clone());
 
-        // Buffer for file writing if path not yet set
+        // Buffer logic
         let path_lock = LOG_PATH.lock().unwrap();
         if path_lock.is_none() {
+            // No path set yet, buffer in memory
             let mut buffer = LOG_BUFFER.lock().unwrap();
             buffer.push(entry);
-        } else if path_lock.is_some() {
+        } else if let Some(path) = path_lock.as_ref() {
+            // Path set, write directly to file (buffered via std::io if needed, but here simple append)
+            let log_file_path = path.clone();
             let mut buffer = LOG_BUFFER.lock().unwrap();
-            buffer.push(entry);
+            
+            // If there's anything in the buffer, we should have flushed it in set_log_path, 
+            // but just in case of race conditions:
+            if !buffer.is_empty() {
+                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
+                    use std::io::Write;
+                    for e in buffer.drain(..) {
+                        let _ = writeln!(file, "[{}] [{}] {}", e.timestamp, e.level, e.message);
+                    }
+                }
+            }
+
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
+                use std::io::Write;
+                let _ = writeln!(file, "[{}] [{}] {}", entry.timestamp, entry.level, entry.message);
+            }
         }
     }
 }
@@ -84,37 +102,23 @@ pub fn init_logging(sender: mpsc::UnboundedSender<LogEntry>) -> String {
     now
 }
 
-pub fn set_log_path(path: PathBuf) {
-    let mut path_lock = LOG_PATH.lock().unwrap();
-    *path_lock = Some(path.clone());
-
-    // Flush buffer to file
-    let now = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-    let log_file_path = path.join(format!("{}.log", now));
+pub fn set_log_path(dir: PathBuf, session_ts: &str) {
+    let log_file_path = dir.join(format!("sniper_{}.log", session_ts));
     
+    // Flush buffer to file first
     let mut buffer = LOG_BUFFER.lock().unwrap();
-    if let Ok(_) = std::fs::create_dir_all(&path) {
+    if let Ok(_) = std::fs::create_dir_all(&dir) {
         if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
             use std::io::Write;
             for entry in buffer.drain(..) {
                 let _ = writeln!(file, "[{}] [{}] {}", entry.timestamp, entry.level, entry.message);
             }
+            let _ = writeln!(file, "--- LOG PATH ACTIVATED ---");
         }
     }
 
-    // Start a background task to keep flushing the buffer
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let mut buffer = LOG_BUFFER.lock().unwrap();
-            if !buffer.is_empty() {
-                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_file_path) {
-                    use std::io::Write;
-                    for entry in buffer.drain(..) {
-                        let _ = writeln!(file, "[{}] [{}] {}", entry.timestamp, entry.level, entry.message);
-                    }
-                }
-            }
-        }
-    });
+    let mut path_lock = LOG_PATH.lock().unwrap();
+    *path_lock = Some(log_file_path);
+    
+    tracing::info!("[LOGGER] Log file established at: {:?}", dir);
 }

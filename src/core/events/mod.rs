@@ -12,18 +12,21 @@ pub enum AppEvent {
     
     // --- COMMAND EVENTS ---
     RequestCapture(String, bool, bool), // tab_id, mirror_mode, asset_folder_mode
-    RequestScriptExecution(String, String), // Added back
+    RequestScriptExecution(String, String),
     RequestNetworkToggle(String, bool),
-    RequestAutomationRun(String, Vec<AutomationStep>), // Added back
+    RequestAutomationRun(String, Vec<AutomationStep>),
     RequestTabRefresh,
     RequestPageReload(String),
-    RequestUrlBlock(String, String), // tab_id, url_pattern
-    RequestUrlUnblock(String, String), // tab_id, url_pattern
-    RequestPageSelectors(String), // tab_id
-    SelectorsReceived(String, Vec<String>), // tab_id, selectors
-    AutomationDatasetUpdated(String, Vec<std::collections::HashMap<String, String>>), // tab_id, data
+    RequestUrlBlock(String, String),
+    RequestUrlUnblock(String, String),
+    RequestPageSelectors(String),
+    SelectorsReceived(String, Vec<String>),
+    AutomationDatasetUpdated(String, Vec<std::collections::HashMap<String, String>>),
     TerminateBrowser,
     
+    // --- SETUP EVENTS ---
+    RequestLogPathSet(std::path::PathBuf),
+
     // --- STORAGE COMMANDS ---
     RequestCookies(String),
     RequestCookieDelete(String, String, String),
@@ -32,12 +35,12 @@ pub enum AppEvent {
     // --- DATA RETURN EVENTS (TAB-AWARE) ---
     MediaCaptured(String, MediaAsset),
     CookiesReceived(String, Vec<ChromeCookie>),
-    AutomationProgress(String, usize), // Added back
-    AutomationFinished(String), // Added back
-    AutomationError(String, String), // Added back
+    AutomationProgress(String, usize),
+    AutomationFinished(String),
+    AutomationError(String, String),
     NetworkRequestSent(String, NetworkRequest),
     NetworkResponseReceived(String, String, u16, Option<String>),
-    ScriptFinished(String, String), // Added back
+    ScriptFinished(String, String),
     
     // --- FEEDBACK EVENTS ---
     OperationSuccess(String),

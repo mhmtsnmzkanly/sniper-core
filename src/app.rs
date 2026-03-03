@@ -61,11 +61,20 @@ impl eframe::App for CrawlerApp {
         // --- EVENT HANDLING ---
         while let Ok(event) = self.event_receiver.try_recv() {
             match event {
+                AppEvent::RequestLogPathSet(path) => {
+                    crate::logger::set_log_path(path, &self.state.session_timestamp);
+                }
                 AppEvent::BrowserStarted(child) => {
                     let mut lock = self.browser_process.lock().unwrap();
                     *lock = Some(child);
                     self.state.is_browser_running = true;
                     self.state.notify("System", "Browser instance launched.", false);
+                    tracing::info!("[USER] Browser instance launched successfully.");
+                }
+                AppEvent::BrowserTerminated => {
+                    self.state.is_browser_running = false;
+                    self.state.notify("System", "Browser instance closed.", false);
+                    tracing::info!("[USER] Browser instance terminated externally.");
                 }
                 AppEvent::TerminateBrowser => {
                     let mut lock = self.browser_process.lock().unwrap();
@@ -73,6 +82,7 @@ impl eframe::App for CrawlerApp {
                         let _ = child.kill();
                         self.state.is_browser_running = false;
                         self.state.notify("System", "Browser instance terminated.", false);
+                        tracing::info!("[USER] Browser instance terminated by user.");
                     }
                 }
                 AppEvent::TabsUpdated(tabs) => {
@@ -96,6 +106,7 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::RequestPageReload(tid) => {
                     let port = self.state.config.remote_debug_port;
+                    tracing::info!("[USER] Page reload requested for tab: {}", tid);
                     tokio::spawn(async move {
                         let _ = crate::core::browser::BrowserManager::reload_page(port, tid).await;
                     });
@@ -103,8 +114,9 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestNetworkToggle(tid, _enabled) => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        let _ = crate::core::browser::BrowserManager::setup_tab_listeners(port, tid)
-                            .await;
+                        let _ =
+                            crate::core::browser::BrowserManager::setup_tab_listeners(port, tid)
+                                .await;
                     });
                 }
                 AppEvent::NetworkRequestSent(tid, req) => {
@@ -143,6 +155,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestCookieDelete(tid, name, domain) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
+                    tracing::info!("[USER] Cookie deletion requested: {} for domain: {}", name, domain);
                     tokio::spawn(async move {
                         if let Ok(_) = crate::core::browser::BrowserManager::delete_cookie(
                             port, tid_clone, name, domain,
@@ -156,6 +169,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestCookieAdd(tid, cookie) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
+                    tracing::info!("[USER] Cookie addition/update requested: {}", cookie.name);
                     tokio::spawn(async move {
                         if let Ok(_) =
                             crate::core::browser::BrowserManager::add_cookie(port, tid_clone, cookie)
@@ -214,6 +228,7 @@ impl eframe::App for CrawlerApp {
                         dsl_version: 1,
                         steps: map_ui_steps_to_dsl(&steps),
                     };
+                    tracing::info!("[USER] Automation pipeline started for tab: {}", tid_clone);
 
                     let output_dir = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
@@ -248,6 +263,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestScriptExecution(tid, script) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
+                    tracing::info!("[USER] JS Execution requested for tab: {}", tid_clone);
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::execute_script(
                             port, tid_clone.clone(), script,
@@ -266,6 +282,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestCapture(tid, mirror, assets) => {
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.output_dir.clone();
+                    tracing::info!("[USER] Page capture requested. Mirror: {}, Assets: {}", mirror, assets);
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::capture_html(
                             port, tid, root, mirror, assets,
@@ -283,11 +300,67 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                _ => {}
             }
         }
 
         // --- UI RENDERING ---
+        // INITIAL SETUP OVERLAYS
+        if !self.state.output_confirmed {
+            egui::Window::new("INITIAL SETUP: OUTPUT DIRECTORY")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .resizable(false).collapsible(false).show(ctx, |ui| {
+                    ui.set_width(450.0);
+                    ui.label("Choose where to save all logs, captures, and extracted data:");
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut self.state.config.output_dir.to_string_lossy().to_string()).desired_width(300.0));
+                        if ui.button("📁 BROWSE").clicked() {
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                self.state.config.output_dir = path;
+                            }
+                        }
+                    });
+                    ui.add_space(15.0);
+                    if ui.add(egui::Button::new(RichText::new("CONFIRM & ACTIVATE LOGGER").strong())
+                        .min_size([430.0, 40.0].into())
+                        .fill(Color32::from_rgb(0, 120, 215))).clicked() {
+                        self.state.output_confirmed = true;
+                        ui::scrape::emit(AppEvent::RequestLogPathSet(self.state.config.output_dir.clone()));
+                        tracing::info!("[USER] Output directory confirmed: {:?}", self.state.config.output_dir);
+                    }
+                });
+            return; // Don't show main UI yet
+        }
+
+        if !self.state.profile_confirmed {
+            egui::Window::new("INITIAL SETUP: BROWSER PROFILE")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .resizable(false).collapsible(false).show(ctx, |ui| {
+                    ui.set_width(450.0);
+                    ui.label("Select which browser profile to use for sessions:");
+                    ui.add_space(10.0);
+                    
+                    ui.vertical(|ui| {
+                        if ui.selectable_label(self.state.use_custom_profile, "🏠 ISOLATED PROFILE (Recommended - Created in output folder)").clicked() {
+                            self.state.use_custom_profile = true;
+                        }
+                        ui.add_space(5.0);
+                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SYSTEM PROFILE (Uses your existing Chrome/Chromium data)").clicked() {
+                            self.state.use_custom_profile = false;
+                        }
+                    });
+
+                    ui.add_space(15.0);
+                    if ui.add(egui::Button::new(RichText::new("START SNIPER STUDIO").strong())
+                        .min_size([430.0, 40.0].into())
+                        .fill(Color32::from_rgb(0, 150, 100))).clicked() {
+                        self.state.profile_confirmed = true;
+                        tracing::info!("[USER] Profile type selected: {}", if self.state.use_custom_profile { "Isolated" } else { "System" });
+                    }
+                });
+            return;
+        }
+
         egui::SidePanel::left("nav_panel")
             .resizable(false)
             .default_width(180.0)
@@ -305,7 +378,7 @@ impl eframe::App for CrawlerApp {
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.add_space(10.0);
-                    ui.label(RichText::new("V1.2.5").small().color(Color32::from_gray(100)));
+                    ui.label(RichText::new("V1.2.6").small().color(Color32::from_gray(100)));
                     if let Some(id) = &self.state.selected_tab_id {
                         ui.label(
                             RichText::new(format!("Active: {}", &id[..8]))
