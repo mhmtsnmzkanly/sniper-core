@@ -126,18 +126,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let tid = state.selected_tab_id.clone().unwrap_or_default();
 
         ui.vertical(|ui| {
-            ui.columns(3, |cols| {
+            ui.columns(4, |cols| {
                 let btn_h = 45.0;
                 if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE HTML").strong())
                     .min_size([cols[0].available_width(), btn_h].into())).clicked() {
-                    emit(AppEvent::RequestCapture(tid.clone(), false));
+                    emit(AppEvent::RequestCapture(tid.clone(), false, false));
                 }
                 if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE MIRROR").strong().color(Color32::GOLD))
                     .min_size([cols[1].available_width(), btn_h].into())).clicked() {
-                    emit(AppEvent::RequestCapture(tid.clone(), true));
+                    emit(AppEvent::RequestCapture(tid.clone(), true, false));
                 }
-                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
+                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE COMPLETE").strong().color(Color32::LIGHT_BLUE))
                     .min_size([cols[2].available_width(), btn_h].into())).clicked() {
+                    emit(AppEvent::RequestCapture(tid.clone(), false, true));
+                }
+                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
+                    .min_size([cols[3].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_automation = true;

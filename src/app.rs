@@ -297,12 +297,12 @@ impl eframe::App for CrawlerApp {
                     let ws = self.ensure_workspace(&tid);
                     ws.js_result = res;
                 }
-                AppEvent::RequestCapture(tid, mirror) => {
+                AppEvent::RequestCapture(tid, mirror, assets) => {
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::capture_html(
-                            port, tid, root, mirror,
+                            port, tid, root, mirror, assets,
                         )
                         .await
                         {

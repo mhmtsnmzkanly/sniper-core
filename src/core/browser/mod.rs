@@ -265,23 +265,69 @@ impl BrowserManager {
         Ok(val_str)
     }
 
-    pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool) -> AppResult<PathBuf> {
+    pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool, asset_folder: bool) -> AppResult<PathBuf> {
         use chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams;
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         let url_str = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         
-        let (content, extension) = if mirror_mode {
+        if mirror_mode {
             let snapshot = page.execute(CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-            (snapshot.result.data, "mhtml")
-        } else {
-            (page.content().await.map_err(|e| AppError::Browser(e.to_string()))?, "html")
-        };
+            let dir = Self::get_output_path(save_root, "MIRROR", &url_str)?;
+            let final_path = dir.join("index.mhtml");
+            std::fs::write(&final_path, snapshot.result.data.as_bytes()).map_err(AppError::Io)?;
+            return Ok(final_path);
+        }
 
-        let category = if mirror_mode { "MIRROR" } else { "HTML" };
-        let dir = crate::core::browser::BrowserManager::get_output_path(save_root, category, &url_str)?;
-        let final_path = dir.join(format!("index.{}", extension));
+        let mut content = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let dir = Self::get_output_path(save_root, if asset_folder { "COMPLETE" } else { "HTML" }, &url_str)?;
+        
+        if asset_folder {
+            let assets_dir = dir.join("assets");
+            let _ = std::fs::create_dir_all(&assets_dir);
+            
+            // Extract all src/href with a simple regex for speed, download them
+            let re = regex::Regex::new(r#"(?i)(src|href)\s*=\s*['"]([^'"]+)['"]"#).unwrap();
+            let base = url::Url::parse(&url_str).ok();
+            let client = rquest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap_or_default();
+
+            let mut downloads = Vec::new();
+            for cap in re.captures_iter(&content) {
+                let attr_found = cap[1].to_string();
+                let found_url = cap[2].to_string();
+                if found_url.starts_with("data:") || found_url.starts_with("blob:") || found_url.starts_with("#") { continue; }
+                
+                if let Some(base) = &base {
+                    if let Ok(abs_url) = base.join(&found_url) {
+                        let filename = abs_url.path().split('/').last().unwrap_or("asset").to_string();
+                        let filename = if filename.is_empty() { "index".to_string() } else { filename };
+                        let final_name = format!("{}_{}", &chrono::Local::now().timestamp_nanos_opt().unwrap_or(0), filename);
+                        let save_path = assets_dir.join(&final_name);
+                        
+                        let url_to_get = abs_url.clone();
+                        let client_clone = client.clone();
+                        let original_url = found_url.clone();
+                        downloads.push(async move {
+                            if let Ok(resp) = client_clone.get(url_to_get).send().await {
+                                if let Ok(bytes) = resp.bytes().await {
+                                    let _ = std::fs::write(save_path, bytes);
+                                    return Some((original_url, format!("assets/{}", final_name)));
+                                }
+                            }
+                            None
+                        });
+                    }
+                }
+            }
+
+            let results = futures::future::join_all(downloads).await;
+            for res in results.into_iter().flatten() {
+                content = content.replace(&res.0, &res.1);
+            }
+        }
+
+        let final_path = dir.join("index.html");
         std::fs::write(&final_path, content.as_bytes()).map_err(AppError::Io)?;
         Ok(final_path)
     }

@@ -11,7 +11,7 @@ pub enum AppEvent {
     ConsoleLogAdded(String, String),
     
     // --- COMMAND EVENTS ---
-    RequestCapture(String, bool),
+    RequestCapture(String, bool, bool), // tab_id, mirror_mode, asset_folder_mode
     RequestScriptExecution(String, String), // Added back
     RequestNetworkToggle(String, bool),
     RequestAutomationRun(String, Vec<AutomationStep>), // Added back
