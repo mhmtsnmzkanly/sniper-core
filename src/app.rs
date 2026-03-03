@@ -456,12 +456,14 @@ impl eframe::App for CrawlerApp {
         // --- WINDOWS (MDI) ---
         let workspace_ids: Vec<String> = self.state.workspaces.keys().cloned().collect();
         for tid in workspace_ids {
-            let (mut show_net, mut show_med, mut show_sto, title) = {
+            let (mut show_net, mut show_med, mut show_sto, mut show_auto, mut sniffer_active, title) = {
                 let ws = self.state.workspaces.get(&tid).unwrap();
                 (
                     ws.show_network,
                     ws.show_media,
                     ws.show_storage,
+                    ws.show_automation,
+                    ws.sniffer_active,
                     ws.title.clone(),
                 )
             };
@@ -483,11 +485,30 @@ impl eframe::App for CrawlerApp {
                     });
             }
             if show_sto {
-                egui::Window::new(format!("{} - STORAGE", title))
+                egui::Window::new(format!("COOKIE MANAGER // {}", title))
                     .id(egui::Id::new(format!("{}_sto", tid)))
                     .open(&mut show_sto)
+                    .default_size([800.0, 600.0])
                     .show(ctx, |ui| {
                         state_bridge_render_storage(ui, &mut self.state, &tid);
+                    });
+            }
+            if show_auto {
+                egui::Window::new(format!("AUTOMATION // {}", title))
+                    .id(egui::Id::new(format!("{}_auto", tid)))
+                    .open(&mut show_auto)
+                    .default_size([900.0, 700.0])
+                    .show(ctx, |ui| {
+                        state_bridge_render_automation(ui, &mut self.state, &tid);
+                    });
+            }
+            if sniffer_active {
+                egui::Window::new(format!("CONSOLE // {}", title))
+                    .id(egui::Id::new(format!("{}_sniffer", tid)))
+                    .open(&mut sniffer_active)
+                    .default_size([700.0, 500.0])
+                    .show(ctx, |ui| {
+                        state_bridge_render_sniffer(ui, &mut self.state, &tid);
                     });
             }
 
@@ -495,6 +516,8 @@ impl eframe::App for CrawlerApp {
                 ws.show_network = show_net;
                 ws.show_media = show_med;
                 ws.show_storage = show_sto;
+                ws.show_automation = show_auto;
+                ws.sniffer_active = sniffer_active;
             }
         }
 
@@ -626,5 +649,71 @@ fn state_bridge_render_storage(ui: &mut egui::Ui, state: &mut AppState, tid: &st
     let old_id = state.selected_tab_id.clone();
     state.selected_tab_id = Some(tid.to_string());
     ui::storage_panel::render(ui, state);
+    state.selected_tab_id = old_id;
+}
+fn state_bridge_render_automation(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {
+    let old_id = state.selected_tab_id.clone();
+    state.selected_tab_id = Some(tid.to_string());
+    crate::ui::automation::render_embedded(ui, state, tid);
+    state.selected_tab_id = old_id;
+}
+fn state_bridge_render_sniffer(ui: &mut egui::Ui, state: &mut AppState, tid: &str) {
+    let old_id = state.selected_tab_id.clone();
+    state.selected_tab_id = Some(tid.to_string());
+    if let Some(ws) = state.workspaces.get_mut(tid) {
+        ui.label(RichText::new("JAVASCRIPT INJECTOR").strong());
+        ui.add(
+            egui::TextEdit::multiline(&mut ws.js_script)
+                .font(egui::FontId::monospace(13.0))
+                .desired_rows(6)
+                .desired_width(f32::INFINITY),
+        );
+        if ui.button("EXECUTE SCRIPT").clicked() {
+            crate::ui::scrape::emit(AppEvent::RequestScriptExecution(
+                tid.to_string(),
+                ws.js_script.clone(),
+            ));
+        }
+        if !ws.js_result.is_empty() {
+            ui.label(
+                RichText::new(format!("> {}", ws.js_result))
+                    .color(Color32::GREEN)
+                    .monospace(),
+            );
+        }
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("SYSTEM LOGS").strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("CLEAR").clicked() {
+                    ws.console_logs.clear();
+                }
+                if ui.button("SAVE LOG").clicked() {
+                    let content = ws.console_logs.join("\n");
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_file_name("console.log")
+                        .save_file()
+                    {
+                        let _ = std::fs::write(path, content);
+                    }
+                }
+                if ui.button("COPY ALL").clicked() {
+                    ui.ctx().copy_text(ws.console_logs.join("\n"));
+                }
+            });
+        });
+
+        ui.add_space(5.0);
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .max_height(f32::INFINITY)
+            .show(ui, |ui| {
+                for log in &ws.console_logs {
+                    ui.label(RichText::new(log).small().font(egui::FontId::monospace(11.0)));
+                }
+            });
+    }
     state.selected_tab_id = old_id;
 }
