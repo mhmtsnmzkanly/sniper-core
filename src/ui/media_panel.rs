@@ -13,6 +13,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     ui.vertical(|ui| {
+        // Control Header
         Frame::group(ui.style()).fill(Color32::from_gray(25)).inner_margin(8.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.button(RichText::new("🗑 CLEAR").color(Color32::LIGHT_RED)).clicked() {
@@ -48,7 +49,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         if let Some(asset) = media_assets.iter().find(|a| &a.url == url) {
                             if let Some(data) = &asset.data {
                                 if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
-                                    tracing::info!("[UI] Saving item {} to {:?}", asset.name, path);
                                     let _ = std::fs::write(path, data);
                                 }
                             }
@@ -81,8 +81,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             true
         }).collect();
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("media_grid").striped(true).num_columns(6).spacing([15.0, 10.0]).show(ui, |ui| {
+        // SCROLL AREA with fixed max height to prevent window overflow
+        egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
+            egui::Grid::new("media_grid_v2").striped(true).num_columns(6).spacing([15.0, 10.0]).show(ui, |ui| {
                 for asset in filtered_assets {
                     let mut is_selected = selected_media_urls.contains(&asset.url);
                     if ui.checkbox(&mut is_selected, "").changed() {
@@ -92,6 +93,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         }
                     }
 
+                    // Preview
                     ui.allocate_ui(egui::vec2(preview_size, preview_size * 0.8), |ui| {
                         if asset.mime_type.starts_with("image/") {
                             if let Some(data) = &asset.data {
@@ -99,17 +101,23 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     .max_size(egui::vec2(preview_size, preview_size)));
                             }
                         } else {
-                            ui.label(RichText::new("FILE").color(Color32::GRAY));
+                            ui.centered_and_justified(|ui| { ui.label(RichText::new("FILE").color(Color32::GRAY)); });
                         }
                     });
 
-                    ui.label(RichText::new(&asset.name).strong());
+                    // Info Column with URL Wrap
+                    ui.vertical(|ui| {
+                        ui.set_width(300.0);
+                        ui.label(RichText::new(&asset.name).strong());
+                        ui.add(egui::Label::new(RichText::new(&asset.url).size(9.0).color(Color32::GRAY)).wrap());
+                    });
+
                     ui.label(RichText::new(&asset.mime_type).small().color(Color32::LIGHT_BLUE));
                     ui.label(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0));
+                    
                     if ui.button("SAVE").clicked() {
                         if let Some(data) = &asset.data {
                             if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
-                                tracing::info!("[UI] Manually saving item {} to {:?}", asset.name, path);
                                 let _ = std::fs::write(path, data);
                             }
                         }

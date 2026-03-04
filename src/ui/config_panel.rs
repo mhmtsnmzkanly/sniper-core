@@ -1,60 +1,50 @@
 use crate::state::AppState;
-use egui::{Ui, RichText, Color32};
+use egui::{Ui, Color32, RichText, Frame, Stroke};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading("STUDIO CONFIGURATION 1.1.0");
+    ui.heading(RichText::new("SYSTEM SETTINGS").strong().color(Color32::WHITE));
     ui.add_space(10.0);
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.group(|ui| {
-            ui.label(RichText::new("Version Control").strong());
-            ui.horizontal(|ui| {
-                ui.label("Config Schema Version:");
-                ui.label(RichText::new(state.config.config_version.to_string()).color(Color32::YELLOW));
-            });
-        });
+    let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(25)).stroke(Stroke::new(1.0, Color32::from_gray(50)));
 
-        ui.add_space(10.0);
-
-        ui.group(|ui| {
-            ui.label(RichText::new("Engine Settings").strong());
-            
-            ui.label("Remote Debug Port:");
-            ui.add(egui::DragValue::new(&mut state.config.remote_debug_port).range(1024..=65535));
-
+    frame_style.show(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.label(RichText::new("Environment & Paths").strong().color(Color32::LIGHT_BLUE));
             ui.add_space(5.0);
-            
-            ui.label("Unified Output Directory:");
+
             ui.horizontal(|ui| {
-                ui.label(state.config.output_dir.to_string_lossy());
-                if ui.button("Change").clicked() {
+                ui.label("Output Directory:");
+                ui.label(RichText::new(format!("{:?}", state.config.output_dir)).color(Color32::KHAKI));
+                if ui.button("Change...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         state.config.output_dir = path;
                     }
                 }
             });
-        });
 
-        ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.label("Chrome Binary:");
+                ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(400.0));
+            });
 
-        ui.group(|ui| {
-            ui.label(RichText::new("Gemini AI API Settings").strong());
-            ui.label("API KEY:");
-            ui.add(egui::TextEdit::singleline(&mut state.config.gemini_api_key).password(true));
-        });
+            ui.horizontal(|ui| {
+                ui.label("Chrome Profile:");
+                ui.add(egui::TextEdit::singleline(&mut state.config.chrome_profile_path).desired_width(400.0));
+            });
 
-        ui.add_space(20.0);
+            ui.separator();
 
-        ui.horizontal(|ui| {
-            if ui.button(RichText::new("💾 SAVE ALL TO .env").strong().size(18.0)).clicked() {
-                match crate::config::loader::save_config(&state.config) {
-                    Ok(_) => {
-                        state.notify("Success", "Configuration persisted to .env", false);
-                    },
-                    Err(e) => {
-                        state.notify("Error", &format!("Save failed: {}", e), true);
-                    }
-                }
+            ui.label(RichText::new("AI Configuration").strong().color(Color32::LIGHT_BLUE));
+            ui.add_space(5.0);
+            ui.horizontal(|ui| {
+                ui.label("Gemini API Key:");
+                ui.add(egui::TextEdit::singleline(&mut state.config.gemini_api_key).password(true).desired_width(300.0));
+            });
+
+            ui.add_space(20.0);
+            if ui.button(RichText::new("💾 SAVE SETTINGS").strong().color(Color32::GREEN)).clicked() {
+                // Persistent saving logic could be added here (e.g., settings.json)
+                state.notify("Settings", "Configuration updated for current session.", false);
             }
         });
     });

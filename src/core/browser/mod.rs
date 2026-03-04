@@ -12,40 +12,22 @@ use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
 
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
-/// CRITICAL: Do not remove or simplify the tab lookup or listener setup logic.
 pub struct BrowserManager;
 
 impl BrowserManager {
-    /// Launches the browser and establishes an async network-based heartbeat.
+    /// Launches the browser using specified paths.
     pub async fn launch(
         url: &str, 
-        profile_path: PathBuf, 
+        chrome_path: &str,
+        profile_path: &str, 
         port: u16, 
-        _log_dir: PathBuf, 
-        _session_ts: String,
         tx: mpsc::UnboundedSender<AppEvent>
     ) -> AppResult<std::process::Child> {
-        tracing::info!("[CORE -> BROWSER] Starting browser on port {} with URL: {}", port, url);
+        tracing::info!("[CORE -> BROWSER] Launching {} on port {}", chrome_path, port);
 
-        let chrome_path = if cfg!(target_os = "windows") {
-            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string()
-        } else if cfg!(target_os = "macos") {
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
-        } else {
-            let mut found_path = "google-chrome".to_string();
-            let fallbacks = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
-            for bin in fallbacks {
-                if std::process::Command::new("which").arg(bin).output().map(|o| o.status.success()).unwrap_or(false) {
-                    found_path = bin.to_string();
-                    break;
-                }
-            }
-            found_path
-        };
-
-        let mut command = std::process::Command::new(&chrome_path);
+        let mut command = std::process::Command::new(chrome_path);
         command.arg(format!("--remote-debugging-port={}", port))
-            .arg(format!("--user-data-dir={}", profile_path.display()))
+            .arg(format!("--user-data-dir={}", profile_path))
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--remote-allow-origins=*");
@@ -56,22 +38,20 @@ impl BrowserManager {
         }
 
         let child = command.arg(url).spawn().map_err(|e| {
-            tracing::error!("[CORE -> BROWSER] Failed to spawn browser: {}", e);
+            tracing::error!("[CORE -> BROWSER] Failed to spawn: {}", e);
             AppError::Io(e)
         })?;
 
-        // HEARTBEAT: Monitor browser process via network to detect closure.
+        // HEARTBEAT
         let tx_clone = tx.clone();
-        let port_clone = port;
+        let hb_url = format!("http://127.0.0.1:{}/json/version", port);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await; 
-            let hb_url = format!("http://127.0.0.1:{}/json/version", port_clone);
             let client = rquest::Client::new();
             loop {
                 match client.get(&hb_url).send().await {
                     Ok(resp) if resp.status().is_success() => {}
                     _ => {
-                        tracing::warn!("[BROWSER -> CORE] Heartbeat lost. Instance assumed terminated.");
                         let _ = tx_clone.send(AppEvent::BrowserTerminated);
                         break;
                     }
@@ -83,21 +63,6 @@ impl BrowserManager {
         Ok(child)
     }
 
-    /// Returns the system-specific Chrome profile path.
-    pub fn get_system_profile_path() -> PathBuf {
-        if cfg!(target_os = "windows") {
-            PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
-                .join("Google/Chrome/User Data/Default")
-        } else if cfg!(target_os = "macos") {
-            PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                .join("Library/Application Support/Google/Chrome/Default")
-        } else {
-            PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                .join(".config/google-chrome/Default")
-        }
-    }
-
-    /// Connects to the CDP WebSocket and starts the handler.
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -125,23 +90,18 @@ impl BrowserManager {
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
     }
 
-    /// Finds a tab by ID with a retry loop to handle chromiumoxide discovery delays.
     pub async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
         for _ in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
             for page in &pages {
-                if page.target_id().as_ref() == tab_id {
-                    return Ok(page.clone());
-                }
+                if page.target_id().as_ref() == tab_id { return Ok(page.clone()); }
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        Err(AppError::NotFound(format!("Tab {} not found after retries", tab_id)))
+        Err(AppError::NotFound(format!("Tab {} not found", tab_id)))
     }
 
-    /// Sets up CDP listeners for network, media, and console.
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        tracing::info!("[CORE -> BROWSER] Setting up listeners for tab: {}", tab_id);
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -158,12 +118,11 @@ impl BrowserManager {
             loop {
                 tokio::select! {
                     Some(e) = network_events.next() => {
-                        let res_type = format!("Other"); 
                         let req = NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
                             method: e.request.method.clone(),
-                            resource_type: res_type,
+                            resource_type: "Other".into(),
                             status: None, request_body: None, response_body: None,
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
@@ -252,7 +211,8 @@ impl BrowserManager {
         let page = Self::find_tab(&browser, &tab_id).await?;
         let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let final_dir = Self::get_output_path(root, "html_captures", &url)?;
+        let final_dir = root.join("html_captures");
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         let path = final_dir.join("index.html");
         std::fs::write(&path, html).map_err(AppError::Io)?;
         Ok(path)
@@ -263,7 +223,8 @@ impl BrowserManager {
         let page = Self::find_tab(&browser, &tab_id).await?;
         let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let final_dir = Self::get_output_path(root, "complete_captures", &url)?;
+        let final_dir = root.join("complete_captures");
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
         Ok(final_dir)
     }
@@ -271,8 +232,8 @@ impl BrowserManager {
     pub async fn capture_mirror(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
-        let final_dir = Self::get_output_path(root, "mirrors", &url)?;
+        let final_dir = root.join("mirrors");
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let path = final_dir.join("snapshot.mhtml");
         std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
@@ -298,41 +259,21 @@ impl BrowserManager {
     pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let script = r#"(() => { let sels = new Set(); document.querySelectorAll('*').forEach(el => { if (el.id) sels.add('#' + el.id); el.classList.forEach(c => sels.add('.' + c)); Array.from(el.attributes).forEach(attr => { if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') { sels.add(`[${attr.name}="${attr.value}"]`); } }); }); return Array.from(sels).sort(); })()"#;
+        // Improved selector script: Returns cleanElementName.class#ID style
+        let script = r#"(() => { 
+            let sels = new Set(); 
+            document.querySelectorAll('*').forEach(el => { 
+                let tag = el.tagName.toLowerCase();
+                let id = el.id ? '#' + el.id : '';
+                let classes = Array.from(el.classList).map(c => '.' + c).join('');
+                if (id || classes.length > 0) {
+                    sels.add(tag + classes + id);
+                }
+            }); 
+            return Array.from(sels).sort(); 
+        })()"#;
         let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
         Ok(sels)
-    }
-
-    pub fn get_output_path(root: PathBuf, category: &str, url_str: &str) -> AppResult<PathBuf> {
-        let parsed = url::Url::parse(url_str).map_err(|e| AppError::Internal(e.to_string()))?;
-        let domain = parsed.host_str().unwrap_or("unknown_domain");
-        let path_slug = parsed.path().trim_matches('/').replace('/', "_");
-        let path_slug = if path_slug.is_empty() { "index_html".to_string() } else { path_slug };
-        let final_dir = root.join(category).join(domain).join(path_slug);
-        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
-        Ok(final_dir)
-    }
-
-    pub fn extract_resources_from_css(css_content: &str, base_url: &str) -> Vec<String> {
-        let mut urls = Vec::new();
-        let re_url = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
-        let re_import = regex::Regex::new(r#"(?i)@import\s+['"]([^'"]+)['"]"#).unwrap();
-        let base = url::Url::parse(base_url).ok();
-        let mut find_all = |pattern: &regex::Regex| {
-            for cap in pattern.captures_iter(css_content) {
-                let found_url = cap[1].trim();
-                if found_url.is_empty() || found_url.starts_with("data:") || found_url.starts_with("blob:") { continue; }
-                if let Some(base) = &base {
-                    if let Ok(abs_url) = base.join(found_url) {
-                        let url_str = abs_url.to_string();
-                        if !urls.contains(&url_str) { urls.push(url_str); }
-                    }
-                }
-            }
-        };
-        find_all(&re_url);
-        find_all(&re_import);
-        urls
     }
 }

@@ -25,36 +25,47 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.heading(RichText::new("SNIPER STUDIO // V1.2.8").strong().size(22.0).color(Color32::WHITE));
     ui.add_space(15.0);
 
-    // PHASE 1: BROWSER ENVIRONMENT
     let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(20)).stroke(Stroke::new(1.0, Color32::from_gray(50)));
     
+    // BROWSER SETTINGS & CONTROL
     frame_style.show(ui, |ui| {
-        ui.label(RichText::new(":: PHASE 1 - ENVIRONMENT").strong().color(Color32::LIGHT_BLUE));
+        ui.label(RichText::new(":: BROWSER CONFIGURATION").strong().color(Color32::LIGHT_BLUE));
         ui.add_space(8.0);
+        
+        egui::Grid::new("browser_config_grid").spacing([10.0, 10.0]).show(ui, |ui| {
+            ui.label("Chrome Path:");
+            ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(ui.available_width() * 0.8));
+            ui.end_row();
+
+            ui.label("Profile Path:");
+            ui.add(egui::TextEdit::singleline(&mut state.config.chrome_profile_path).desired_width(ui.available_width() * 0.8));
+            ui.end_row();
+
+            ui.label("Remote Port:");
+            ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+            ui.end_row();
+        });
+
+        ui.add_space(10.0);
         
         ui.horizontal(|ui| {
             if !state.is_browser_running {
-                if ui.add(egui::Button::new(RichText::new("LAUNCH BROWSER INSTANCE").strong().size(14.0))
+                if ui.add(egui::Button::new(RichText::new("LAUNCH BROWSER").strong().size(14.0))
                     .min_size([250.0, 40.0].into())
                     .fill(Color32::from_rgb(0, 100, 200))).clicked() {
                     
                     tracing::info!("[UI] Click: LAUNCH BROWSER");
                     let url = state.config.default_launch_url.clone();
-                    let profile = if state.use_custom_profile { 
-                        state.config.output_dir.join("isolated_profile") 
-                    } else { 
-                        crate::core::browser::BrowserManager::get_system_profile_path()
-                    };
+                    let binary = state.config.chrome_binary_path.clone();
+                    let profile = state.config.chrome_profile_path.clone();
                     let port = state.config.remote_debug_port;
-                    let ts = state.session_timestamp.clone();
-                    let log_dir = state.config.output_dir.clone();
                     let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
                     
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts, tx).await {
+                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx).await {
                             Ok(child) => { emit(AppEvent::BrowserStarted(child)); }
                             Err(e) => { 
-                                tracing::error!("[CORE] Browser launch failed: {}", e);
+                                tracing::error!("[CORE] Launch failed: {}", e);
                                 emit(AppEvent::OperationError(format!("Launch Failed: {}", e))); 
                             }
                         }
@@ -68,17 +79,23 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::TerminateBrowser);
                 }
                 ui.add_space(10.0);
-                ui.label(RichText::new(format!("PORT: {}", state.config.remote_debug_port)).monospace().color(Color32::GREEN));
+                ui.label(RichText::new("● BROWSER ACTIVE").monospace().color(Color32::GREEN));
             }
         });
     });
 
     ui.add_space(15.0);
 
-    // PHASE 2: LIVE TAB SELECTION
+    // LIVE TAB SELECTION (Auto-refresh every 5s)
+    let now = ui.input(|i| i.time);
+    if state.is_browser_running && now - state.last_tab_refresh > 5.0 {
+        state.last_tab_refresh = now;
+        emit(AppEvent::RequestTabRefresh);
+    }
+
     frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(":: PHASE 2 - TARGET SELECTION").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new(":: ACTIVE TARGETS").strong().color(Color32::LIGHT_BLUE));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("REFRESH LIST").clicked() { 
                     tracing::info!("[UI] Click: REFRESH TAB LIST");
@@ -125,10 +142,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(15.0);
 
-    // PHASE 3: COMMAND CENTER
+    // COMMAND CENTER
     frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(":: PHASE 3 - COMMAND CENTER").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new(":: COMMAND CENTER").strong().color(Color32::LIGHT_BLUE));
             let tid = state.selected_tab_id.clone().unwrap_or_default();
             if ui.add_enabled(!tid.is_empty(), egui::Button::new("FORCE RELOAD").small()).clicked() {
                 tracing::info!("[UI] Click: RELOAD TAB {}", tid);

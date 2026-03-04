@@ -1,7 +1,33 @@
-use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
+/// Application configuration stored in state instead of .env
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    pub output_dir: PathBuf,
+    pub chrome_binary_path: String,
+    pub chrome_profile_path: String,
+    pub remote_debug_port: u16,
+    pub default_launch_url: String,
+    pub gemini_api_key: String,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        let mut output = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        output.push("SniperOutput");
+
+        Self {
+            output_dir: output,
+            chrome_binary_path: String::new(), // Will be detected on startup
+            chrome_profile_path: String::new(), // Will be detected on startup
+            remote_debug_port: 9222,
+            default_launch_url: "https://www.google.com".to_string(),
+            gemini_api_key: String::new(),
+        }
+    }
+}
 
 /// Navigation tabs
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
@@ -235,12 +261,6 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: AppConfig, session_ts: String) -> Self {
-        let mut default_output = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        default_output.push("SniperOutput");
-
-        let mut config = config;
-        config.output_dir = default_output;
-
         Self {
             active_tab: Tab::Scrape,
             config,

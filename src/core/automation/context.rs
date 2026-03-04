@@ -28,6 +28,8 @@ impl AutomationContext {
     pub fn set_variable(&mut self, key: String, value: String) {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(key, value);
+        } else {
+            println!("Madem sadece varsa güncelliyorsan ya uyarı ver ya da log tut");
         }
     }
 
@@ -36,6 +38,8 @@ impl AutomationContext {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.get(key) {
                 return Some(val.clone());
+            } else {
+                println!("Variable not found: {}", key);
             }
         }
         None
@@ -48,6 +52,8 @@ impl AutomationContext {
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
+        } else {
+            println!("not düşeydi scope yok diye");
         }
     }
 

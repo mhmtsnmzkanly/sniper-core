@@ -3,91 +3,83 @@ mod state;
 mod ui;
 mod logger;
 mod core;
-mod config;
 
 use app::CrawlerApp;
-use crate::core::events::AppEvent;
-use state::AppState;
-use config::loader::load_config;
+use state::{AppState, AppConfig};
 use clap::Parser;
 use eframe::egui;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long, default_value_t = false)]
-    cli: bool,
+    #[arg(short, long, default_value = "9222")]
+    port: u16,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv::dotenv().ok();
-    let _args = Args::parse();
-    
-    let config = match load_config() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[CONFIG <-> LOAD] Critical Failure: {}", e);
-            return Err(e.into());
+fn find_chrome_binary() -> String {
+    if cfg!(target_os = "windows") {
+        let paths = [
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        ];
+        for p in paths { if PathBuf::from(p).exists() { return p.to_string(); } }
+    } else if cfg!(target_os = "macos") {
+        let paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Users/Shared/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        ];
+        for p in paths { if PathBuf::from(p).exists() { return p.to_string(); } }
+    } else {
+        let fallbacks = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+        for bin in fallbacks {
+            if std::process::Command::new("which").arg(bin).output().map(|o| o.status.success()).unwrap_or(false) {
+                return bin.to_string();
+            }
         }
+    }
+    "google-chrome".to_string()
+}
+
+fn find_chrome_profile() -> String {
+    let p = if cfg!(target_os = "windows") {
+        dirs::cache_dir().map(|d| d.join("Google\\Chrome\\User Data\\Default"))
+    } else if cfg!(target_os = "macos") {
+        dirs::home_dir().map(|d| d.join("Library/Application Support/Google/Chrome/Default"))
+    } else {
+        dirs::home_dir().map(|d| d.join(".config/google-chrome/Default"))
     };
+    
+    p.map(|path| path.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    
+    let mut config = AppConfig::default();
+    config.remote_debug_port = args.port;
+    config.chrome_binary_path = find_chrome_binary();
+    config.chrome_profile_path = find_chrome_profile();
 
     let (log_sender, log_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+    let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
     
-    let timestamp = logger::init_logging(log_sender);
+    let session_ts = logger::init_logging(log_sender);
+    ui::scrape::set_event_sender(event_sender);
 
-    let state = AppState::new(config, timestamp);
+    let state = AppState::new(config, session_ts);
 
-    let native_options = eframe::NativeOptions {
+    let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1100.0, 850.0])
-            .with_min_inner_size([800.0, 600.0]),
+            .with_inner_size([1200.0, 800.0])
+            .with_min_inner_size([1000.0, 700.0]),
         ..Default::default()
     };
 
-    tracing::info!("[SYSTEM <-> INIT] Sniper Scraper Studio {} starting...", env!("CARGO_PKG_VERSION"));
-    
-    crate::ui::scrape::set_event_sender(event_sender);
-
     eframe::run_native(
-        "Sniper Studio 1.1.0",
-        native_options,
+        "Sniper Studio",
+        options,
         Box::new(|cc| {
-            // --- UNIVERSAL OS FONT SUPPORT ---
-            let mut fonts = egui::FontDefinitions::default();
-            
-            // Priority list for Universal Unicode & Asian Language Support
-            let system_fonts = [
-                // Linux (Noto is standard for full coverage)
-                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
-                // Windows (Standard UI fonts with Asian support)
-                "C:\\Windows\\Fonts\\msyh.ttc", // Microsoft YaHei
-                "C:\\Windows\\Fonts\\malgun.ttf", // Malgun Gothic (Korean)
-                "C:\\Windows\\Fonts\\seguiemj.ttf", // Segoe UI Emoji
-                // macOS (Standard CJK support)
-                "/System/Library/Fonts/PingFang.ttc",
-                "/System/Library/Fonts/STHeiti Light.ttc",
-            ];
-
-            for path in system_fonts {
-                if let Ok(font_bytes) = std::fs::read(path) {
-                    fonts.font_data.insert(
-                        "univ_font".to_owned(),
-                        egui::FontData::from_owned(font_bytes).into(),
-                    );
-                    fonts.families.get_mut(&egui::FontFamily::Proportional).unwrap()
-                        .insert(0, "univ_font".to_owned());
-                    fonts.families.get_mut(&egui::FontFamily::Monospace).unwrap()
-                        .push("univ_font".to_owned());
-                    tracing::info!("[SYSTEM <-> FONT] Loaded native support: {}", path);
-                    break;
-                }
-            }
-
-            cc.egui_ctx.set_fonts(fonts);
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(CrawlerApp::new(cc, state, log_receiver, event_receiver)))
         }),

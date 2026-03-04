@@ -33,7 +33,6 @@ tracing-appender = "0.2"
 chrono = "0.4"
 
 # Utilities
-dotenv = "0.15"
 lazy_static = "1.4"
 libc = "0.2"
 clap = { version = "4.5.60", features = ["derive"] }

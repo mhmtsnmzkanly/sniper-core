@@ -1,8 +1,8 @@
 use crate::core::automation::driver::AutomationDriver;
 use crate::core::error::{AppError, AppResult};
+use async_trait::async_trait;
 use chromiumoxide::Page;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 pub struct CdpDriver {
     pub page: Arc<Page>,
@@ -32,20 +32,29 @@ impl CdpDriver {
         "#;
 
         let wrapped_js = format!(
-            "(() => {{ 
+            "(() => {{
                 {}
-                try {{ 
-                    const result = (async () => {{ {} }})(); 
-                    return Promise.resolve(result).then(r => JSON.stringify({{ success: true, data: r }})); 
-                }} catch (e) {{ 
-                    return JSON.stringify({{ success: false, error: e.message }}); 
-                }} 
+                try {{
+                    const result = (async () => {{ {} }})();
+                    return Promise.resolve(result).then(r => JSON.stringify({{ success: true, data: r }}));
+                }} catch (e) {{
+                    return JSON.stringify({{ success: false, error: e.message }});
+                }}
             }})()", recursive_helper, script
         );
 
-        let result = self.page.evaluate(wrapped_js).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let val_str = result.value().clone().cloned().unwrap_or_default().to_string();
-        
+        let result = self
+            .page
+            .evaluate(wrapped_js)
+            .await
+            .map_err(|e| AppError::Browser(e.to_string()))?;
+        let val_str = result
+            .value()
+            .clone()
+            .cloned()
+            .unwrap_or_default()
+            .to_string();
+
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val_str) {
             if json["success"].as_bool() == Some(false) {
                 let err_msg = json["error"].as_str().unwrap_or("Unknown JS error");
@@ -53,6 +62,8 @@ impl CdpDriver {
             }
             let data = json["data"].to_string();
             return Ok(data.trim_matches('"').to_string());
+        } else {
+            println!("Burada mesela neden log yok? bu satırı düzelt, hata detayını yazdır");
         }
         Ok(val_str)
     }
@@ -71,7 +82,10 @@ impl ToJsString for &str {
 #[async_trait]
 impl AutomationDriver for CdpDriver {
     async fn navigate(&self, url: &str) -> AppResult<()> {
-        self.page.goto(url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        self.page
+            .goto(url)
+            .await
+            .map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 
@@ -83,7 +97,8 @@ impl AutomationDriver for CdpDriver {
              el.style.outline = '3px solid #ff00ff'; \
              el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
              el.click(); \
-             return true;", final_sel
+             return true;",
+            final_sel
         );
         self.run_js_internal(&js).await?;
         Ok(())
@@ -101,7 +116,8 @@ impl AutomationDriver for CdpDriver {
              el.value = '{}'; \
              el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
              el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
-             return true;", final_sel, final_val
+             return true;",
+            final_sel, final_val
         );
         self.run_js_internal(&js).await?;
         Ok(())
@@ -114,7 +130,8 @@ impl AutomationDriver for CdpDriver {
              if (!el) throw new Error('Element not found'); \
              const ev = new MouseEvent('mouseover', {{ bubbles: true }}); \
              el.dispatchEvent(ev); \
-             return true;", final_sel
+             return true;",
+            final_sel
         );
         let _ = self.run_js_internal(&js).await?;
         Ok(())
@@ -125,7 +142,12 @@ impl AutomationDriver for CdpDriver {
     }
 
     async fn screenshot(&self) -> AppResult<Vec<u8>> {
-        self.page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build())
+        self.page
+            .screenshot(
+                chromiumoxide::page::ScreenshotParams::builder()
+                    .full_page(true)
+                    .build(),
+            )
             .await
             .map_err(|e| AppError::Browser(e.to_string()))
     }
