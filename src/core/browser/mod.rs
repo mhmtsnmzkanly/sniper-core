@@ -122,6 +122,21 @@ impl BrowserManager {
         Err(AppError::Network(format!("Failed to connect to browser API: {}", last_err.unwrap())))
     }
 
+    /// KOD NOTU: Browser'ın remote debugging portunun aktif olup olmadığını hızlıca kontrol eder.
+    /// Bu fonksiyon, bağlantı hatalarını erkenden yakalamak için kullanılır.
+    pub async fn check_health(port: u16) -> bool {
+        let url = format!("http://127.0.0.1:{}/json/version", port);
+        let client = rquest::Client::builder()
+            .timeout(Duration::from_millis(800))
+            .build()
+            .unwrap_or_else(|_| rquest::Client::new());
+            
+        match client.get(url).send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        }
+    }
+
     pub async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
         for _attempt in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
