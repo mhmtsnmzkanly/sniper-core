@@ -29,7 +29,7 @@ impl AutomationContext {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(key, value);
         } else {
-            println!("Madem sadece varsa güncelliyorsan ya uyarı ver ya da log tut");
+            tracing::error!("[CONTEXT] No active scope found to set variable: {}", key);
         }
     }
 
@@ -38,10 +38,9 @@ impl AutomationContext {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.get(key) {
                 return Some(val.clone());
-            } else {
-                println!("Variable not found: {}", key);
             }
         }
+        tracing::warn!("[CONTEXT] Variable not found in any scope: {}", key);
         None
     }
 
@@ -53,7 +52,7 @@ impl AutomationContext {
         if self.scopes.len() > 1 {
             self.scopes.pop();
         } else {
-            println!("not düşeydi scope yok diye");
+            tracing::warn!("[CONTEXT] Attempted to pop the global scope. Action ignored.");
         }
     }
 

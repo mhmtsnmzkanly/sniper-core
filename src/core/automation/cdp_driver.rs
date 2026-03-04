@@ -63,7 +63,7 @@ impl CdpDriver {
             let data = json["data"].to_string();
             return Ok(data.trim_matches('"').to_string());
         } else {
-            println!("Burada mesela neden log yok? bu satırı düzelt, hata detayını yazdır");
+            tracing::debug!("[DRIVER] JS returned non-JSON result: {}", val_str);
         }
         Ok(val_str)
     }
