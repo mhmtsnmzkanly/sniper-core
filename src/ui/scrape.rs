@@ -197,6 +197,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     tracing::info!("[UI -> CORE] Opening JS Console for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
+                    ws.show_console = true;
                     ws.sniffer_active = true; 
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }

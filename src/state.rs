@@ -122,7 +122,9 @@ pub struct TabWorkspace {
     pub show_media: bool,
     pub show_storage: bool,
     pub show_automation: bool,
+    pub show_console: bool,
     pub network_requests: Vec<NetworkRequest>,
+    pub network_type_filter: HashSet<String>,
     pub media_assets: Vec<MediaAsset>,
     pub selected_media_urls: HashSet<String>,
     pub console_logs: Vec<String>,
@@ -167,7 +169,9 @@ impl TabWorkspace {
             show_media: false,
             show_storage: false,
             show_automation: false,
+            show_console: false,
             network_requests: Vec::new(),
+            network_type_filter: HashSet::new(),
             media_assets: Vec::new(),
             selected_media_urls: HashSet::new(),
             console_logs: Vec::new(),
@@ -211,6 +215,7 @@ pub struct Notification {
     pub message: String,
 }
 
+/// Unified Application State
 pub struct AppState {
     pub active_tab: Tab,
     pub config: AppConfig,

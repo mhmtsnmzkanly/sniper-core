@@ -22,7 +22,6 @@ impl CrawlerApp {
         Self { state, log_receiver, event_receiver, browser_process: Arc::new(Mutex::new(None)) }
     }
 
-    /// Ensures a workspace exists for the given tab ID.
     fn ensure_workspace(&mut self, tid: &str) -> &mut crate::state::TabWorkspace {
         if !self.state.workspaces.contains_key(tid) {
             let title = self.state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "New Tab".into());
@@ -33,7 +32,6 @@ impl CrawlerApp {
     }
 }
 
-/// Maps UI automation steps to core DSL steps.
 fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation::dsl::Step> {
     steps.iter().map(|s| match s {
         AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
@@ -66,7 +64,6 @@ impl eframe::App for CrawlerApp {
             if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
         }
 
-        // --- GLOBAL EVENT DISPATCHER ---
         while let Ok(event) = self.event_receiver.try_recv() {
             tracing::debug!("[EVENT] Dispatching: {:?}", event);
 
@@ -175,7 +172,6 @@ impl eframe::App for CrawlerApp {
                     tracing::error!("[OP] FAILURE: {}", msg);
                 }
                 
-                // --- COMMAND ROUTING ---
                 AppEvent::RequestCookies(tid) => {
                     tracing::info!("[APP -> CORE] Requesting cookies for target: {}", tid);
                     let port = self.state.config.remote_debug_port;
@@ -365,12 +361,11 @@ impl eframe::App for CrawlerApp {
         });
 
         // --- MDI WORKSPACE WINDOWS ---
-        // Collect info to avoid borrow conflicts
-        let active_workspaces: Vec<(String, String, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
-            (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation)
+        let active_workspaces: Vec<(String, String, bool, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
+            (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation, ws.show_console)
         }).collect();
 
-        for (tid, title, show_net, show_med, show_stor, show_auto) in active_workspaces {
+        for (tid, title, show_net, show_med, show_stor, show_auto, show_cons) in active_workspaces {
             if show_net {
                 let mut open = true;
                 egui::Window::new(format!("Network - {}", title)).open(&mut open).id(egui::Id::new(format!("net_{}", tid))).show(ctx, |ui| {
@@ -398,6 +393,30 @@ impl eframe::App for CrawlerApp {
                     ui::automation::render_embedded(ui, &mut self.state, &tid);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_automation = false; } }
+            }
+            if show_cons {
+                let mut open = true;
+                egui::Window::new(format!("Console - {}", title)).open(&mut open).id(egui::Id::new(format!("cons_{}", tid))).show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.heading(RichText::new("JS CONSOLE").color(Color32::LIGHT_BLUE));
+                            if ui.button("🗑 CLEAR").clicked() {
+                                if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.console_logs.clear(); }
+                            }
+                        });
+                        ui.separator();
+                        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
+                            let logs = {
+                                let ws = self.state.workspaces.get(&tid).unwrap();
+                                ws.console_logs.clone()
+                            };
+                            for log in logs {
+                                ui.label(RichText::new(format!("> {}", log)).monospace().size(12.0));
+                            }
+                        });
+                    });
+                });
+                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_console = false; } }
             }
         }
 
