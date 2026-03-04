@@ -57,13 +57,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     tracing::info!("[UI] Click: LAUNCH BROWSER");
                     let url = state.config.default_launch_url.clone();
                     let binary = state.config.chrome_binary_path.clone();
-                    let profile = state.config.chrome_profile_path.clone();
                     let port = state.config.remote_debug_port;
                     let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
-                    
+
+                    // DETERMINE PROFILE PATH: 
+                    // Use a unique subfolder in output_dir if 'use_custom_profile' (Isolated) is selected.
+                    // Otherwise, fall back to the detected system profile path.
+                    let profile = if state.use_custom_profile {
+                        let isolated_path = state.config.output_dir.join("profiles").join("isolated");
+                        let _ = std::fs::create_dir_all(&isolated_path);
+                        isolated_path.to_string_lossy().to_string()
+                    } else {
+                        state.config.chrome_profile_path.clone()
+                    };
+
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx).await {
-                            Ok(child) => { emit(AppEvent::BrowserStarted(child)); }
+                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx).await {                            Ok(child) => { emit(AppEvent::BrowserStarted(child)); }
                             Err(e) => { 
                                 tracing::error!("[CORE] Launch failed: {}", e);
                                 emit(AppEvent::OperationError(format!("Launch Failed: {}", e))); 

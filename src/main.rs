@@ -42,13 +42,17 @@ fn find_chrome_binary() -> String {
 }
 
 /// Automatically detects the default Chrome profile path based on the OS.
+/// Note: We point to the parent directory of 'Default' so Chrome can manage profile selection.
 fn find_chrome_profile() -> String {
     let p = if cfg!(target_os = "windows") {
-        dirs::cache_dir().map(|d| d.join("Google\\Chrome\\User Data\\Default"))
+        // Windows: User Data is usually in Local AppData
+        dirs::data_local_dir().map(|d| d.join("Google\\Chrome\\User Data"))
     } else if cfg!(target_os = "macos") {
-        dirs::home_dir().map(|d| d.join("Library/Application Support/Google/Chrome/Default"))
+        // macOS: Application Support/Google/Chrome
+        dirs::home_dir().map(|d| d.join("Library/Application Support/Google/Chrome"))
     } else {
-        dirs::home_dir().map(|d| d.join(".config/google-chrome/Default"))
+        // Linux: .config/google-chrome
+        dirs::home_dir().map(|d| d.join(".config/google-chrome"))
     };
     
     p.map(|path| path.to_string_lossy().to_string()).unwrap_or_default()
