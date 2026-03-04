@@ -126,7 +126,7 @@ impl BrowserManager {
     }
 
     /// Finds a tab by ID with a retry loop to handle chromiumoxide discovery delays.
-    async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
+    pub async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
         for _ in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
             for page in &pages {

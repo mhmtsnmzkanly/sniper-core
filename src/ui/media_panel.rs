@@ -43,10 +43,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 let can_download = !selected_media_urls.is_empty();
                 if ui.add_enabled(can_download, egui::Button::new(RichText::new(format!("📥 DOWNLOAD SELECTED ({})", selected_media_urls.len())).strong().color(Color32::GREEN))).clicked() {
+                    tracing::info!("[UI] Click: BATCH DOWNLOAD {} items", selected_media_urls.len());
                     for url in &selected_media_urls {
                         if let Some(asset) = media_assets.iter().find(|a| &a.url == url) {
                             if let Some(data) = &asset.data {
                                 if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
+                                    tracing::info!("[UI] Saving item {} to {:?}", asset.name, path);
                                     let _ = std::fs::write(path, data);
                                 }
                             }
@@ -107,6 +109,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     if ui.button("SAVE").clicked() {
                         if let Some(data) = &asset.data {
                             if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
+                                tracing::info!("[UI] Manually saving item {} to {:?}", asset.name, path);
                                 let _ = std::fs::write(path, data);
                             }
                         }
