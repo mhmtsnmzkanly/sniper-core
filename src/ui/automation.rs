@@ -1,4 +1,5 @@
 use crate::state::{AppState, AutomationStep, AutomationStatus};
+use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame, Stroke};
 use egui_extras::{TableBuilder, Column};
 use crate::core::events::AppEvent;
@@ -14,14 +15,18 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         (ws.auto_steps.clone(), ws.auto_functions.clone(), ws.active_fn_editor.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone(), ws.variables.clone(), ws.var_edit_key.clone(), ws.var_edit_val.clone(), ws.extracted_data.clone())
     };
 
+    design::title(ui, "Automation Studio", design::ACCENT_CYAN);
+    ui.label(RichText::new("Compose blocks, reusable functions and live dataset previews").small().color(design::TEXT_MUTED));
+    ui.add_space(8.0);
+
     ui.columns(2, |cols| {
         cols[0].vertical(|ui| {
             ui.horizontal(|ui| {
                 if let Some(fn_name) = &active_fn_editor {
-                    ui.label(RichText::new(format!(":: EDITING FN: {}", fn_name)).strong().color(Color32::from_rgb(200, 100, 255)));
+                    ui.label(RichText::new(format!("Editing Function: {}", fn_name)).strong().color(design::ACCENT_ORANGE));
                     if ui.button("⬅ BACK TO MAIN").clicked() { active_fn_editor = None; }
                 } else {
-                    ui.label(RichText::new(":: MAIN PIPELINE").strong().color(Color32::KHAKI));
+                    ui.label(RichText::new("Main Pipeline").strong().color(design::ACCENT_ORANGE));
                 }
                 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -73,7 +78,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             if active_fn_editor.is_none() {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(":: FUNCTIONS").strong().color(Color32::from_rgb(200, 100, 255)));
+                    ui.label(RichText::new("Functions").strong().color(design::ACCENT_ORANGE));
                     if ui.button("+ NEW FN").clicked() {
                         let name = format!("func_{}", auto_functions.len() + 1);
                         auto_functions.insert(name, vec![]);
@@ -101,7 +106,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
         cols[1].vertical(|ui| {
             ui.group(|ui| {
-                ui.label(RichText::new(":: VARIABLES").strong().color(Color32::LIGHT_BLUE));
+                ui.label(RichText::new("Variables").strong().color(design::ACCENT_ORANGE));
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut var_key).hint_text("Key").desired_width(ui.available_width() * 0.4));
                     ui.add(egui::TextEdit::singleline(&mut var_val).hint_text("Val").desired_width(ui.available_width() * 0.4));
@@ -128,7 +133,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             ui.add_space(10.0);
 
             ui.group(|ui| {
-                ui.label(RichText::new(":: DATASET PREVIEW").strong().color(Color32::GREEN));
+                ui.label(RichText::new("Dataset Preview").strong().color(design::ACCENT_GREEN));
                 ui.add_space(5.0);
                 if extracted_data.is_empty() { ui.label("No data captured yet."); } 
                 else {
