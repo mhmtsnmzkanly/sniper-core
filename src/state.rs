@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-/// Navigasyon sekmeleri
+/// Navigation tabs
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Tab {
     Scrape,
@@ -16,7 +16,7 @@ pub enum Tab {
     Logs,
 }
 
-/// Sistem log girişi
+/// System log entry
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LogEntry {
     pub timestamp: String,
@@ -32,7 +32,7 @@ pub enum AutomationStatus {
     Error(String),
 }
 
-/// Otomasyon Adımları
+/// Automation Steps
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AutomationStep {
     Navigate(String),
@@ -57,7 +57,7 @@ pub enum AutomationStep {
     ImportDataset(String),
 }
 
-/// Otomasyon Ayarları
+/// Automation Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationConfig {
     pub retry_attempts: u32,
@@ -115,7 +115,7 @@ pub struct NetworkRequest {
     pub response_body: Option<String>,
 }
 
-/// Her bir sekme için bağımsız çalışma alanı.
+/// Independent workspace for a specific browser tab.
 pub struct TabWorkspace {
     pub title: String,
     pub show_network: bool,

@@ -11,12 +11,12 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
 
-/// BrowserManager: Tarayıcı yaşam döngüsü ve CDP komutlarının yönetildiği ana merkez.
-/// BUNU SİLME: Bu yapı projenin iskeletidir.
+/// BrowserManager: Core controller for browser lifecycle and CDP communication.
+/// CRITICAL: Do not remove or simplify the tab lookup or listener setup logic.
 pub struct BrowserManager;
 
 impl BrowserManager {
-    /// Tarayıcıyı başlatır ve heartbeat denetimi kurar.
+    /// Launches the browser and establishes an async network-based heartbeat.
     pub async fn launch(
         url: &str, 
         profile_path: PathBuf, 
@@ -25,7 +25,7 @@ impl BrowserManager {
         _session_ts: String,
         tx: mpsc::UnboundedSender<AppEvent>
     ) -> AppResult<std::process::Child> {
-        tracing::info!("[CORE -> BROWSER] Tarayıcı başlatılıyor. Port: {}, URL: {}", port, url);
+        tracing::info!("[CORE -> BROWSER] Starting browser on port {} with URL: {}", port, url);
 
         let chrome_path = if cfg!(target_os = "windows") {
             "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string()
@@ -56,10 +56,11 @@ impl BrowserManager {
         }
 
         let child = command.arg(url).spawn().map_err(|e| {
-            tracing::error!("[CORE -> BROWSER] Spawn hatası: {}", e);
+            tracing::error!("[CORE -> BROWSER] Failed to spawn browser: {}", e);
             AppError::Io(e)
         })?;
 
+        // HEARTBEAT: Monitor browser process via network to detect closure.
         let tx_clone = tx.clone();
         let port_clone = port;
         tokio::spawn(async move {
@@ -70,7 +71,7 @@ impl BrowserManager {
                 match client.get(&hb_url).send().await {
                     Ok(resp) if resp.status().is_success() => {}
                     _ => {
-                        tracing::warn!("[BROWSER -> CORE] Heartbeat koptu.");
+                        tracing::warn!("[BROWSER -> CORE] Heartbeat lost. Instance assumed terminated.");
                         let _ = tx_clone.send(AppEvent::BrowserTerminated);
                         break;
                     }
@@ -82,6 +83,7 @@ impl BrowserManager {
         Ok(child)
     }
 
+    /// Returns the system-specific Chrome profile path.
     pub fn get_system_profile_path() -> PathBuf {
         if cfg!(target_os = "windows") {
             PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
@@ -95,6 +97,7 @@ impl BrowserManager {
         }
     }
 
+    /// Connects to the CDP WebSocket and starts the handler.
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -122,6 +125,7 @@ impl BrowserManager {
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
     }
 
+    /// Finds a tab by ID with a retry loop to handle chromiumoxide discovery delays.
     async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
         for _ in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -132,11 +136,12 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        Err(AppError::NotFound(format!("Tab {} bulunamadı.", tab_id)))
+        Err(AppError::NotFound(format!("Tab {} not found after retries", tab_id)))
     }
 
+    /// Sets up CDP listeners for network, media, and console.
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        tracing::info!("[CORE -> BROWSER] Dinleyiciler kuruluyor: {}", tab_id);
+        tracing::info!("[CORE -> BROWSER] Setting up listeners for tab: {}", tab_id);
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -153,17 +158,13 @@ impl BrowserManager {
             loop {
                 tokio::select! {
                     Some(e) = network_events.next() => {
-                        // Resource type chromiumoxide 0.9.1'de direkt mevcuttur ama bazen EventRequestWillBeSent içinde olmayabilir.
-                        // Güvenli erişim:
                         let res_type = format!("Other"); 
                         let req = NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
                             method: e.request.method.clone(),
                             resource_type: res_type,
-                            status: None,
-                            request_body: None,
-                            response_body: None,
+                            status: None, request_body: None, response_body: None,
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
                     }
