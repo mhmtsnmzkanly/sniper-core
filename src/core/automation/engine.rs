@@ -41,7 +41,8 @@ pub struct AutomationEngine {
     /// Current execution configuration.
     pub config: ExecutionConfig,
     /// Registry of reusable functions defined in the script.
-    pub functions: HashMap<String, Vec<Step>>,
+    /// KOD NOTU: Gereksiz klonlamayı önlemek için fonksiyonlar Arc içinde saklanır.
+    pub functions: Arc<HashMap<String, Arc<[Step]>>>,
 }
 
 impl AutomationEngine {
@@ -49,21 +50,25 @@ impl AutomationEngine {
         Self {
             context: Arc::new(Mutex::new(AutomationContext::new(port, tab_id, output_dir))),
             config: ExecutionConfig::default(),
-            functions: HashMap::new(),
+            functions: Arc::new(HashMap::new()),
         }
     }
 
     /// Entry point for running an automation pipeline.
     pub async fn run(&mut self, dsl: AutomationDsl) -> AppResult<()> {
         // Load function definitions into the engine registry.
-        self.functions = dsl.functions.clone();
+        let mut funcs = HashMap::new();
+        for (name, steps) in dsl.functions {
+            funcs.insert(name, Arc::from(steps));
+        }
+        self.functions = Arc::new(funcs);
         
         let (port, tid, _output_dir) = {
             let ctx = self.context.lock().unwrap();
             (ctx.port, ctx.tab_id.clone(), ctx.output_dir.clone())
         };
 
-        tracing::info!("[ENGINE] Pipeline started. DSL Version: {}, Functions: {}, Steps: {}", dsl.dsl_version, dsl.functions.len(), dsl.steps.len());
+        tracing::info!("[ENGINE] Pipeline started. DSL Version: {}, Functions: {}, Steps: {}", dsl.dsl_version, self.functions.len(), dsl.steps.len());
         
         // Establish connection to the browser instance.
         let ws_url = crate::core::browser::BrowserManager::get_ws_url(port).await?;
@@ -78,10 +83,10 @@ impl AutomationEngine {
         
         // Initialize the CDP-based driver abstraction.
         let driver = Box::new(CdpDriver::new(page));
-        let steps = dsl.steps.clone();
+        let steps: Arc<[Step]> = Arc::from(dsl.steps);
 
         // Start recursive step execution.
-        let result = self.execute_steps_recursive(&steps, driver.as_ref()).await;
+        let result = self.execute_steps_recursive(steps, driver.as_ref()).await;
         
         match &result {
             Ok(_) => {
@@ -96,14 +101,15 @@ impl AutomationEngine {
 
     /// Recursively executes a list of steps, handling loops, conditionals, and dataset imports.
     /// Returns a Pinned Boxed Future to allow safe async recursion.
-    fn execute_steps_recursive<'a>(&'a self, steps: &'a [Step], driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+    fn execute_steps_recursive<'a>(&'a self, steps: Arc<[Step]>, driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let (tid, output_dir) = {
                 let ctx = self.context.lock().unwrap();
                 (ctx.tab_id.clone(), ctx.output_dir.clone())
             };
 
-            for (idx, step) in steps.iter().enumerate() {
+            for idx in 0..steps.len() {
+                let step = &steps[idx];
                 // SPECIAL CASE: ImportDataset triggers a data-driven loop.
                 if let Step::ImportDataset { filename } = step {
                     let final_path = self.interpolate(filename);
@@ -112,7 +118,7 @@ impl AutomationEngine {
                     let total_rows = rows.len();
                     tracing::info!("[ENGINE] Dataset loaded with {} rows. Entering Data Pipeline Mode.", total_rows);
                     
-                    let remaining_steps = &steps[idx+1..];
+                    let remaining_steps: Arc<[Step]> = Arc::from(&steps[idx+1..]);
                     for (row_idx, row) in rows.into_iter().enumerate() {
                         // KOD NOTU: Log satırındaki toplam satır sayısı (row_idx+1 / total_rows) olarak düzeltildi.
                         tracing::info!("[ENGINE] Processing Row {}/{}", row_idx + 1, total_rows);
@@ -122,7 +128,7 @@ impl AutomationEngine {
                             for (k, v) in &row { ctx.set_variable(k.clone(), v.clone()); }
                         }
                         // Execute all subsequent steps for each row in the dataset.
-                        self.execute_steps_recursive(remaining_steps, driver).await?;
+                        self.execute_steps_recursive(remaining_steps.clone(), driver).await?;
                         {
                             let mut ctx = self.context.lock().unwrap();
                             ctx.pop_scope(); // Cleanup scope after row processing.
@@ -380,7 +386,7 @@ impl AutomationEngine {
                     let res: String = driver.eval(&format!("!!queryRecursive('{}')", s.replace("'", "\\'"))).await?;
                     if res == "true" { 
                         tracing::info!("[ENGINE] Condition MET. Executing nested steps.");
-                        self.execute_steps_recursive(then_steps, driver).await?; 
+                        self.execute_steps_recursive(Arc::from(then_steps.as_slice()), driver).await?; 
                     } else {
                         tracing::info!("[ENGINE] Condition NOT met. Skipping nested steps.");
                     }
@@ -391,6 +397,7 @@ impl AutomationEngine {
                     let count_str = driver.eval(&format!("document.querySelectorAll('{}').length", sel_esc)).await?;
                     let count: usize = count_str.parse().unwrap_or(0);
                     tracing::info!("[ENGINE] ForEach: Found {} elements matching {}", count, s);
+                    let body_arc: Arc<[Step]> = Arc::from(body.as_slice());
                     for i in 0..count {
                         tracing::info!("[ENGINE] ForEach iteration {}/{}", i + 1, count);
                         { 
@@ -399,14 +406,14 @@ impl AutomationEngine {
                             ctx.set_variable("index".into(), i.to_string()); 
                             ctx.set_variable("item".into(), format!("{}:nth-child({})", s, i + 1)); 
                         }
-                        self.execute_steps_recursive(body, driver).await?;
+                        self.execute_steps_recursive(body_arc.clone(), driver).await?;
                         { self.context.lock().unwrap().pop_scope(); }
                     }
                 }
                 Step::CallFunction { name } => {
                     tracing::info!("[ENGINE] Calling function: {}", name);
                     let steps = self.functions.get(name).cloned().ok_or_else(|| AppError::Internal(format!("Function '{}' not found", name)))?;
-                    self.execute_steps_recursive(&steps, driver).await?;
+                    self.execute_steps_recursive(steps, driver).await?;
                 }
                 Step::ImportDataset { .. } => { /* Handled in recursive loop */ }
             }

@@ -344,7 +344,7 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                AppEvent::RequestCapture(tid, mode, _) => {
+                AppEvent::RequestCapture(tid, mode) => {
                     tracing::info!("[UI -> CORE] Initiating {} Capture for tab {}", mode, tid);
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.output_dir.clone();

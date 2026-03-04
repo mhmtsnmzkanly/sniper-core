@@ -16,10 +16,6 @@ pub enum AppError {
     #[error("Browser Process Error: {0}")]
     Browser(String),
 
-    /// Specific errors returned by the Chrome DevTools Protocol (CDP).
-    #[error("CDP Protocol Error: {0}")]
-    Cdp(String),
-
     /// Network-level connectivity or protocol errors.
     #[error("Network Error: {0}")]
     Network(String),
@@ -27,14 +23,6 @@ pub enum AppError {
     /// Errors from the underlying HTTP client (rquest).
     #[error("HTTP Client Error: {0}")]
     HttpClient(#[from] rquest::Error),
-
-    /// Failures during the execution of automation steps.
-    #[error("Automation Error: {0}")]
-    Automation(String),
-
-    /// AI-related processing or API errors.
-    #[error("AI/Translation Error: {0}")]
-    Ai(String),
 
     /// JSON serialization or deserialization failures.
     #[error("Serialization Error: {0}")]

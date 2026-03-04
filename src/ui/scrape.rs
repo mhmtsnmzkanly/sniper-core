@@ -178,17 +178,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("📄 CAPTURE HTML").strong())
                     .min_size([cols[0].available_width(), btn_h].into())).clicked() {
                     tracing::info!("[UI] Click: CAPTURE HTML for {}", tid);
-                    emit(AppEvent::RequestCapture(tid.clone(), "html".into(), false));
+                    emit(AppEvent::RequestCapture(tid.clone(), "html".into()));
                 }
                 if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("📦 COMPLETE").strong().color(Color32::LIGHT_BLUE))
                     .min_size([cols[1].available_width(), btn_h].into())).clicked() {
                     tracing::info!("[UI] Click: CAPTURE COMPLETE for {}", tid);
-                    emit(AppEvent::RequestCapture(tid.clone(), "complete".into(), false));
+                    emit(AppEvent::RequestCapture(tid.clone(), "complete".into()));
                 }
                 if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🪞 MIRROR").strong().color(Color32::GOLD))
                     .min_size([cols[2].available_width(), btn_h].into())).clicked() {
                     tracing::info!("[UI] Click: CAPTURE MIRROR for {}", tid);
-                    emit(AppEvent::RequestCapture(tid.clone(), "mirror".into(), false));
+                    emit(AppEvent::RequestCapture(tid.clone(), "mirror".into()));
                 }
                 if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("🤖 AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
                     .min_size([cols[3].available_width(), btn_h].into())).clicked() {
