@@ -153,4 +153,38 @@ impl AutomationDriver for CdpDriver {
         let _ = self.page.wait_for_navigation().await;
         Ok(())
     }
+
+    /// KOD NOTU: Performance API kullanarak gerçek network idle tespiti yapar.
+    /// min_idle_ms boyunca yeni bir network aktivitesi olmazsa idle kabul edilir.
+    async fn wait_for_network_idle(&self, timeout_ms: u64, min_idle_ms: u64) -> AppResult<()> {
+        let js = format!(r#"
+            return new Promise((resolve, reject) => {{
+                let lastActivity = Date.now();
+                const timeout = {};
+                const minIdle = {};
+                const start = Date.now();
+
+                const observer = new PerformanceObserver((list) => {{
+                    lastActivity = Date.now();
+                }});
+                observer.observe({{ entryTypes: ['resource', 'fetch', 'xmlhttprequest'] }});
+
+                const check = setInterval(() => {{
+                    const now = Date.now();
+                    if (now - lastActivity >= minIdle) {{
+                        clearInterval(check);
+                        observer.disconnect();
+                        resolve(true);
+                    }} else if (now - start >= timeout) {{
+                        clearInterval(check);
+                        observer.disconnect();
+                        resolve(false); // Timed out but continuing
+                    }}
+                }}, 100);
+            }});
+        "#, timeout_ms, min_idle_ms);
+        
+        let _ = self.run_js_internal(&js).await?;
+        Ok(())
+    }
 }

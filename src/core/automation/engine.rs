@@ -109,11 +109,13 @@ impl AutomationEngine {
                     let final_path = self.interpolate(filename);
                     tracing::info!("[ENGINE] Importing dataset from: {}", final_path);
                     let rows = self.load_dataset(&final_path)?;
-                    tracing::info!("[ENGINE] Dataset loaded with {} rows. Entering Data Pipeline Mode.", rows.len());
+                    let total_rows = rows.len();
+                    tracing::info!("[ENGINE] Dataset loaded with {} rows. Entering Data Pipeline Mode.", total_rows);
                     
                     let remaining_steps = &steps[idx+1..];
                     for (row_idx, row) in rows.into_iter().enumerate() {
-                        tracing::info!("[ENGINE] Processing Row {}/{}", row_idx + 1, row_idx + 1);
+                        // KOD NOTU: Log satırındaki toplam satır sayısı (row_idx+1 / total_rows) olarak düzeltildi.
+                        tracing::info!("[ENGINE] Processing Row {}/{}", row_idx + 1, total_rows);
                         {
                             let mut ctx = self.context.lock().unwrap();
                             ctx.push_scope(); // Create a new scope for the current row.
@@ -143,21 +145,36 @@ impl AutomationEngine {
                 // RETRY LOOP: Attempts to execute the step multiple times if configured.
                 while attempts < max_attempts {
                     tracing::info!("[ENGINE][Step {}] Executing: {:?}", idx + 1, step);
-                    match self.execute_step_internal(step, driver).await {
-                        Ok(_) => {
+                    
+                    // KOD NOTU: step_timeout konfigürasyonu burada zorunlu kılınmıştır.
+                    // Bir adım belirlenen sürede bitmezse timeout hatası fırlatılır.
+                    let step_result = tokio::time::timeout(
+                        self.config.step_timeout,
+                        self.execute_step_internal(step, driver)
+                    ).await;
+
+                    match step_result {
+                        Ok(Ok(_)) => {
                             tracing::info!("[ENGINE][Step {}] Success.", idx + 1);
                             last_error = None;
                             break;
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             attempts += 1;
                             tracing::warn!("[ENGINE][Step {}] Attempt {} failed: {}", idx + 1, attempts, e);
                             last_error = Some(e);
-                            if attempts < max_attempts {
-                                // Exponential backoff for retries.
-                                tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64)).await;
-                            }
                         }
+                        Err(_) => {
+                            attempts += 1;
+                            let err_msg = format!("Step timed out after {:?}", self.config.step_timeout);
+                            tracing::warn!("[ENGINE][Step {}] Attempt {} failed: {}", idx + 1, attempts, err_msg);
+                            last_error = Some(AppError::Internal(err_msg));
+                        }
+                    }
+
+                    if last_error.is_some() && attempts < max_attempts {
+                        // Exponential backoff for retries.
+                        tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64)).await;
                     }
                 }
 
@@ -328,11 +345,14 @@ impl AutomationEngine {
                 Step::WaitUntilIdle { timeout_ms } => { 
                     tracing::info!("[ENGINE] Waiting for network/navigation idle ({}ms)", timeout_ms);
                     driver.wait_for_navigation().await?; 
-                    tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await; 
+                    // Fallback to network idle check if navigation is already done
+                    driver.wait_for_network_idle(*timeout_ms, 500).await?;
                 }
-                Step::WaitNetworkIdle { timeout_ms, .. } => { 
-                    tracing::info!("[ENGINE] Waiting for network silence ({}ms)", timeout_ms);
-                    tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await; 
+                Step::WaitNetworkIdle { timeout_ms, min_idle_ms } => { 
+                    // KOD NOTU: min_idle_ms parametresi artık ignore edilmiyor, 
+                    // PerformanceObserver ile gerçek boşta kalma süresi takip ediliyor.
+                    tracing::info!("[ENGINE] Waiting for network silence ({}ms, min idle: {}ms)", timeout_ms, min_idle_ms);
+                    driver.wait_for_network_idle(*timeout_ms, *min_idle_ms).await?; 
                 }
                 Step::SetVariable { key, value } => { 
                     let v = self.interpolate(value);

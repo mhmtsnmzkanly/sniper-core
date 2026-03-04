@@ -10,4 +10,5 @@ pub trait AutomationDriver: Send + Sync {
     async fn eval(&self, js: &str) -> AppResult<String>;
     async fn screenshot(&self) -> AppResult<Vec<u8>>;
     async fn wait_for_navigation(&self) -> AppResult<()>;
+    async fn wait_for_network_idle(&self, timeout_ms: u64, min_idle_ms: u64) -> AppResult<()>;
 }
