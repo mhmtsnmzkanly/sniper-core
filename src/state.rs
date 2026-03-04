@@ -275,6 +275,7 @@ pub struct AppState {
     pub session_timestamp: String,
     pub notification: Option<Notification>,
     pub last_tab_refresh: f64,
+    pub last_health_check: f64,
     pub is_translating: bool,
     // Setup wizard flags
     pub output_confirmed: bool,
@@ -295,6 +296,7 @@ impl AppState {
             session_timestamp: session_ts,
             notification: None,
             last_tab_refresh: 0.0,
+            last_health_check: 0.0,
             is_translating: false,
             output_confirmed: false,
             profile_confirmed: false,

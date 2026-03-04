@@ -72,6 +72,21 @@ impl eframe::App for CrawlerApp {
         // KOD NOTU: Tüm ekranlarda tutarlı görsel dil için global tema her frame uygulanır.
         ui::design::apply_theme(ctx);
 
+        // KOD NOTU: Her 2 saniyede bir browser'ın hayatta olup olmadığını kontrol eder.
+        // Bu, manuel kapatılan browser instance'larını tespit etmek için kritiktir.
+        if self.state.is_browser_running {
+            let now = ctx.input(|i| i.time);
+            if now - self.state.last_health_check > 2.0 {
+                self.state.last_health_check = now;
+                let port = self.state.config.remote_debug_port;
+                tokio::spawn(async move {
+                    if !crate::core::browser::BrowserManager::check_health(port).await {
+                        crate::ui::scrape::emit(AppEvent::BrowserTerminated);
+                    }
+                });
+            }
+        }
+
         // 1. Drain the log queue and update the system logs list.
         while let Ok(log) = self.log_receiver.try_recv() {
             self.state.logs.push(log);
