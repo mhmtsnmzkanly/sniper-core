@@ -202,7 +202,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_network = true;
-                    ws.sniffer_active = true;
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
                 if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("🖼 MEDIA").strong()).min_size([cols[1].available_width(), btn_h].into())).clicked() {
@@ -210,7 +209,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_media = true;
-                    ws.sniffer_active = true;
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
                 if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🍪 COOKIE").strong().color(Color32::from_rgb(255, 180, 0))).min_size([cols[2].available_width(), btn_h].into())).clicked() {
@@ -225,7 +223,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_console = true;
-                    ws.sniffer_active = true; 
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
             });

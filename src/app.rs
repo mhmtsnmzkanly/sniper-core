@@ -100,26 +100,36 @@ impl eframe::App for CrawlerApp {
                     tracing::info!("[APP -> CORE] Output path confirmed: {:?}", path);
                     crate::logger::set_log_path(path, &self.state.session_timestamp);
                 }
-                AppEvent::BrowserStarted(_) => {
+                AppEvent::BrowserStarted(child) => {
+                    // KOD NOTU: Launch edilen process handle'ını saklıyoruz; terminate komutu bunu kullanacak.
+                    *self.browser_process.lock().unwrap() = Some(child);
                     self.state.is_browser_running = true;
                     self.state.notify("System", "Browser connected.", false);
                     tracing::info!("[BROWSER -> APP] Remote instance handshake successful.");
                 }
                 AppEvent::BrowserTerminated => {
+                    // KOD NOTU: Kopan instance sonrası process handle ve listener flag'leri temizlenir.
+                    self.browser_process.lock().unwrap().take();
                     self.state.is_browser_running = false;
                     self.state.available_tabs.clear();
                     self.state.selected_tab_id = None;
+                    for ws in self.state.workspaces.values_mut() {
+                        ws.sniffer_active = false;
+                    }
                     self.state.notify("System", "Browser disconnected.", true);
                     tracing::warn!("[BROWSER -> APP] Remote instance heartbeat lost.");
                 }
                 AppEvent::TerminateBrowser => {
                     if let Some(mut child) = self.browser_process.lock().unwrap().take() {
                         let _ = child.kill();
-                        self.state.is_browser_running = false;
-                        self.state.available_tabs.clear();
-                        self.state.selected_tab_id = None;
-                        tracing::info!("[UI -> CORE] User terminated browser instance.");
                     }
+                    self.state.is_browser_running = false;
+                    self.state.available_tabs.clear();
+                    self.state.selected_tab_id = None;
+                    for ws in self.state.workspaces.values_mut() {
+                        ws.sniffer_active = false;
+                    }
+                    tracing::info!("[UI -> CORE] User terminated browser instance.");
                 }
                 AppEvent::TabsUpdated(tabs) => {
                     tracing::debug!("[BROWSER -> CORE] Received {} active tab targets.", tabs.len());
@@ -272,7 +282,30 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                AppEvent::RequestNetworkToggle(tid, _active) => {
+                AppEvent::RequestNetworkToggle(tid, active) => {
+                    // KOD NOTU: Aynı tab için listener'ı sadece bir kez başlatıyoruz (duplicate spawn engeli).
+                    if !active {
+                        if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                            ws.sniffer_active = false;
+                        }
+                        continue;
+                    }
+
+                    let should_start = {
+                        let ws = self.ensure_workspace(&tid);
+                        if ws.sniffer_active {
+                            false
+                        } else {
+                            ws.sniffer_active = true;
+                            true
+                        }
+                    };
+
+                    if !should_start {
+                        tracing::debug!("[UI -> CORE] Listener already active for tab {}, skipping.", tid);
+                        continue;
+                    }
+
                     tracing::info!("[UI -> CORE] Activating listeners for tab {}", tid);
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
@@ -316,7 +349,7 @@ impl eframe::App for CrawlerApp {
                             screenshot_on_error: auto_config.screenshot_on_error,
                         };
                         if let Err(e) = engine.run(dsl).await {
-                            crate::ui::scrape::emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
+                            tracing::error!("[ENGINE -> APP] Pipeline ABORTED on tab {}: {}", tid, e);
                         }
                     });
                 }

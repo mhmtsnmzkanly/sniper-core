@@ -84,7 +84,11 @@ impl AutomationEngine {
         let result = self.execute_steps_recursive(&steps, driver.as_ref()).await;
         
         match &result {
-            Ok(_) => tracing::info!("[ENGINE] Full pipeline finished successfully."),
+            Ok(_) => {
+                // KOD NOTU: Başarılı bitişte UI durumunu güncellemek için explicit finish eventi yayınlıyoruz.
+                emit(AppEvent::AutomationFinished(tid.clone()));
+                tracing::info!("[ENGINE] Full pipeline finished successfully.");
+            }
             Err(e) => tracing::error!("[ENGINE] Pipeline aborted due to error: {}", e),
         }
         result
