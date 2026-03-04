@@ -30,13 +30,27 @@ impl BrowserManager {
             .arg(format!("--user-data-dir={}", profile_path))
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
-            .arg("--remote-allow-origins=*");
+            .arg("--remote-allow-origins=*")
+            // STABILITY & NOISE REDUCTION FLAGS:
+            // Prevents Linux keyring prompts from blocking the launch
+            .arg("--password-store=basic") 
+            // Disables background services that cause 'QUOTA_EXCEEDED' and crashes
+            .arg("--disable-sync")
+            .arg("--disable-background-networking")
+            .arg("--disable-default-apps")
+            .arg("--disable-component-update")
+            .arg("--disable-domain-reliability")
+            .arg("--disable-client-side-phishing-detection")
+            .arg("--disable-breakpad") // Disable crash reporting
+            .arg("--metrics-recording-only");
 
         #[cfg(target_os = "linux")]
         {
+            // Extra safety for Linux environments
             command.arg("--no-sandbox")
                    .arg("--disable-setuid-sandbox")
-                   .arg("--disable-dev-shm-usage");
+                   .arg("--disable-dev-shm-usage")
+                   .arg("--disable-gpu"); // Helps prevent GLib/GPU related errors in logs
         }
 
         let child = command.arg(url).spawn().map_err(|e| {
