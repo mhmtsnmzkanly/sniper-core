@@ -23,14 +23,23 @@ impl BrowserManager {
         tx: mpsc::UnboundedSender<AppEvent>
     ) -> AppResult<std::process::Child> {
         let chrome_path = if cfg!(target_os = "windows") {
-            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string()
         } else if cfg!(target_os = "macos") {
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
         } else {
-            "google-chrome"
+            // Linux fallback list
+            let mut found_path = "google-chrome".to_string();
+            let fallbacks = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+            for bin in fallbacks {
+                if std::process::Command::new("which").arg(bin).output().map(|o| o.status.success()).unwrap_or(false) {
+                    found_path = bin.to_string();
+                    break;
+                }
+            }
+            found_path
         };
 
-        let mut command = std::process::Command::new(chrome_path);
+        let mut command = std::process::Command::new(&chrome_path);
         command.arg(format!("--remote-debugging-port={}", port))
             .arg(format!("--user-data-dir={}", profile_path.display()))
             .arg("--no-first-run")
