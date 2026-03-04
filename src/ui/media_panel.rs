@@ -1,7 +1,6 @@
 use crate::state::AppState;
+use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
-use crate::core::events::AppEvent;
-use crate::ui::scrape::emit;
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
@@ -24,8 +23,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     ui.vertical(|ui| {
+        design::title(ui, "Media Vault", design::ACCENT_CYAN);
+        ui.label(RichText::new("Captured assets with preview, filtering and JSON export").small().color(design::TEXT_MUTED));
+        ui.add_space(6.0);
+
         // --- CONTROL HEADER ---
-        Frame::group(ui.style()).fill(Color32::from_gray(25)).inner_margin(8.0).show(ui, |ui| {
+        Frame::group(ui.style()).fill(design::BG_SURFACE).inner_margin(8.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.button(RichText::new("🗑 CLEAR").color(Color32::LIGHT_RED)).clicked() {
                     if let Some(ws) = state.workspaces.get_mut(&tid) { 
@@ -37,7 +40,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 
                 // TYPE FILTER
-                ui.label(RichText::new("TYPE:").color(Color32::LIGHT_BLUE).strong());
+                ui.label(RichText::new("TYPE:").color(design::ACCENT_ORANGE).strong());
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     let types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"];
                     ui.menu_button(format!("TYPES ({})", ws.media_type_filter.len()), |ui| {
@@ -86,7 +89,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(format!("TOTAL: {}", media_count)).color(Color32::GREEN).monospace());
+                    ui.label(RichText::new(format!("TOTAL: {}", media_count)).color(design::ACCENT_GREEN).monospace());
                 });
             });
         });

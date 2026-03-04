@@ -69,6 +69,9 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
 impl eframe::App for CrawlerApp {
     /// The GUI update loop. Called ~60 times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // KOD NOTU: Tüm ekranlarda tutarlı görsel dil için global tema her frame uygulanır.
+        ui::design::apply_theme(ctx);
+
         // 1. Drain the log queue and update the system logs list.
         while let Ok(log) = self.log_receiver.try_recv() {
             self.state.logs.push(log);
@@ -359,19 +362,27 @@ impl eframe::App for CrawlerApp {
 
         // --- UI RENDERING ---
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, " 🎯 SCRAPE");
-                ui.selectable_value(&mut self.state.active_tab, Tab::Settings, " ⚙ SETTINGS");
-                ui.selectable_value(&mut self.state.active_tab, Tab::Logs, " 📝 LOGS");
-                
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("SNIPER STUDIO").strong().size(20.0).color(ui::design::ACCENT_ORANGE));
+                    ui.label(RichText::new("Browser Forensics + Automation Console").small().color(ui::design::TEXT_MUTED));
+                });
+
+                ui.add_space(14.0);
+                ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "Ops");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "Config");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Logs, "Logs");
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if self.state.is_browser_running {
-                        ui.label(RichText::new("● BROWSER ACTIVE").color(Color32::GREEN).small());
+                        ui.label(RichText::new("LIVE").color(ui::design::ACCENT_GREEN).strong());
                     } else {
-                        ui.label(RichText::new("○ BROWSER DOWN").color(Color32::RED).small());
+                        ui.label(RichText::new("OFFLINE").color(Color32::from_rgb(255, 119, 119)).strong());
                     }
                 });
             });
+            ui.add_space(4.0);
         });
 
         // Setup Modals
@@ -410,11 +421,16 @@ impl eframe::App for CrawlerApp {
         }
 
         // Main Panel Dispatcher
-        egui::CentralPanel::default().show(ctx, |ui| match self.state.active_tab {
-            Tab::Scrape => ui::scrape::render(ui, &mut self.state),
-            Tab::Settings => ui::config_panel::render(ui, &mut self.state),
-            Tab::Logs => ui::log_panel::render(ui, &mut self.state),
-            _ => { ui.label("Panel not implemented."); }
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(ui::design::BG_PRIMARY)
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| match self.state.active_tab {
+                    Tab::Scrape => ui::scrape::render(ui, &mut self.state),
+                    Tab::Settings => ui::config_panel::render(ui, &mut self.state),
+                    Tab::Logs => ui::log_panel::render(ui, &mut self.state),
+                    _ => { ui.label("Panel not implemented."); }
+                });
         });
 
         // --- MDI WORKSPACE WINDOWS ---

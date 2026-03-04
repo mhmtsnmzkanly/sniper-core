@@ -1,20 +1,20 @@
 use crate::state::AppState;
-use egui::{Ui, Color32, RichText, Frame, Stroke};
+use crate::ui::design;
+use egui::{Color32, RichText, Ui};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading(RichText::new("SYSTEM SETTINGS").strong().color(Color32::WHITE));
-    ui.add_space(10.0);
+    design::title(ui, "Control Room Settings", design::ACCENT_CYAN);
+    ui.label(RichText::new("Runtime paths, browser routing and API credentials").color(design::TEXT_MUTED));
+    ui.add_space(12.0);
 
-    let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(25)).stroke(Stroke::new(1.0, Color32::from_gray(50)));
-
-    frame_style.show(ui, |ui| {
+    design::section_frame().show(ui, |ui| {
         ui.vertical(|ui| {
-            ui.label(RichText::new("Environment & Paths").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new("Environment & Paths").strong().color(design::ACCENT_ORANGE));
             ui.add_space(5.0);
 
             ui.horizontal(|ui| {
                 ui.label("Output Directory:");
-                ui.label(RichText::new(format!("{:?}", state.config.output_dir)).color(Color32::KHAKI));
+                ui.label(RichText::new(format!("{:?}", state.config.output_dir)).color(design::TEXT_MUTED));
                 if ui.button("Change...").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         state.config.output_dir = path;
@@ -34,7 +34,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
             ui.separator();
 
-            ui.label(RichText::new("AI Configuration").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new("AI Configuration").strong().color(design::ACCENT_ORANGE));
             ui.add_space(5.0);
             ui.horizontal(|ui| {
                 ui.label("Gemini API Key:");
@@ -42,7 +42,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
 
             ui.add_space(20.0);
-            if ui.button(RichText::new("💾 SAVE SETTINGS").strong().color(Color32::GREEN)).clicked() {
+            if ui.add(egui::Button::new(RichText::new("Save Runtime Config").strong().color(Color32::BLACK)).fill(design::ACCENT_GREEN)).clicked() {
                 // Persistent saving logic could be added here (e.g., settings.json)
                 state.notify("Settings", "Configuration updated for current session.", false);
             }

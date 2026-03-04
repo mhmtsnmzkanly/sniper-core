@@ -1,4 +1,5 @@
 use crate::state::AppState;
+use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
 use egui_extras::{TableBuilder, Column};
 
@@ -15,9 +16,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     ui.vertical(|ui| {
-        Frame::group(ui.style()).fill(Color32::from_gray(25)).inner_margin(8.0).show(ui, |ui| {
+        design::title(ui, "Network Inspector", design::ACCENT_CYAN);
+        ui.add_space(6.0);
+        Frame::group(ui.style()).fill(design::BG_SURFACE).inner_margin(8.0).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("FILTER:").strong().color(Color32::LIGHT_BLUE));
+                ui.label(RichText::new("FILTER").strong().color(design::ACCENT_ORANGE));
                 let types = ["XHR", "JS", "CSS", "IMG", "DOC", "OTHER"];
                 ui.menu_button(format!("TYPES ({})", type_filter.len()), |ui| {
                     for t in types {
@@ -81,9 +84,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     r.col(|ui| { ui.label(&req.method); });
                     r.col(|ui| { 
                         let color = match req.status {
-                            Some(s) if s >= 200 && s < 300 => Color32::GREEN,
-                            Some(s) if s >= 400 => Color32::RED,
-                            _ => Color32::GRAY,
+                            Some(s) if s >= 200 && s < 300 => design::ACCENT_GREEN,
+                            Some(s) if s >= 400 => Color32::from_rgb(255, 120, 120),
+                            _ => design::TEXT_MUTED,
                         };
                         ui.label(RichText::new(req.status.map(|s| s.to_string()).unwrap_or("...".into())).color(color));
                     });

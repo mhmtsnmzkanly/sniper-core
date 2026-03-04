@@ -6,3 +6,4 @@ pub mod translate;
 pub mod config_panel;
 pub mod log_panel;
 pub mod media_panel;
+pub mod design;

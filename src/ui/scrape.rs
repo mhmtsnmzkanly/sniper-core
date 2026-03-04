@@ -1,4 +1,5 @@
 use crate::state::AppState;
+use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame, Stroke};
 use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
@@ -22,14 +23,19 @@ pub fn emit(event: AppEvent) {
 }
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading(RichText::new("SNIPER STUDIO // V1.2.8").strong().size(22.0).color(Color32::WHITE));
-    ui.add_space(15.0);
+    design::title(ui, "Operations Deck", design::ACCENT_CYAN);
+    ui.label(RichText::new("Live browser session controls, captures and tab tools").small().color(design::TEXT_MUTED));
+    ui.add_space(12.0);
 
-    let frame_style = Frame::group(ui.style()).fill(Color32::from_gray(20)).stroke(Stroke::new(1.0, Color32::from_gray(50)));
+    let frame_style = Frame::group(ui.style())
+        .fill(design::BG_SURFACE)
+        .stroke(Stroke::new(1.0, Color32::from_rgb(42, 64, 78)))
+        .corner_radius(10.0)
+        .inner_margin(12.0);
     
     // BROWSER SETTINGS & CONTROL
     frame_style.show(ui, |ui| {
-        ui.label(RichText::new(":: BROWSER CONFIGURATION").strong().color(Color32::LIGHT_BLUE));
+        ui.label(RichText::new("Browser Configuration").strong().color(design::ACCENT_ORANGE));
         ui.add_space(8.0);
         
         egui::Grid::new("browser_config_grid").spacing([10.0, 10.0]).show(ui, |ui| {
@@ -52,7 +58,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             if !state.is_browser_running {
                 if ui.add(egui::Button::new(RichText::new("LAUNCH BROWSER").strong().size(14.0))
                     .min_size([250.0, 40.0].into())
-                    .fill(Color32::from_rgb(0, 100, 200))).clicked() {
+                    .fill(Color32::from_rgb(0, 128, 180))).clicked() {
                     
                     tracing::info!("[UI] Click: LAUNCH BROWSER");
                     let url = state.config.default_launch_url.clone();
@@ -88,7 +94,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::TerminateBrowser);
                 }
                 ui.add_space(10.0);
-                ui.label(RichText::new("● BROWSER ACTIVE").monospace().color(Color32::GREEN));
+                ui.label(RichText::new("● BROWSER ACTIVE").monospace().color(design::ACCENT_GREEN));
             }
         });
     });
@@ -104,7 +110,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(":: ACTIVE TARGETS").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new("Active Targets").strong().color(design::ACCENT_ORANGE));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("REFRESH LIST").clicked() { 
                     tracing::info!("[UI] Click: REFRESH TAB LIST");
@@ -154,7 +160,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // COMMAND CENTER
     frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(":: COMMAND CENTER").strong().color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new("Command Center").strong().color(design::ACCENT_ORANGE));
             let tid = state.selected_tab_id.clone().unwrap_or_default();
             if ui.add_enabled(!tid.is_empty(), egui::Button::new("FORCE RELOAD").small()).clicked() {
                 tracing::info!("[UI] Click: RELOAD TAB {}", tid);

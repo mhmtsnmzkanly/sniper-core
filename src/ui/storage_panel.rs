@@ -1,4 +1,5 @@
 use crate::state::AppState;
+use crate::ui::design;
 use egui::{Ui, Color32, RichText};
 use egui_extras::{TableBuilder, Column};
 use crate::core::events::AppEvent;
@@ -46,8 +47,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         .map(|(i, c)| (i, c.clone()))
         .collect();
 
+    design::title(ui, "Storage / Cookie Manager", design::ACCENT_CYAN);
+    ui.add_space(4.0);
+
     ui.horizontal(|ui| {
-        ui.heading(RichText::new(format!("COOKIE MANAGER: {}", title)).color(Color32::KHAKI));
+        ui.label(RichText::new(format!("Workspace: {}", title)).color(design::TEXT_MUTED));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("🔄 REFRESH").clicked() {
                 emit(AppEvent::RequestCookies(tid.clone()));
@@ -71,7 +75,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     }
                 }
             }
-            ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(Color32::GRAY));
+            ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(design::TEXT_MUTED));
         });
     });
     ui.add_space(10.0);
