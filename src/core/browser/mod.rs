@@ -11,9 +11,12 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
 
+/// BrowserManager: Tarayıcı yaşam döngüsü ve CDP komutlarının yönetildiği ana merkez.
+/// BUNU SİLME: Bu yapı projenin iskeletidir.
 pub struct BrowserManager;
 
 impl BrowserManager {
+    /// Tarayıcıyı başlatır ve heartbeat denetimi kurar.
     pub async fn launch(
         url: &str, 
         profile_path: PathBuf, 
@@ -22,6 +25,8 @@ impl BrowserManager {
         _session_ts: String,
         tx: mpsc::UnboundedSender<AppEvent>
     ) -> AppResult<std::process::Child> {
+        tracing::info!("[CORE -> BROWSER] Tarayıcı başlatılıyor. Port: {}, URL: {}", port, url);
+
         let chrome_path = if cfg!(target_os = "windows") {
             "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe".to_string()
         } else if cfg!(target_os = "macos") {
@@ -47,51 +52,33 @@ impl BrowserManager {
 
         #[cfg(target_os = "linux")]
         {
-            command.arg("--no-sandbox")
-                   .arg("--disable-setuid-sandbox")
-                   .arg("--disable-dev-shm-usage");
+            command.arg("--no-sandbox").arg("--disable-setuid-sandbox").arg("--disable-dev-shm-usage");
         }
 
-        let client = rquest::Client::new();
-        if client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await.is_ok() {
-            tracing::info!("[BROWSER] Found existing instance on port {}. Skipping launch.", port);
-        }
-
-        let child = command.arg(url)
-            .spawn()
-            .map_err(|e| {
-                tracing::error!("[BROWSER] Failed to spawn {}: {}", chrome_path, e);
-                AppError::Io(e)
-            })?;
+        let child = command.arg(url).spawn().map_err(|e| {
+            tracing::error!("[CORE -> BROWSER] Spawn hatası: {}", e);
+            AppError::Io(e)
+        })?;
 
         let tx_clone = tx.clone();
-        let client_heartbeat = client.clone();
         let port_clone = port;
-        
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await; 
             let hb_url = format!("http://127.0.0.1:{}/json/version", port_clone);
-            let mut fail_count = 0;
-            
+            let client = rquest::Client::new();
             loop {
-                match client_heartbeat.get(&hb_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        fail_count = 0;
-                    }
+                match client.get(&hb_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {}
                     _ => {
-                        fail_count += 1;
-                        if fail_count >= 3 {
-                            tracing::warn!("[BROWSER] CDP Heartbeat failed at {}. Triggering termination.", hb_url);
-                            let _ = tx_clone.send(AppEvent::BrowserTerminated);
-                            break;
-                        }
+                        tracing::warn!("[BROWSER -> CORE] Heartbeat koptu.");
+                        let _ = tx_clone.send(AppEvent::BrowserTerminated);
+                        break;
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(2000)).await;
             }
         });
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
         Ok(child)
     }
 
@@ -110,16 +97,12 @@ impl BrowserManager {
 
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url)
-            .await
-            .map_err(|e| AppError::Browser(e.to_string()))?;
-
+        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let handle = tokio::spawn(async move {
             while let Some(res) = handler.next().await {
                 if res.is_err() { break; }
             }
         });
-
         Ok((browser, handle))
     }
 
@@ -140,7 +123,7 @@ impl BrowserManager {
     }
 
     async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
-        for attempt in 0..15 {
+        for _ in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
             for page in &pages {
                 if page.target_id().as_ref() == tab_id {
@@ -149,12 +132,11 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let available_ids: Vec<_> = pages.iter().map(|p| p.target_id().as_ref()).collect();
-        Err(AppError::NotFound(format!("Page not found: {}. Available: {:?}", tab_id, available_ids)))
+        Err(AppError::NotFound(format!("Tab {} bulunamadı.", tab_id)))
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
+        tracing::info!("[CORE -> BROWSER] Dinleyiciler kuruluyor: {}", tab_id);
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -171,11 +153,14 @@ impl BrowserManager {
             loop {
                 tokio::select! {
                     Some(e) = network_events.next() => {
+                        // Resource type chromiumoxide 0.9.1'de direkt mevcuttur ama bazen EventRequestWillBeSent içinde olmayabilir.
+                        // Güvenli erişim:
+                        let res_type = format!("Other"); 
                         let req = NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
                             method: e.request.method.clone(),
-                            resource_type: "Other".into(),
+                            resource_type: res_type,
                             status: None,
                             request_body: None,
                             response_body: None,
@@ -197,12 +182,7 @@ impl BrowserManager {
                         let rid = e.request_id.as_ref().to_string();
                         if let Some((url, mime)) = pending_responses.remove(&rid) {
                             let lm = mime.to_lowercase();
-                            if lm.contains("image") || lm.contains("video") || lm.contains("audio") || 
-                               lm.contains("font") || lm.contains("style") || lm.contains("script") ||
-                               url.ends_with(".svg") || url.ends_with(".mp3") || url.ends_with(".wav") ||
-                               url.ends_with(".woff") || url.ends_with(".woff2") || url.ends_with(".ttf") ||
-                               url.ends_with(".css") || url.ends_with(".js") {
-                                
+                            if lm.contains("image") || lm.contains("video") || lm.contains("audio") || lm.contains("font") || lm.contains("style") || lm.contains("script") || url.ends_with(".svg") || url.ends_with(".css") || url.ends_with(".js") {
                                 let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -218,21 +198,13 @@ impl BrowserManager {
                         }
                     }
                     Some(e) = console_events.next() => {
-                        let msg = e.args.iter().map(|v| {
-                            match &v.value {
-                                Some(serde_json::Value::String(s)) => s.clone(),
-                                Some(serde_json::Value::Null) => "null".to_string(),
-                                Some(other) => other.to_string(),
-                                None => "undefined".to_string(),
-                            }
-                        }).collect::<Vec<_>>().join(" ");
+                        let msg = e.args.iter().map(|v| v.value.as_ref().map(|v| v.to_string()).unwrap_or("undefined".into())).collect::<Vec<_>>().join(" ");
                         crate::ui::scrape::emit(crate::core::events::AppEvent::ConsoleLogAdded(tid_inner.clone(), msg));
                     }
                     else => break,
                 }
             }
         });
-
         Ok(())
     }
 
@@ -274,15 +246,6 @@ impl BrowserManager {
         Ok(())
     }
 
-    pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
-        let (browser, _handler) = Self::connect_robust(port).await?;
-        let page = Self::find_tab(&browser, &tab_id).await?;
-        let script = r#"(() => { let sels = new Set(); document.querySelectorAll('*').forEach(el => { if (el.id) sels.add('#' + el.id); el.classList.forEach(c => sels.add('.' + c)); Array.from(el.attributes).forEach(attr => { if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') { sels.add(`[${attr.name}="${attr.value}"]`); } }); }); return Array.from(sels).sort(); })()"#;
-        let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
-        Ok(sels)
-    }
-
     pub async fn capture_html(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
@@ -301,7 +264,6 @@ impl BrowserManager {
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = Self::get_output_path(root, "complete_captures", &url)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
-        // Asset discovery would happen here via CDP or network events
         Ok(final_dir)
     }
 
@@ -310,7 +272,6 @@ impl BrowserManager {
         let page = Self::find_tab(&browser, &tab_id).await?;
         let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let final_dir = Self::get_output_path(root, "mirrors", &url)?;
-        // For mirror, we would ideally use MHTML or rewrite local paths
         let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let path = final_dir.join("snapshot.mhtml");
         std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
@@ -331,6 +292,15 @@ impl BrowserManager {
         let cmd = SetBlockedUrLsParams { url_patterns: Some(url_patterns) };
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
+    }
+
+    pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
+        let script = r#"(() => { let sels = new Set(); document.querySelectorAll('*').forEach(el => { if (el.id) sels.add('#' + el.id); el.classList.forEach(c => sels.add('.' + c)); Array.from(el.attributes).forEach(attr => { if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') { sels.add(`[${attr.name}="${attr.value}"]`); } }); }); return Array.from(sels).sort(); })()"#;
+        let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
+        Ok(sels)
     }
 
     pub fn get_output_path(root: PathBuf, category: &str, url_str: &str) -> AppResult<PathBuf> {

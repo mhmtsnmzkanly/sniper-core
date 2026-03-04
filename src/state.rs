@@ -1,8 +1,9 @@
 use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
-/// Represents the primary navigation sections of the application.
+/// Navigasyon sekmeleri
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Tab {
     Scrape,
@@ -15,6 +16,7 @@ pub enum Tab {
     Logs,
 }
 
+/// Sistem log girişi
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LogEntry {
     pub timestamp: String,
@@ -30,6 +32,7 @@ pub enum AutomationStatus {
     Error(String),
 }
 
+/// Otomasyon Adımları
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AutomationStep {
     Navigate(String),
@@ -54,6 +57,7 @@ pub enum AutomationStep {
     ImportDataset(String),
 }
 
+/// Otomasyon Ayarları
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationConfig {
     pub retry_attempts: u32,
@@ -111,7 +115,7 @@ pub struct NetworkRequest {
     pub response_body: Option<String>,
 }
 
-/// Independent workspace for a specific browser tab.
+/// Her bir sekme için bağımsız çalışma alanı.
 pub struct TabWorkspace {
     pub title: String,
     pub show_network: bool,
@@ -208,7 +212,6 @@ pub struct Notification {
 }
 
 pub struct AppState {
-    pub current_tab: Tab,
     pub active_tab: Tab,
     pub config: AppConfig,
     pub is_browser_running: bool,
@@ -227,8 +230,13 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: AppConfig, session_ts: String) -> Self {
+        let mut default_output = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        default_output.push("SniperOutput");
+
+        let mut config = config;
+        config.output_dir = default_output;
+
         Self {
-            current_tab: Tab::Scrape,
             active_tab: Tab::Scrape,
             config,
             is_browser_running: false,

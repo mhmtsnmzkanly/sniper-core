@@ -19,25 +19,21 @@ impl CrawlerApp {
         log_receiver: tokio::sync::mpsc::UnboundedReceiver<LogEntry>,
         event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     ) -> Self {
-        Self {
-            state,
-            log_receiver,
-            event_receiver,
-            browser_process: Arc::new(Mutex::new(None)),
-        }
+        Self { state, log_receiver, event_receiver, browser_process: Arc::new(Mutex::new(None)) }
     }
 
+    /// Belirtilen sekme için çalışma alanının varlığını garanti eder.
     fn ensure_workspace(&mut self, tid: &str) -> &mut crate::state::TabWorkspace {
         if !self.state.workspaces.contains_key(tid) {
-            self.state.workspaces.insert(
-                tid.to_string(),
-                crate::state::TabWorkspace::new(tid.to_string(), "New Tab".into()),
-            );
+            let title = self.state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "New Tab".into());
+            tracing::debug!("[APP] Creating new workspace for tab: {} ({})", title, tid);
+            self.state.workspaces.insert(tid.to_string(), crate::state::TabWorkspace::new(tid.to_string(), title));
         }
         self.state.workspaces.get_mut(tid).unwrap()
     }
 }
 
+/// UI'daki basitleştirilmiş adımları motorun anlayacağı DSL adımlarına dönüştürür.
 fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation::dsl::Step> {
     steps.iter().map(|s| match s {
         AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
@@ -65,20 +61,24 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
 
 impl eframe::App for CrawlerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Sistem loglarını UI listesine aktar
         while let Ok(log) = self.log_receiver.try_recv() {
             self.state.logs.push(log);
-            if self.state.logs.len() > 1000 { self.state.logs.remove(0); }
+            if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
         }
 
+        // --- OLAY İŞLEME DÖNGÜSÜ ---
         while let Ok(event) = self.event_receiver.try_recv() {
-            // Guard for browser-dependent events
+            tracing::debug!("[EVENT] Processing: {:?}", event);
+
+            // Tarayıcı bağımlı komutlar için koruma
             if !self.state.is_browser_running {
                 match &event {
                     AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
                     AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
-                    AppEvent::RequestCapture(_, _, _) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
                     AppEvent::RequestTabRefresh => {
-                        let msg = "Action Denied: Browser is not running.";
+                        let msg = "Komut Reddedildi: Tarayıcı aktif değil.";
                         self.state.notify("Denied", msg, true);
                         tracing::warn!("[APP] {}", msg);
                         continue;
@@ -89,20 +89,21 @@ impl eframe::App for CrawlerApp {
 
             match event {
                 AppEvent::RequestLogPathSet(path) => {
+                    tracing::info!("[APP] Setting session log path to: {:?}", path);
                     crate::logger::set_log_path(path, &self.state.session_timestamp);
                 }
                 AppEvent::BrowserStarted(child) => {
                     *self.browser_process.lock().unwrap() = Some(child);
                     self.state.is_browser_running = true;
-                    self.state.notify("System", "Browser instance launched.", false);
-                    tracing::info!("[APP] Browser started.");
+                    self.state.notify("System", "Tarayıcı başarıyla başlatıldı.", false);
+                    tracing::info!("[APP] Browser connection established.");
                 }
                 AppEvent::BrowserTerminated => {
                     self.state.is_browser_running = false;
                     self.state.available_tabs.clear();
                     self.state.selected_tab_id = None;
-                    self.state.notify("System", "Browser instance disconnected.", true);
-                    tracing::warn!("[APP] Browser terminated.");
+                    self.state.notify("System", "Tarayıcı bağlantısı koptu.", true);
+                    tracing::warn!("[APP] Browser connection lost.");
                 }
                 AppEvent::TerminateBrowser => {
                     if let Some(mut child) = self.browser_process.lock().unwrap().take() {
@@ -110,21 +111,22 @@ impl eframe::App for CrawlerApp {
                         self.state.is_browser_running = false;
                         self.state.available_tabs.clear();
                         self.state.selected_tab_id = None;
-                        self.state.notify("System", "Browser instance terminated.", false);
+                        self.state.notify("System", "Tarayıcı sonlandırıldı.", false);
                         tracing::info!("[APP] Browser terminated by user.");
                     }
                 }
                 AppEvent::TabsUpdated(tabs) => {
+                    tracing::info!("[APP] Found {} active tabs.", tabs.len());
                     self.state.available_tabs = tabs;
                 }
                 AppEvent::ConsoleLogAdded(tid, msg) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.console_logs.push(msg.clone());
-                    tracing::debug!("[CONSOLE][{}] {}", tid, msg);
                 }
                 AppEvent::SelectorsReceived(tid, sels) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.discovered_selectors = sels;
+                    tracing::info!("[APP][{}] {} selectors discovered.", tid, ws.discovered_selectors.len());
                 }
                 AppEvent::MediaCaptured(tid, asset) => {
                     let ws = self.ensure_workspace(&tid);
@@ -135,6 +137,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::CookiesReceived(tid, cookies) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.cookies = cookies;
+                    tracing::info!("[APP][{}] {} cookies retrieved.", tid, ws.cookies.len());
                 }
                 AppEvent::AutomationProgress(tid, step) => {
                     let ws = self.ensure_workspace(&tid);
@@ -167,19 +170,21 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::OperationSuccess(msg) => {
                     self.state.notify("Success", &msg, false);
-                    tracing::info!("[OP] {}", msg);
+                    tracing::info!("[OP] Success: {}", msg);
                 }
                 AppEvent::OperationError(msg) => {
                     self.state.notify("Error", &msg, true);
-                    tracing::error!("[OP] {}", msg);
+                    tracing::error!("[OP] Error: {}", msg);
                 }
                 
+                // --- BROWSER COMMAND HANDLERS ---
                 AppEvent::RequestCookies(tid) => {
+                    tracing::info!("[APP -> BROWSER] Requesting cookies for {}", tid);
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::get_cookies(port, tid.clone()).await {
                             Ok(cookies) => crate::ui::scrape::emit(AppEvent::CookiesReceived(tid, cookies)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Cookie Error: {}", e))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Cookie fetch failed: {}", e))),
                         }
                     });
                 }
@@ -188,7 +193,7 @@ impl eframe::App for CrawlerApp {
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
                         if let Err(e) = crate::core::browser::BrowserManager::delete_cookie(port, tid.clone(), name, domain).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Delete Error: {}", e)));
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Delete failed: {}", e)));
                         } else {
                             let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
@@ -201,7 +206,7 @@ impl eframe::App for CrawlerApp {
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
                         if let Err(e) = crate::core::browser::BrowserManager::add_cookie(port, tid.clone(), cookie).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Add Error: {}", e)));
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Add failed: {}", e)));
                         } else {
                             let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
@@ -213,7 +218,7 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
                         if let Err(e) = crate::core::browser::BrowserManager::reload_page(port, tid).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Reload Error: {}", e)));
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Reload failed: {}", e)));
                         }
                     });
                 }
@@ -222,7 +227,7 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::list_tabs(port).await {
                             Ok(tabs) => crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Refresh Error: {}", e))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Tab listing failed: {}", e))),
                         }
                     });
                 }
@@ -232,7 +237,7 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::execute_script(port, tid, script).await {
                             Ok(res) => crate::ui::scrape::emit(AppEvent::ScriptFinished(tid_clone, res)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Script Error: {}", e))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("JS error: {}", e))),
                         }
                     });
                 }
@@ -246,11 +251,19 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::get_page_selectors(port, tid).await {
                             Ok(sels) => crate::ui::scrape::emit(AppEvent::SelectorsReceived(tid_clone, sels)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Selector Error: {}", e))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Selector scan failed: {}", e))),
                         }
                     });
                 }
-                AppEvent::RequestNetworkToggle(_tid, _active) => {}
+                AppEvent::RequestNetworkToggle(tid, _active) => {
+                    tracing::info!("[APP -> BROWSER] Enabling sniffer/listeners for tab: {}", tid);
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::core::browser::BrowserManager::setup_tab_listeners(port, tid).await {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Listener setup failed: {}", e)));
+                        }
+                    });
+                }
                 AppEvent::RequestUrlBlock(tid, pattern) => {
                     let port = self.state.config.remote_debug_port;
                     let ws = self.ensure_workspace(&tid);
@@ -270,6 +283,7 @@ impl eframe::App for CrawlerApp {
                     });
                 }
                 AppEvent::RequestCapture(tid, mode, _) => {
+                    tracing::info!("[APP -> BROWSER] Starting capture. Mode: {} for tab: {}", mode, tid);
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
@@ -277,18 +291,14 @@ impl eframe::App for CrawlerApp {
                             "html" => crate::core::browser::BrowserManager::capture_html(port, tid, root).await,
                             "complete" => crate::core::browser::BrowserManager::capture_complete(port, tid, root).await,
                             "mirror" => crate::core::browser::BrowserManager::capture_mirror(port, tid, root).await,
-                            _ => Err(crate::core::error::AppError::Internal("Unknown capture mode".into())),
+                            _ => Err(crate::core::error::AppError::Internal("Mod bulunamadı".into())),
                         };
                         match res {
-                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured ({}): {:?}", mode, path))),
-                            Err(e) => {
-                                tracing::error!("[OP] Capture Error: {}", e);
-                                crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture Error: {}", e)));
-                            }
+                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Yakalandı: {:?}", path))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Yakalama hatası: {}", e))),
                         }
                     });
                 }
-
                 AppEvent::RequestAutomationRun(tid, steps, funcs, auto_config) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
@@ -297,7 +307,7 @@ impl eframe::App for CrawlerApp {
                     let dsl = crate::core::automation::dsl::AutomationDsl {
                         dsl_version: 1, metadata: None, functions: dsl_funcs, steps: map_ui_steps_to_dsl(&steps),
                     };
-                    tracing::info!("[USER] Automation pipeline started for tab: {}", tid_clone);
+                    tracing::info!("[APP -> ENGINE] Automation started for {}", tid_clone);
                     let output_dir = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
                         let mut engine = crate::core::automation::engine::AutomationEngine::new(port, tid_clone, output_dir);
@@ -307,7 +317,7 @@ impl eframe::App for CrawlerApp {
                             screenshot_on_error: auto_config.screenshot_on_error,
                         };
                         if let Err(e) = engine.run(dsl).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Automation Failed: {}", e)));
+                            crate::ui::scrape::emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
                         }
                     });
                 }
@@ -331,21 +341,19 @@ impl eframe::App for CrawlerApp {
             });
         });
 
-        // Modals for confirmation
+        // KURULUM MODALI
         if !self.state.output_confirmed {
-            egui::Window::new("Sniper Core - Initial Setup")
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false).resizable(false)
-                .show(ctx, |ui| {
-                    ui.heading("Select Output Directory");
+            egui::Window::new("Sniper Core - Initial Setup").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false).resizable(false).show(ctx, |ui| {
+                    ui.heading("Çıktı Dizini Seçin");
+                    ui.label("Veriler, loglar ve varlıklar bu klasöre kaydedilecek.");
+                    ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{:?}", self.state.config.output_dir)).color(Color32::KHAKI));
-                        if ui.button("Browse...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new().pick_folder() { self.state.config.output_dir = path; }
-                        }
+                        if ui.button("Gözat...").clicked() { if let Some(path) = rfd::FileDialog::new().pick_folder() { self.state.config.output_dir = path; } }
                     });
                     ui.add_space(20.0);
-                    if ui.button(RichText::new("CONFIRM & PROCEED").strong()).clicked() {
+                    if ui.button(RichText::new("ONAYLA VE DEVAM ET").strong()).clicked() {
                         self.state.output_confirmed = true;
                         let _ = std::fs::create_dir_all(&self.state.config.output_dir);
                         crate::ui::scrape::emit(AppEvent::RequestLogPathSet(self.state.config.output_dir.clone()));
@@ -355,19 +363,15 @@ impl eframe::App for CrawlerApp {
         }
 
         if !self.state.profile_confirmed {
-            egui::Window::new("Browser Profile Setup")
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false).resizable(false)
-                .show(ctx, |ui| {
-                    ui.heading("Select Browser Profile Mode");
+            egui::Window::new("Tarayıcı Profil Ayarı").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false).resizable(false).show(ctx, |ui| {
+                    ui.heading("Profil Modu Seçin");
                     ui.vertical(|ui| {
-                        if ui.selectable_label(self.state.use_custom_profile, "🏠 ISOLATED PROFILE").clicked() { self.state.use_custom_profile = true; }
-                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SYSTEM PROFILE").clicked() { self.state.use_custom_profile = false; }
+                        if ui.selectable_label(self.state.use_custom_profile, "🏠 İZOLE PROFİL (Önerilen)").clicked() { self.state.use_custom_profile = true; }
+                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SİSTEM PROFİLİ").clicked() { self.state.use_custom_profile = false; }
                     });
                     ui.add_space(20.0);
-                    if ui.button(RichText::new("CONFIRM & LAUNCH").strong()).clicked() {
-                        self.state.profile_confirmed = true;
-                    }
+                    if ui.button(RichText::new("ONAYLA VE BAŞLAT").strong()).clicked() { self.state.profile_confirmed = true; }
                 });
             return;
         }
@@ -376,16 +380,14 @@ impl eframe::App for CrawlerApp {
             Tab::Scrape => ui::scrape::render(ui, &mut self.state),
             Tab::Settings => ui::config_panel::render(ui, &mut self.state),
             Tab::Logs => ui::log_panel::render(ui, &mut self.state),
-            _ => { ui.label("Tab not implemented"); }
+            _ => { ui.label("Bölüm henüz eklenmedi."); }
         });
 
-        // Notification Overlay
+        // Bildirimler
         if let Some(notif) = &self.state.notification {
             let mut open = true;
-            egui::Window::new(&notif.title)
-                .open(&mut open).anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
-                .collapsible(false).resizable(false)
-                .show(ctx, |ui| { ui.label(&notif.message); });
+            egui::Window::new(&notif.title).open(&mut open).anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
+                .collapsible(false).resizable(false).show(ctx, |ui| { ui.label(&notif.message); });
             if !open { self.state.notification = None; }
         }
         ctx.request_repaint();

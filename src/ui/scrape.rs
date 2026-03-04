@@ -22,7 +22,7 @@ pub fn emit(event: AppEvent) {
 }
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.heading(RichText::new("SNIPER STUDIO // V1.2.1").strong().size(22.0).color(Color32::WHITE));
+    ui.heading(RichText::new("SNIPER STUDIO // V1.2.8").strong().size(22.0).color(Color32::WHITE));
     ui.add_space(15.0);
 
     // PHASE 1: BROWSER ENVIRONMENT
@@ -47,14 +47,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let ts = state.session_timestamp.clone();
                     let log_dir = state.config.output_dir.clone();
                     let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
+                    
+                    tracing::info!("[UI -> CORE] User requested browser launch on port {}", port);
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts, tx).await {
-                            Ok(child) => {
-                                emit(AppEvent::BrowserStarted(child));
-                            }
-                            Err(e) => {
-                                tracing::error!("[LAUNCH] Browser launch failed: {}", e);
-                                emit(AppEvent::OperationError(format!("Launch Failed: {}", e)));
+                            Ok(child) => { emit(AppEvent::BrowserStarted(child)); }
+                            Err(e) => { 
+                                tracing::error!("[CORE -> UI] Launch failed: {}", e);
+                                emit(AppEvent::OperationError(format!("Launch Failed: {}", e))); 
                             }
                         }
                     });
@@ -63,6 +63,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 if ui.add(egui::Button::new(RichText::new("TERMINATE INSTANCE").strong().color(Color32::BLACK))
                     .min_size([180.0, 40.0].into())
                     .fill(Color32::from_rgb(255, 80, 80))).clicked() {
+                    tracing::info!("[UI -> CORE] User requested browser termination.");
                     emit(AppEvent::TerminateBrowser);
                 }
                 ui.add_space(10.0);
@@ -78,7 +79,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(RichText::new(":: PHASE 2 - TARGET SELECTION").strong().color(Color32::LIGHT_BLUE));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("REFRESH LIST").clicked() { emit(AppEvent::RequestTabRefresh); }
+                if ui.button("REFRESH LIST").clicked() { 
+                    tracing::info!("[UI -> CORE] Refreshing tab list.");
+                    emit(AppEvent::RequestTabRefresh); 
+                }
             });
         });
         ui.add_space(8.0);
@@ -96,9 +100,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                         let response = Frame::group(ui.style())
                             .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
-                            .fill(bg_col)
-                            .inner_margin(10.0)
-                            .corner_radius(4.0)
+                            .fill(bg_col).inner_margin(10.0).corner_radius(4.0)
                             .show(ui, |ui| {
                             ui.set_min_width(200.0);
                             ui.vertical(|ui| {
@@ -111,7 +113,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                         if ui.interact(response.rect, response.id, egui::Sense::click()).clicked() {
                             state.selected_tab_id = Some(tab.id.clone());
-                            tracing::info!("[SCRAPER <-> UI] Target focused: {}", tab.title);
+                            tracing::info!("[UI -> CORE] Target tab focused: {}", tab.title);
                         }
                         ui.add_space(8.0);
                     }
@@ -122,12 +124,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(15.0);
 
-    // PHASE 3: INTEGRATED COMMAND CENTER
+    // PHASE 3: COMMAND CENTER
     frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(":: PHASE 3 - COMMAND CENTER").strong().color(Color32::LIGHT_BLUE));
             let tid = state.selected_tab_id.clone().unwrap_or_default();
             if ui.add_enabled(!tid.is_empty(), egui::Button::new("FORCE RELOAD").small()).clicked() {
+                tracing::info!("[UI -> CORE] Requesting reload for tab {}", tid);
                 emit(AppEvent::RequestPageReload(tid.clone()));
             }
         });
@@ -141,18 +144,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 let btn_h = 45.0;
                 if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("📄 CAPTURE HTML").strong())
                     .min_size([cols[0].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Requesting HTML Capture for tab {}", tid);
                     emit(AppEvent::RequestCapture(tid.clone(), "html".into(), false));
                 }
-                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("📦 CAPTURE COMPLETE").strong().color(Color32::LIGHT_BLUE))
+                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("📦 COMPLETE").strong().color(Color32::LIGHT_BLUE))
                     .min_size([cols[1].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Requesting COMPLETE Capture for tab {}", tid);
                     emit(AppEvent::RequestCapture(tid.clone(), "complete".into(), false));
                 }
-                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🪞 CAPTURE MIRROR").strong().color(Color32::GOLD))
+                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🪞 MIRROR").strong().color(Color32::GOLD))
                     .min_size([cols[2].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Requesting MIRROR Capture for tab {}", tid);
                     emit(AppEvent::RequestCapture(tid.clone(), "mirror".into(), false));
                 }
                 if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("🤖 AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
                     .min_size([cols[3].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] User switched to Automation for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_automation = true;
@@ -164,6 +171,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.columns(4, |cols| {
                 let btn_h = 45.0;
                 if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("🌐 NETWORK").strong()).min_size([cols[0].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Opening Network Sniffer for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_network = true;
@@ -171,6 +179,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
                 if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("🖼 MEDIA").strong()).min_size([cols[1].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Opening Media Sniffer for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_media = true;
@@ -178,12 +187,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
                 if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🍪 COOKIE").strong().color(Color32::from_rgb(255, 180, 0))).min_size([cols[2].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Opening Cookie Manager for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_storage = true;
                     emit(AppEvent::RequestCookies(tid.clone()));
                 }
                 if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("💻 CONSOLE").strong().color(Color32::LIGHT_BLUE)).min_size([cols[3].available_width(), btn_h].into())).clicked() {
+                    tracing::info!("[UI -> CORE] Opening JS Console for tab {}", tid);
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.sniffer_active = true; 
