@@ -50,6 +50,8 @@ pub enum AutomationStep {
     SwitchFrame(String),
     If { selector: String, then_steps: Vec<AutomationStep> },
     ForEach { selector: String, body: Vec<AutomationStep> },
+    CallFunction(String),
+    ImportDataset(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +126,8 @@ pub struct TabWorkspace {
     pub cookie_edit_buffer: ChromeCookie,
     pub show_cookie_modal: bool,
     pub auto_steps: Vec<AutomationStep>,
+    pub auto_functions: HashMap<String, Vec<AutomationStep>>,
+    pub active_fn_editor: Option<String>,
     pub auto_status: AutomationStatus,
     pub auto_config: AutomationConfig,
     pub discovered_selectors: Vec<String>,
@@ -167,6 +171,8 @@ impl TabWorkspace {
             cookie_edit_buffer: ChromeCookie::default(),
             show_cookie_modal: false,
             auto_steps: Vec::new(),
+            auto_functions: HashMap::new(),
+            active_fn_editor: None,
             auto_status: AutomationStatus::Idle,
             auto_config: AutomationConfig::default(),
             discovered_selectors: Vec::new(),
@@ -203,7 +209,7 @@ pub struct Notification {
 
 pub struct AppState {
     pub current_tab: Tab,
-    pub active_tab: Tab, // Duplicate or alias for transition
+    pub active_tab: Tab,
     pub config: AppConfig,
     pub is_browser_running: bool,
     pub available_tabs: Vec<ChromeTabInfo>,

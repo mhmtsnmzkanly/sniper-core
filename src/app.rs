@@ -58,6 +58,8 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
         AutomationStep::SwitchFrame(sel) => crate::core::automation::dsl::Step::SwitchFrame { selector: sel.clone() },
         AutomationStep::If { selector, then_steps } => crate::core::automation::dsl::Step::If { selector: selector.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
         AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_ui_steps_to_dsl(body) },
+        AutomationStep::CallFunction(name) => crate::core::automation::dsl::Step::CallFunction { name: name.clone() },
+        AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset { filename: f.clone() },
     }).collect()
 }
 
@@ -256,11 +258,19 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
-                AppEvent::RequestAutomationRun(tid, steps, auto_config) => {
+                AppEvent::RequestAutomationRun(tid, steps, funcs, auto_config) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
+                    
+                    let mut dsl_funcs = std::collections::HashMap::new();
+                    for (name, f_steps) in funcs {
+                        dsl_funcs.insert(name, map_ui_steps_to_dsl(&f_steps));
+                    }
+
                     let dsl = crate::core::automation::dsl::AutomationDsl {
                         dsl_version: 1,
+                        metadata: None,
+                        functions: dsl_funcs,
                         steps: map_ui_steps_to_dsl(&steps),
                     };
                     tracing::info!("[USER] Automation pipeline started for tab: {}", tid_clone);

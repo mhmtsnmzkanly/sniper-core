@@ -14,6 +14,7 @@ rfd = "0.14"
 # CDP & Engine
 chromiumoxide = "0.9.1"
 async-trait = "0.1"
+csv = "1.3"
 
 # Async & Networking
 tokio = { version = "1", features = ["full"] }

@@ -14,7 +14,7 @@ pub enum AppEvent {
     RequestCapture(String, bool, bool), // tab_id, mirror_mode, asset_folder_mode
     RequestScriptExecution(String, String),
     RequestNetworkToggle(String, bool),
-    RequestAutomationRun(String, Vec<AutomationStep>, crate::state::AutomationConfig),
+    RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),
     RequestTabRefresh,
     RequestPageReload(String),
     RequestUrlBlock(String, String),
