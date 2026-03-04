@@ -1,5 +1,5 @@
 use crate::core::error::{AppError, AppResult};
-use crate::state::{ChromeTabInfo, ChromeCookie, NetworkRequest};
+use crate::state::{ChromeTabInfo, ChromeCookie, MediaAsset, NetworkRequest};
 use chromiumoxide::browser::{Browser};
 use chromiumoxide::cdp::browser_protocol::network::{GetResponseBodyParams, SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
 use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventConsoleApiCalled};
@@ -12,12 +12,10 @@ use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
 
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
-/// Handles binary detection, instance spawning, and high-level tab management.
 pub struct BrowserManager;
 
 impl BrowserManager {
-    /// Launches the browser using specified binary and profile paths.
-    /// Includes a network-based heartbeat to monitor connection health.
+    /// Launches the browser and waits for the API to become ready.
     pub async fn launch(
         url: &str, 
         chrome_path: &str,
@@ -27,8 +25,7 @@ impl BrowserManager {
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
 
-        let chrome_path_str = chrome_path.to_string();
-        let mut command = std::process::Command::new(&chrome_path_str);
+        let mut command = std::process::Command::new(chrome_path);
         command.arg(format!("--remote-debugging-port={}", port))
             .arg(format!("--user-data-dir={}", profile_path))
             .arg("--no-first-run")
@@ -57,7 +54,7 @@ impl BrowserManager {
                 match client.get(&hb_url).send().await {
                     Ok(resp) if resp.status().is_success() => {}
                     _ => {
-                        tracing::warn!("[BROWSER -> CORE] Heartbeat lost. Reseting UI state.");
+                        tracing::warn!("[BROWSER -> CORE] Heartbeat lost.");
                         let _ = tx_clone.send(AppEvent::BrowserTerminated);
                         break;
                     }
@@ -66,14 +63,14 @@ impl BrowserManager {
             }
         });
 
+        // Increase wait time to ensure the /json endpoint is ready.
+        tokio::time::sleep(Duration::from_secs(4)).await;
         Ok(child)
     }
 
-    /// Establishes a WebSocket connection to the browser's CDP interface.
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
         let handle = tokio::spawn(async move {
             while let Some(res) = handler.next().await {
                 if res.is_err() { break; }
@@ -90,12 +87,25 @@ impl BrowserManager {
         Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::Internal("No WS URL found".into()))?.to_string())
     }
 
+    /// Lists tabs with an internal retry to handle connection delays.
     pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
         let url = format!("http://127.0.0.1:{}/json", port);
         let client = rquest::Client::new();
-        let resp = client.get(url).send().await.map_err(|e| AppError::Network(e.to_string()))?;
-        let tabs: Vec<ChromeTabInfo> = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
-        Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
+        
+        let mut last_err = None;
+        for _ in 0..5 {
+            match client.get(&url).send().await {
+                Ok(resp) => {
+                    let tabs: Vec<ChromeTabInfo> = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
+                    return Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect());
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }
+        }
+        Err(AppError::Network(format!("Failed to connect to browser API: {}", last_err.unwrap())))
     }
 
     pub async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
@@ -110,7 +120,6 @@ impl BrowserManager {
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        tracing::info!("[CORE -> BROWSER] Attaching listeners to {}", tab_id);
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -127,7 +136,6 @@ impl BrowserManager {
             loop {
                 tokio::select! {
                     Some(e) = network_events.next() => {
-                        // type_ is the field name for 'type' in chromiumoxide CDP EventRequestWillBeSent
                         let res_type = e.r#type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "Other".into());
                         let req = NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
@@ -217,11 +225,9 @@ impl BrowserManager {
         Ok(())
     }
 
-    /// CAPTURE HTML: Saves the current DOM content as a standalone HTML file.
     pub async fn capture_html(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let _url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = root.join("html_captures");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
@@ -230,20 +236,16 @@ impl BrowserManager {
         Ok(path)
     }
 
-    /// CAPTURE COMPLETE: Intended to save the page along with associated external assets.
     pub async fn capture_complete(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let _url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = root.join("complete_captures");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
-        // TODO: Implement recursive asset discovery and local path rewriting.
         Ok(final_dir)
     }
 
-    /// CAPTURE MIRROR: Generates a serialized MHTML snapshot for perfect offline viewing.
     pub async fn capture_mirror(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
@@ -271,7 +273,7 @@ impl BrowserManager {
         Ok(())
     }
 
-    /// Generates unique, readable CSS selectors for all elements on the page.
+    /// Optimized Selector Discovery: Returns clean tag.class#id[attr] style selectors.
     pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
@@ -279,11 +281,23 @@ impl BrowserManager {
             let sels = new Set(); 
             document.querySelectorAll('*').forEach(el => { 
                 let tag = el.tagName.toLowerCase();
+                if (tag === 'script' || tag === 'style' || tag === 'head' || tag === 'html') return;
+                
                 let id = el.id ? '#' + el.id : '';
-                let classes = Array.from(el.classList).map(c => '.' + c).join('');
-                if (id || classes.length > 0) {
+                let classes = Array.from(el.classList).sort().map(c => '.' + c).join('');
+                
+                // Add base selector
+                if (id || classes) {
                     sels.add(tag + classes + id);
                 }
+                
+                // Add important attributes
+                ['name', 'type', 'role', 'data-testid'].forEach(attr => {
+                    let val = el.getAttribute(attr);
+                    if (val) {
+                        sels.add(`${tag}[${attr}="${val}"]`);
+                    }
+                });
             }); 
             return Array.from(sels).sort(); 
         })()"#;
