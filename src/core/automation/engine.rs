@@ -13,9 +13,13 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::future::Future;
 
+/// ExecutionConfig: Parameters controlling the behavior of step execution.
 pub struct ExecutionConfig {
+    /// Max time allowed for a single step to complete.
     pub step_timeout: std::time::Duration,
+    /// Number of times to retry a failed step.
     pub retry_attempts: u32,
+    /// Whether to capture a screenshot when a step eventually fails.
     pub screenshot_on_error: bool,
 }
 
@@ -29,9 +33,14 @@ impl Default for ExecutionConfig {
     }
 }
 
+/// AutomationEngine: The core executor for automation pipelines.
+/// It processes DSL steps asynchronously using an abstracted driver.
 pub struct AutomationEngine {
+    /// Shared context containing variables and extracted data.
     pub context: Arc<Mutex<AutomationContext>>,
+    /// Current execution configuration.
     pub config: ExecutionConfig,
+    /// Registry of reusable functions defined in the script.
     pub functions: HashMap<String, Vec<Step>>,
 }
 
@@ -44,7 +53,9 @@ impl AutomationEngine {
         }
     }
 
+    /// Entry point for running an automation pipeline.
     pub async fn run(&mut self, dsl: AutomationDsl) -> AppResult<()> {
+        // Load function definitions into the engine registry.
         self.functions = dsl.functions.clone();
         
         let (port, tid, _output_dir) = {
@@ -54,16 +65,22 @@ impl AutomationEngine {
 
         tracing::info!("[ENGINE] Pipeline started. DSL Version: {}, Functions: {}, Steps: {}", dsl.dsl_version, dsl.functions.len(), dsl.steps.len());
         
+        // Establish connection to the browser instance.
         let ws_url = crate::core::browser::BrowserManager::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        // Monitor the CDP connection in the background.
         let _handler_job = tokio::spawn(async move { while let Some(_) = handler.next().await {} });
         
+        // Locate the target tab within the connected instance.
         let page = crate::core::browser::BrowserManager::find_tab(&browser, &tid).await?;
         let _ = page.execute(chromiumoxide::cdp::browser_protocol::page::EnableParams::default()).await;
         
+        // Initialize the CDP-based driver abstraction.
         let driver = Box::new(CdpDriver::new(page));
         let steps = dsl.steps.clone();
 
+        // Start recursive step execution.
         let result = self.execute_steps_recursive(&steps, driver.as_ref()).await;
         
         match &result {
@@ -73,6 +90,8 @@ impl AutomationEngine {
         result
     }
 
+    /// Recursively executes a list of steps, handling loops, conditionals, and dataset imports.
+    /// Returns a Pinned Boxed Future to allow safe async recursion.
     fn execute_steps_recursive<'a>(&'a self, steps: &'a [Step], driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let (tid, output_dir) = {
@@ -81,6 +100,7 @@ impl AutomationEngine {
             };
 
             for (idx, step) in steps.iter().enumerate() {
+                // SPECIAL CASE: ImportDataset triggers a data-driven loop.
                 if let Step::ImportDataset { filename } = step {
                     let final_path = self.interpolate(filename);
                     tracing::info!("[ENGINE] Importing dataset from: {}", final_path);
@@ -92,16 +112,17 @@ impl AutomationEngine {
                         tracing::info!("[ENGINE] Processing Row {}/{}", row_idx + 1, row_idx + 1);
                         {
                             let mut ctx = self.context.lock().unwrap();
-                            ctx.push_scope();
+                            ctx.push_scope(); // Create a new scope for the current row.
                             for (k, v) in &row { ctx.set_variable(k.clone(), v.clone()); }
                         }
+                        // Execute all subsequent steps for each row in the dataset.
                         self.execute_steps_recursive(remaining_steps, driver).await?;
                         {
                             let mut ctx = self.context.lock().unwrap();
-                            ctx.pop_scope();
+                            ctx.pop_scope(); // Cleanup scope after row processing.
                         }
                     }
-                    return Ok(());
+                    return Ok(()); // Pipeline continues through the data loop.
                 }
 
                 let _start_time = Instant::now();
@@ -115,6 +136,7 @@ impl AutomationEngine {
                 let max_attempts = self.config.retry_attempts + 1;
                 let mut last_error = None;
 
+                // RETRY LOOP: Attempts to execute the step multiple times if configured.
                 while attempts < max_attempts {
                     tracing::info!("[ENGINE][Step {}] Executing: {:?}", idx + 1, step);
                     match self.execute_step_internal(step, driver).await {
@@ -128,12 +150,14 @@ impl AutomationEngine {
                             tracing::warn!("[ENGINE][Step {}] Attempt {} failed: {}", idx + 1, attempts, e);
                             last_error = Some(e);
                             if attempts < max_attempts {
+                                // Exponential backoff for retries.
                                 tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64)).await;
                             }
                         }
                     }
                 }
 
+                // If all attempts failed, handle the terminal error.
                 if let Some(e) = last_error {
                     if self.config.screenshot_on_error {
                         if let Ok(data) = driver.screenshot().await {
@@ -150,6 +174,7 @@ impl AutomationEngine {
         })
     }
 
+    /// Loads and parses a dataset file (CSV or JSON).
     fn load_dataset(&self, path: &str) -> AppResult<Vec<HashMap<String, String>>> {
         let content = std::fs::read_to_string(path).map_err(|e| AppError::Internal(format!("Dataset read error: {}", e)))?;
         if path.ends_with(".csv") {
@@ -175,6 +200,7 @@ impl AutomationEngine {
         }
     }
 
+    /// Interpolates variables in a string using {{variable_name}} syntax.
     fn interpolate(&self, text: &str) -> String {
         let ctx = self.context.lock().unwrap();
         let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
@@ -186,12 +212,13 @@ impl AutomationEngine {
                 tracing::debug!("[ENGINE] Resolving variable: {} -> {}", var_name, val);
                 final_result = final_result.replace(full_match, &val);
             } else {
-                tracing::warn!("[ENGINE] Variable not found: {}", var_name);
+                tracing::warn!("[ENGINE] Variable not found in scope: {}", var_name);
             }
         }
         final_result
     }
 
+    /// Executes a single atomic DSL step using the driver.
     fn execute_step_internal<'a>(&'a self, step: &'a Step, driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let (_tid, output_dir) = { 

@@ -2,26 +2,34 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-/// Application configuration stored in state instead of .env
+/// AppConfig: Holds global system settings.
+/// Values are initialized with defaults and can be modified via the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// Root directory where all captures, logs, and datasets are saved.
     pub output_dir: PathBuf,
+    /// Absolute path to the Chrome/Chromium executable.
     pub chrome_binary_path: String,
+    /// Absolute path to the user data directory for the browser instance.
     pub chrome_profile_path: String,
+    /// The port used for Remote Debugging (CDP) communication.
     pub remote_debug_port: u16,
+    /// The URL the browser opens when launched.
     pub default_launch_url: String,
+    /// Optional API key for AI-powered features (e.g., Translate).
     pub gemini_api_key: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
+        // Platform-agnostic default output path: ~/SniperOutput
         let mut output = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         output.push("SniperOutput");
 
         Self {
             output_dir: output,
-            chrome_binary_path: String::new(), // Will be detected on startup
-            chrome_profile_path: String::new(), // Will be detected on startup
+            chrome_binary_path: String::new(),
+            chrome_profile_path: String::new(),
             remote_debug_port: 9222,
             default_launch_url: "https://www.google.com".to_string(),
             gemini_api_key: String::new(),
@@ -29,7 +37,7 @@ impl Default for AppConfig {
     }
 }
 
-/// Navigation tabs
+/// Tab: Represents the different primary views in the main UI.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Tab {
     Scrape,
@@ -42,7 +50,7 @@ pub enum Tab {
     Logs,
 }
 
-/// System log entry
+/// LogEntry: A structured system log message displayed in the UI and saved to disk.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LogEntry {
     pub timestamp: String,
@@ -50,15 +58,18 @@ pub struct LogEntry {
     pub message: String,
 }
 
+/// AutomationStatus: Tracks the execution state of the automation engine for a specific tab.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum AutomationStatus {
     Idle,
+    /// Currently executing step at index X.
     Running(usize),
     Finished,
     Error(String),
 }
 
-/// Automation Steps
+/// AutomationStep: Symmetric with UI blocks and DSL steps.
+/// Used to build and serialize automation pipelines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AutomationStep {
     Navigate(String),
@@ -83,7 +94,7 @@ pub enum AutomationStep {
     ImportDataset(String),
 }
 
-/// Automation Configuration
+/// AutomationConfig: Global execution rules for automation pipelines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationConfig {
     pub retry_attempts: u32,
@@ -101,6 +112,7 @@ impl Default for AutomationConfig {
     }
 }
 
+/// ChromeTabInfo: Metadata about an active browser tab retrieved via /json.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChromeTabInfo {
     pub id: String,
@@ -110,6 +122,7 @@ pub struct ChromeTabInfo {
     pub tab_type: String,
 }
 
+/// ChromeCookie: Representation of a browser cookie for the Cookie Manager.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ChromeCookie {
     pub name: String,
@@ -121,6 +134,7 @@ pub struct ChromeCookie {
     pub http_only: bool,
 }
 
+/// MediaAsset: A sniffed resource (image, css, script, etc.) with optional binary data.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MediaAsset {
     pub name: String,
@@ -130,6 +144,7 @@ pub struct MediaAsset {
     pub data: Option<Vec<u8>>,
 }
 
+/// NetworkRequest: Represents an intercepted HTTP request/response.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct NetworkRequest {
     pub request_id: String,
@@ -141,14 +156,17 @@ pub struct NetworkRequest {
     pub response_body: Option<String>,
 }
 
-/// Independent workspace for a specific browser tab.
+/// TabWorkspace: Independent state container for every tracked browser tab.
+/// Implements MDI (Multi-Document Interface) logic.
 pub struct TabWorkspace {
     pub title: String,
+    // Visibility flags for sub-windows
     pub show_network: bool,
     pub show_media: bool,
     pub show_storage: bool,
     pub show_automation: bool,
     pub show_console: bool,
+    // Data collections
     pub network_requests: Vec<NetworkRequest>,
     pub network_type_filter: HashSet<String>,
     pub media_assets: Vec<MediaAsset>,
@@ -157,14 +175,17 @@ pub struct TabWorkspace {
     pub cookies: Vec<ChromeCookie>,
     pub cookie_edit_buffer: ChromeCookie,
     pub show_cookie_modal: bool,
+    // Automation state
     pub auto_steps: Vec<AutomationStep>,
     pub auto_functions: HashMap<String, Vec<AutomationStep>>,
     pub active_fn_editor: Option<String>,
     pub auto_status: AutomationStatus,
     pub auto_config: AutomationConfig,
+    // Intelligent discovery
     pub discovered_selectors: Vec<String>,
     pub variables: HashMap<String, String>,
     pub extracted_data: Vec<HashMap<String, String>>,
+    // UI temporary buffers
     pub var_edit_key: String,
     pub var_edit_val: String,
     pub js_script: String,
@@ -241,19 +262,21 @@ pub struct Notification {
     pub message: String,
 }
 
-/// Unified Application State
+/// AppState: The root state object for the entire application.
 pub struct AppState {
     pub active_tab: Tab,
     pub config: AppConfig,
     pub is_browser_running: bool,
     pub available_tabs: Vec<ChromeTabInfo>,
     pub selected_tab_id: Option<String>,
+    /// Map of TabID -> TabWorkspace.
     pub workspaces: HashMap<String, TabWorkspace>,
     pub logs: Vec<LogEntry>,
     pub session_timestamp: String,
     pub notification: Option<Notification>,
     pub last_tab_refresh: f64,
     pub is_translating: bool,
+    // Setup wizard flags
     pub output_confirmed: bool,
     pub profile_confirmed: bool,
     pub use_custom_profile: bool,
@@ -279,6 +302,7 @@ impl AppState {
         }
     }
 
+    /// Triggers a toast-style notification in the UI.
     pub fn notify(&mut self, title: &str, message: &str, _is_error: bool) {
         self.notification = Some(Notification {
             title: title.to_string(),

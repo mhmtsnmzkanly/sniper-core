@@ -80,6 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Sniper Studio",
         options,
         Box::new(|cc| {
+            // Install image loaders for egui_extras
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(CrawlerApp::new(cc, state, log_receiver, event_receiver)))
         }),

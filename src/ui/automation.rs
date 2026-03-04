@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     if !state.workspaces.contains_key(tid) { return; }
     
-    let (mut auto_steps, mut auto_functions, mut active_fn_editor, mut auto_status, discovered_selectors, mut selector_search, mut variables, mut var_key, mut var_val, extracted_data) = {
+    let (mut auto_steps, mut auto_functions, mut active_fn_editor, auto_status, discovered_selectors, mut selector_search, mut variables, mut var_key, mut var_val, extracted_data) = {
         let ws = state.workspaces.get(tid).unwrap();
         (ws.auto_steps.clone(), ws.auto_functions.clone(), ws.active_fn_editor.clone(), ws.auto_status.clone(), ws.discovered_selectors.clone(), ws.selector_search.clone(), ws.variables.clone(), ws.var_edit_key.clone(), ws.var_edit_val.clone(), ws.extracted_data.clone())
     };

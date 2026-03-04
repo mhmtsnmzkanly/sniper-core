@@ -1,5 +1,5 @@
 use crate::core::error::{AppError, AppResult};
-use crate::state::{ChromeTabInfo, ChromeCookie, MediaAsset, NetworkRequest};
+use crate::state::{ChromeTabInfo, ChromeCookie, NetworkRequest};
 use chromiumoxide::browser::{Browser};
 use chromiumoxide::cdp::browser_protocol::network::{GetResponseBodyParams, SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
 use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventConsoleApiCalled};
@@ -12,10 +12,12 @@ use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
 
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
+/// Handles binary detection, instance spawning, and high-level tab management.
 pub struct BrowserManager;
 
 impl BrowserManager {
-    /// Launches the browser using specified paths.
+    /// Launches the browser using specified binary and profile paths.
+    /// Includes a network-based heartbeat to monitor connection health.
     pub async fn launch(
         url: &str, 
         chrome_path: &str,
@@ -23,9 +25,10 @@ impl BrowserManager {
         port: u16, 
         tx: mpsc::UnboundedSender<AppEvent>
     ) -> AppResult<std::process::Child> {
-        tracing::info!("[CORE -> BROWSER] Launching {} on port {}", chrome_path, port);
+        tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
 
-        let mut command = std::process::Command::new(chrome_path);
+        let chrome_path_str = chrome_path.to_string();
+        let mut command = std::process::Command::new(&chrome_path_str);
         command.arg(format!("--remote-debugging-port={}", port))
             .arg(format!("--user-data-dir={}", profile_path))
             .arg("--no-first-run")
@@ -34,17 +37,19 @@ impl BrowserManager {
 
         #[cfg(target_os = "linux")]
         {
-            command.arg("--no-sandbox").arg("--disable-setuid-sandbox").arg("--disable-dev-shm-usage");
+            command.arg("--no-sandbox")
+                   .arg("--disable-setuid-sandbox")
+                   .arg("--disable-dev-shm-usage");
         }
 
         let child = command.arg(url).spawn().map_err(|e| {
-            tracing::error!("[CORE -> BROWSER] Failed to spawn: {}", e);
+            tracing::error!("[CORE -> BROWSER] Process spawn failed: {}", e);
             AppError::Io(e)
         })?;
 
-        // HEARTBEAT
         let tx_clone = tx.clone();
         let hb_url = format!("http://127.0.0.1:{}/json/version", port);
+        
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await; 
             let client = rquest::Client::new();
@@ -52,6 +57,7 @@ impl BrowserManager {
                 match client.get(&hb_url).send().await {
                     Ok(resp) if resp.status().is_success() => {}
                     _ => {
+                        tracing::warn!("[BROWSER -> CORE] Heartbeat lost. Reseting UI state.");
                         let _ = tx_clone.send(AppEvent::BrowserTerminated);
                         break;
                     }
@@ -63,9 +69,11 @@ impl BrowserManager {
         Ok(child)
     }
 
+    /// Establishes a WebSocket connection to the browser's CDP interface.
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
         let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
         let handle = tokio::spawn(async move {
             while let Some(res) = handler.next().await {
                 if res.is_err() { break; }
@@ -79,7 +87,7 @@ impl BrowserManager {
         let client = rquest::Client::new();
         let resp = client.get(url).send().await.map_err(|e| AppError::Network(e.to_string()))?;
         let json: serde_json::Value = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
-        Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::Internal("No WS URL".into()))?.to_string())
+        Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::Internal("No WS URL found".into()))?.to_string())
     }
 
     pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
@@ -91,17 +99,18 @@ impl BrowserManager {
     }
 
     pub async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
-        for _ in 0..15 {
+        for _attempt in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
             for page in &pages {
                 if page.target_id().as_ref() == tab_id { return Ok(page.clone()); }
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-        Err(AppError::NotFound(format!("Tab {} not found", tab_id)))
+        Err(AppError::NotFound(format!("Tab {} not found.", tab_id)))
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
+        tracing::info!("[CORE -> BROWSER] Attaching listeners to {}", tab_id);
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -118,11 +127,13 @@ impl BrowserManager {
             loop {
                 tokio::select! {
                     Some(e) = network_events.next() => {
+                        // type_ is the field name for 'type' in chromiumoxide CDP EventRequestWillBeSent
+                        let res_type = e.r#type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "Other".into());
                         let req = NetworkRequest {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
                             method: e.request.method.clone(),
-                            resource_type: "Other".into(),
+                            resource_type: res_type,
                             status: None, request_body: None, response_body: None,
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
@@ -206,10 +217,11 @@ impl BrowserManager {
         Ok(())
     }
 
+    /// CAPTURE HTML: Saves the current DOM content as a standalone HTML file.
     pub async fn capture_html(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let _url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = root.join("html_captures");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
@@ -218,17 +230,20 @@ impl BrowserManager {
         Ok(path)
     }
 
+    /// CAPTURE COMPLETE: Intended to save the page along with associated external assets.
     pub async fn capture_complete(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let _url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = root.join("complete_captures");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
+        // TODO: Implement recursive asset discovery and local path rewriting.
         Ok(final_dir)
     }
 
+    /// CAPTURE MIRROR: Generates a serialized MHTML snapshot for perfect offline viewing.
     pub async fn capture_mirror(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
@@ -256,10 +271,10 @@ impl BrowserManager {
         Ok(())
     }
 
+    /// Generates unique, readable CSS selectors for all elements on the page.
     pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        // Improved selector script: Returns cleanElementName.class#ID style
         let script = r#"(() => { 
             let sels = new Set(); 
             document.querySelectorAll('*').forEach(el => { 

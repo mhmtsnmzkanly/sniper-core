@@ -5,10 +5,16 @@ use eframe::egui;
 use egui::{Color32, RichText};
 use std::sync::{Arc, Mutex};
 
+/// CrawlerApp: The main application entry point for the UI thread.
+/// It orchestrates the global state, processes events from background tasks, and renders the GUI.
 pub struct CrawlerApp {
+    /// Unified application state.
     pub state: AppState,
+    /// Receives system logs from the logging bridge.
     pub log_receiver: tokio::sync::mpsc::UnboundedReceiver<LogEntry>,
+    /// Receives command results and system events from background threads.
     pub event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    /// Thread-safe handle to the active browser process.
     pub browser_process: Arc<Mutex<Option<std::process::Child>>>,
 }
 
@@ -22,6 +28,8 @@ impl CrawlerApp {
         Self { state, log_receiver, event_receiver, browser_process: Arc::new(Mutex::new(None)) }
     }
 
+    /// Ensures a workspace exists for the given tab ID.
+    /// Lazy-initializes the workspace if it's the first time seeing this tab.
     fn ensure_workspace(&mut self, tid: &str) -> &mut crate::state::TabWorkspace {
         if !self.state.workspaces.contains_key(tid) {
             let title = self.state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "New Tab".into());
@@ -32,6 +40,7 @@ impl CrawlerApp {
     }
 }
 
+/// Helper to map high-level UI automation steps into low-level engine DSL variants.
 fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation::dsl::Step> {
     steps.iter().map(|s| match s {
         AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
@@ -58,13 +67,34 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
 }
 
 impl eframe::App for CrawlerApp {
+    /// The GUI update loop. Called ~60 times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 1. Drain the log queue and update the system logs list.
         while let Ok(log) = self.log_receiver.try_recv() {
             self.state.logs.push(log);
             if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
         }
 
+        // 2. GLOBAL EVENT DISPATCHER: Process all incoming events and route them to state or core.
         while let Ok(event) = self.event_receiver.try_recv() {
+            tracing::debug!("[EVENT] Dispatching: {:?}", event);
+
+            // Command Guard: Block browser commands if instance is down.
+            if !self.state.is_browser_running {
+                match &event {
+                    AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
+                    AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
+                    AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestTabRefresh => {
+                        let msg = "Action Denied: Browser instance is not active.";
+                        self.state.notify("Denied", msg, true);
+                        tracing::warn!("[APP] {}", msg);
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             match event {
                 AppEvent::RequestLogPathSet(path) => {
                     tracing::info!("[APP -> CORE] Output path confirmed: {:?}", path);
@@ -98,7 +128,7 @@ impl eframe::App for CrawlerApp {
                 AppEvent::ConsoleLogAdded(tid, msg) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.console_logs.push(msg.clone());
-                    // AUDIT: Mirror browser console to Sniper logs
+                    // AUDIT MIRROR: Copy browser console output to Sniper logs.
                     tracing::info!("[BROWSER-CONSOLE][{}] {}", tid, msg);
                 }
                 AppEvent::SelectorsReceived(tid, sels) => {
@@ -311,6 +341,7 @@ impl eframe::App for CrawlerApp {
             });
         });
 
+        // Setup Modals
         if !self.state.output_confirmed {
             egui::Window::new("Sniper Studio - Initial Setup").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false).resizable(false).show(ctx, |ui| {
@@ -345,6 +376,7 @@ impl eframe::App for CrawlerApp {
             return;
         }
 
+        // Main Panel Dispatcher
         egui::CentralPanel::default().show(ctx, |ui| match self.state.active_tab {
             Tab::Scrape => ui::scrape::render(ui, &mut self.state),
             Tab::Settings => ui::config_panel::render(ui, &mut self.state),
@@ -352,6 +384,8 @@ impl eframe::App for CrawlerApp {
             _ => { ui.label("Panel not implemented."); }
         });
 
+        // --- MDI WORKSPACE WINDOWS ---
+        // Decouple workspace info from mut borrow of self.state.workspaces
         let active_workspaces: Vec<(String, String, bool, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
             (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation, ws.show_console)
         }).collect();
@@ -418,6 +452,7 @@ impl eframe::App for CrawlerApp {
             }
         }
 
+        // Notification Overlay
         if let Some(notif) = &self.state.notification {
             let mut open = true;
             egui::Window::new(&notif.title).open(&mut open).anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
