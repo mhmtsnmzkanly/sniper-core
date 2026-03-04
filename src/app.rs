@@ -133,6 +133,9 @@ impl eframe::App for CrawlerApp {
                     self.state.selected_tab_id = None;
                     for ws in self.state.workspaces.values_mut() {
                         ws.sniffer_active = false;
+                        if let Some(token) = ws.sniffer_token.take() {
+                            token.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     self.state.notify("System", "Browser disconnected.", true);
                     tracing::warn!("[BROWSER -> APP] Remote instance heartbeat lost.");
@@ -146,6 +149,9 @@ impl eframe::App for CrawlerApp {
                     self.state.selected_tab_id = None;
                     for ws in self.state.workspaces.values_mut() {
                         ws.sniffer_active = false;
+                        if let Some(token) = ws.sniffer_token.take() {
+                            token.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     tracing::info!("[UI -> CORE] User terminated browser instance.");
                 }
@@ -302,20 +308,26 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::RequestNetworkToggle(tid, active) => {
                     // KOD NOTU: Aynı tab için listener'ı sadece bir kez başlatıyoruz (duplicate spawn engeli).
+                    // Sniffer kapatıldığında gerçek bir stop signal (AtomicBool) gönderilir.
                     if !active {
                         if let Some(ws) = self.state.workspaces.get_mut(&tid) {
                             ws.sniffer_active = false;
+                            if let Some(token) = ws.sniffer_token.take() {
+                                token.store(false, std::sync::atomic::Ordering::Relaxed);
+                            }
                         }
                         continue;
                     }
 
-                    let should_start = {
+                    let (should_start, token) = {
                         let ws = self.ensure_workspace(&tid);
                         if ws.sniffer_active {
-                            false
+                            (false, None)
                         } else {
                             ws.sniffer_active = true;
-                            true
+                            let token = Arc::new(std::sync::atomic::AtomicBool::new(true));
+                            ws.sniffer_token = Some(token.clone());
+                            (true, Some(token))
                         }
                     };
 
@@ -327,7 +339,7 @@ impl eframe::App for CrawlerApp {
                     tracing::info!("[UI -> CORE] Activating listeners for tab {}", tid);
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::setup_tab_listeners(port, tid).await {
+                        if let Err(e) = crate::core::browser::BrowserManager::setup_tab_listeners(port, tid, token.unwrap()).await {
                             crate::ui::scrape::emit(AppEvent::OperationError(format!("Setup failed: {}", e)));
                         }
                     });

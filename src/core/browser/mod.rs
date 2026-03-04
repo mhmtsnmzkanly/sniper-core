@@ -10,6 +10,8 @@ use base64::prelude::*;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
 pub struct BrowserManager;
@@ -148,7 +150,7 @@ impl BrowserManager {
         Err(AppError::NotFound(format!("Tab {} not found.", tab_id)))
     }
 
-    pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
+    pub async fn setup_tab_listeners(port: u16, tab_id: String, active: Arc<AtomicBool>) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         
@@ -163,7 +165,16 @@ impl BrowserManager {
         tokio::spawn(async move {
             let mut pending_responses: HashMap<String, (String, String)> = HashMap::new();
             loop {
+                // KOD NOTU: Listener artık gerçek bir stop/cancel yapabiliyor.
+                // Her loop başında 'active' flag'i kontrol edilir.
+                if !active.load(Ordering::Relaxed) {
+                    tracing::info!("[BROWSER -> CORE] Listener stop signal received for tab {}", tid_inner);
+                    break;
+                }
+
                 tokio::select! {
+                    // Check activity periodically even if no events
+                    _ = tokio::time::sleep(Duration::from_millis(500)) => {{ continue; }}
                     Some(e) = network_events.next() => {
                         let res_type = e.r#type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "Other".into());
                         let req = NetworkRequest {
@@ -260,7 +271,11 @@ impl BrowserManager {
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let final_dir = root.join("html_captures");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
-        let path = final_dir.join("index.html");
+        
+        // KOD NOTU: Her capture için timestamp eklenerek önceki dosyaların üzerine yazılması engellenmiştir.
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let path = final_dir.join(format!("capture_{}.html", ts));
+        
         std::fs::write(&path, html).map_err(AppError::Io)?;
         Ok(path)
     }
@@ -269,7 +284,11 @@ impl BrowserManager {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let final_dir = root.join("complete_captures");
+        
+        // KOD NOTU: Her capture için ayrı bir klasör (timestamp ile) oluşturulur.
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let final_dir = root.join("complete_captures").join(format!("complete_{}", ts));
+        
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
         Ok(final_dir)
@@ -281,7 +300,11 @@ impl BrowserManager {
         let final_dir = root.join("mirrors");
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let path = final_dir.join("snapshot.mhtml");
+        
+        // KOD NOTU: MHTML snapshot dosyasına timestamp eklenmiştir.
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let path = final_dir.join(format!("snapshot_{}.mhtml", ts));
+        
         std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
         Ok(path)
     }

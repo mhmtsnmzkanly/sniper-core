@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// AppConfig: Holds global system settings.
 /// Values are initialized with defaults and can be modified via the UI.
@@ -206,6 +208,7 @@ pub struct TabWorkspace {
     pub active_media_url: Option<String>,
     pub selector_search: String,
     pub blocked_urls: HashSet<String>,
+    pub sniffer_token: Option<Arc<AtomicBool>>,
 }
 
 impl TabWorkspace {
@@ -253,6 +256,7 @@ impl TabWorkspace {
             active_media_url: None,
             selector_search: String::new(),
             blocked_urls: HashSet::new(),
+            sniffer_token: None,
         }
     }
 }
