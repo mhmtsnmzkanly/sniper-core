@@ -10,6 +10,25 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("🗑 CLEAR").clicked() { state.logs.clear(); }
+                
+                // KOD NOTU: Mevcut logları kullanıcı tarafından seçilen bir dosyaya kaydeder.
+                if ui.button("💾 EXPORT").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_title("Export System Logs")
+                        .add_filter("Log Files", &["txt", "log"])
+                        .set_file_name("sniper_logs.txt")
+                        .save_file() {
+                        let content = state.logs.iter()
+                            .map(|l| format!("[{}] [{}] {}", l.timestamp, l.level, l.message))
+                            .collect::<Vec<_>>().join("\n");
+                        if let Err(e) = std::fs::write(&path, content) {
+                            tracing::error!("[UI -> LOG] Failed to export logs to {:?}: {}", path, e);
+                        } else {
+                            tracing::info!("[UI -> LOG] Logs successfully exported to {:?}", path);
+                        }
+                    }
+                }
+
                 if ui.button("📋 COPY ALL").clicked() {
                     let all = state.logs.iter()
                         .map(|l| format!("[{}] [{}] {}", l.timestamp, l.level, l.message))
