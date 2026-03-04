@@ -364,6 +364,43 @@ impl eframe::App for CrawlerApp {
             _ => { ui.label("Panel not implemented."); }
         });
 
+        // --- MDI WORKSPACE WINDOWS ---
+        // Collect info to avoid borrow conflicts
+        let active_workspaces: Vec<(String, String, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
+            (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation)
+        }).collect();
+
+        for (tid, title, show_net, show_med, show_stor, show_auto) in active_workspaces {
+            if show_net {
+                let mut open = true;
+                egui::Window::new(format!("Network - {}", title)).open(&mut open).id(egui::Id::new(format!("net_{}", tid))).show(ctx, |ui| {
+                    ui::network_panel::render(ui, &mut self.state);
+                });
+                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = false; } }
+            }
+            if show_med {
+                let mut open = true;
+                egui::Window::new(format!("Media - {}", title)).open(&mut open).id(egui::Id::new(format!("med_{}", tid))).show(ctx, |ui| {
+                    ui::media_panel::render(ui, &mut self.state);
+                });
+                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = false; } }
+            }
+            if show_stor {
+                let mut open = true;
+                egui::Window::new(format!("Cookies - {}", title)).open(&mut open).id(egui::Id::new(format!("stor_{}", tid))).show(ctx, |ui| {
+                    ui::storage_panel::render(ui, &mut self.state);
+                });
+                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = false; } }
+            }
+            if show_auto {
+                let mut open = true;
+                egui::Window::new(format!("Automation - {}", title)).open(&mut open).id(egui::Id::new(format!("auto_{}", tid))).resizable(true).show(ctx, |ui| {
+                    ui::automation::render_embedded(ui, &mut self.state, &tid);
+                });
+                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_automation = false; } }
+            }
+        }
+
         // NOTIFICATION OVERLAY
         if let Some(notif) = &self.state.notification {
             let mut open = true;
