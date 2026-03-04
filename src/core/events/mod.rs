@@ -11,7 +11,7 @@ pub enum AppEvent {
     ConsoleLogAdded(String, String),
     
     // --- COMMAND EVENTS ---
-    RequestCapture(String, bool, bool), // tab_id, mirror_mode, asset_folder_mode
+    RequestCapture(String, String, bool), // tab_id, mode (html/complete/mirror), unused_bool
     RequestScriptExecution(String, String),
     RequestNetworkToggle(String, bool),
     RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),

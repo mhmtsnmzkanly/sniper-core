@@ -269,16 +269,26 @@ impl eframe::App for CrawlerApp {
                         let _ = crate::core::browser::BrowserManager::set_url_blocking(port, tid, blocked).await;
                     });
                 }
-                AppEvent::RequestCapture(tid, mirror, assets) => {
+                AppEvent::RequestCapture(tid, mode, _) => {
                     let port = self.state.config.remote_debug_port;
                     let root = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::capture_html(port, tid, root, mirror, assets).await {
-                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured: {:?}", path))),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture Error: {}", e))),
+                        let res = match mode.as_str() {
+                            "html" => crate::core::browser::BrowserManager::capture_html(port, tid, root).await,
+                            "complete" => crate::core::browser::BrowserManager::capture_complete(port, tid, root).await,
+                            "mirror" => crate::core::browser::BrowserManager::capture_mirror(port, tid, root).await,
+                            _ => Err(crate::core::error::AppError::Internal("Unknown capture mode".into())),
+                        };
+                        match res {
+                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured ({}): {:?}", mode, path))),
+                            Err(e) => {
+                                tracing::error!("[OP] Capture Error: {}", e);
+                                crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture Error: {}", e)));
+                            }
                         }
                     });
                 }
+
                 AppEvent::RequestAutomationRun(tid, steps, funcs, auto_config) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();

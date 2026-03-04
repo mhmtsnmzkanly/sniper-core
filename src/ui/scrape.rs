@@ -139,19 +139,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.vertical(|ui| {
             ui.columns(4, |cols| {
                 let btn_h = 45.0;
-                if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE HTML").strong())
+                if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("📄 CAPTURE HTML").strong())
                     .min_size([cols[0].available_width(), btn_h].into())).clicked() {
-                    emit(AppEvent::RequestCapture(tid.clone(), false, false));
+                    emit(AppEvent::RequestCapture(tid.clone(), "html".into(), false));
                 }
-                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE MIRROR").strong().color(Color32::GOLD))
+                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("📦 CAPTURE COMPLETE").strong().color(Color32::LIGHT_BLUE))
                     .min_size([cols[1].available_width(), btn_h].into())).clicked() {
-                    emit(AppEvent::RequestCapture(tid.clone(), true, false));
+                    emit(AppEvent::RequestCapture(tid.clone(), "complete".into(), false));
                 }
-                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("CAPTURE COMPLETE").strong().color(Color32::LIGHT_BLUE))
+                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🪞 CAPTURE MIRROR").strong().color(Color32::GOLD))
                     .min_size([cols[2].available_width(), btn_h].into())).clicked() {
-                    emit(AppEvent::RequestCapture(tid.clone(), false, true));
+                    emit(AppEvent::RequestCapture(tid.clone(), "mirror".into(), false));
                 }
-                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
+                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("🤖 AUTOMATION").strong().color(Color32::from_rgb(0, 255, 128)))
                     .min_size([cols[3].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
@@ -163,25 +163,27 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
             ui.columns(4, |cols| {
                 let btn_h = 45.0;
-                if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("NETWORK").strong()).min_size([cols[0].available_width(), btn_h].into())).clicked() {
+                if cols[0].add_enabled(can_action, egui::Button::new(RichText::new("🌐 NETWORK").strong()).min_size([cols[0].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_network = true;
+                    ws.sniffer_active = true;
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
-                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("MEDIA").strong()).min_size([cols[1].available_width(), btn_h].into())).clicked() {
+                if cols[1].add_enabled(can_action, egui::Button::new(RichText::new("🖼 MEDIA").strong()).min_size([cols[1].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_media = true;
+                    ws.sniffer_active = true;
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
-                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("COOKIE").strong().color(Color32::from_rgb(255, 180, 0))).min_size([cols[2].available_width(), btn_h].into())).clicked() {
+                if cols[2].add_enabled(can_action, egui::Button::new(RichText::new("🍪 COOKIE").strong().color(Color32::from_rgb(255, 180, 0))).min_size([cols[2].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.show_storage = true;
                     emit(AppEvent::RequestCookies(tid.clone()));
                 }
-                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("CONSOLE").strong().color(Color32::LIGHT_BLUE)).min_size([cols[3].available_width(), btn_h].into())).clicked() {
+                if cols[3].add_enabled(can_action, egui::Button::new(RichText::new("💻 CONSOLE").strong().color(Color32::LIGHT_BLUE)).min_size([cols[3].available_width(), btn_h].into())).clicked() {
                     let title = state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "Tab".into());
                     let ws = state.workspaces.entry(tid.clone()).or_insert_with(|| crate::state::TabWorkspace::new(tid.clone(), title));
                     ws.sniffer_active = true; 

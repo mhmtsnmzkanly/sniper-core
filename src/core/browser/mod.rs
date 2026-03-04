@@ -140,26 +140,17 @@ impl BrowserManager {
     }
 
     async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
-        // Retry loop to allow chromiumoxide handler to discover existing targets
-        for attempt in 0..10 {
+        for attempt in 0..15 {
             let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
             for page in &pages {
                 if page.target_id().as_ref() == tab_id {
                     return Ok(page.clone());
                 }
             }
-            
-            if attempt > 0 {
-                tracing::debug!("[BROWSER] Attempt {} to find tab {}...", attempt + 1, tab_id);
-            }
-            tokio::time::sleep(Duration::from_millis(150)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
-
-        // If still not found, list all available for debugging
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let available_ids: Vec<_> = pages.iter().map(|p| p.target_id().as_ref()).collect();
-        tracing::error!("[BROWSER] Tab {} not found. Available pages: {:?}", tab_id, available_ids);
-        
         Err(AppError::NotFound(format!("Page not found: {}. Available: {:?}", tab_id, available_ids)))
     }
 
@@ -257,13 +248,8 @@ impl BrowserManager {
         let page = Self::find_tab(&browser, &tab_id).await?;
         let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(cookies.into_iter().map(|c| ChromeCookie {
-            name: c.name.clone(),
-            value: c.value.clone(),
-            domain: c.domain.clone(),
-            path: c.path.clone(),
-            expires: c.expires,
-            secure: c.secure,
-            http_only: c.http_only,
+            name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(),
+            expires: c.expires, secure: c.secure, http_only: c.http_only,
         }).collect())
     }
 
@@ -278,19 +264,10 @@ impl BrowserManager {
     pub async fn add_cookie(port: u16, tab_id: String, cookie: ChromeCookie) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let mut builder = SetCookieParams::builder()
-            .name(cookie.name)
-            .value(cookie.value)
-            .domain(cookie.domain)
-            .path(cookie.path)
-            .secure(cookie.secure)
-            .http_only(cookie.http_only);
-        
+        let mut builder = SetCookieParams::builder().name(cookie.name).value(cookie.value).domain(cookie.domain).path(cookie.path).secure(cookie.secure).http_only(cookie.http_only);
         if cookie.expires > 0.0 {
             let expires_json = serde_json::to_value(cookie.expires).unwrap_or_default();
-            if let Ok(ts) = serde_json::from_value::<chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch>(expires_json) {
-                builder = builder.expires(ts);
-            }
+            if let Ok(ts) = serde_json::from_value::<chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch>(expires_json) { builder = builder.expires(ts); }
         }
         let cmd = builder.build().map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -300,37 +277,44 @@ impl BrowserManager {
     pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let script = r#"
-            (() => {
-                let sels = new Set();
-                document.querySelectorAll('*').forEach(el => {
-                    if (el.id) sels.add('#' + el.id);
-                    el.classList.forEach(c => sels.add('.' + c));
-                    Array.from(el.attributes).forEach(attr => {
-                        if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') {
-                            sels.add(`[${attr.name}="${attr.value}"]`);
-                        }
-                    });
-                });
-                return Array.from(sels).sort();
-            })()
-        "#;
+        let script = r#"(() => { let sels = new Set(); document.querySelectorAll('*').forEach(el => { if (el.id) sels.add('#' + el.id); el.classList.forEach(c => sels.add('.' + c)); Array.from(el.attributes).forEach(attr => { if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') { sels.add(`[${attr.name}="${attr.value}"]`); } }); }); return Array.from(sels).sort(); })()"#;
         let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
         Ok(sels)
     }
 
-    pub async fn capture_html(port: u16, tab_id: String, root: PathBuf, mirror: bool, assets: bool) -> AppResult<PathBuf> {
+    pub async fn capture_html(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let category = if mirror { "mirrors" } else { "captures" };
-        let final_dir = Self::get_output_path(root, category, &url)?;
-        let html_path = final_dir.join("index.html");
-        std::fs::write(&html_path, html).map_err(AppError::Io)?;
-        if assets {}
-        Ok(html_path)
+        let final_dir = Self::get_output_path(root, "html_captures", &url)?;
+        let path = final_dir.join("index.html");
+        std::fs::write(&path, html).map_err(AppError::Io)?;
+        Ok(path)
+    }
+
+    pub async fn capture_complete(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
+        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let final_dir = Self::get_output_path(root, "complete_captures", &url)?;
+        std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
+        // Asset discovery would happen here via CDP or network events
+        Ok(final_dir)
+    }
+
+    pub async fn capture_mirror(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
+        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let final_dir = Self::get_output_path(root, "mirrors", &url)?;
+        // For mirror, we would ideally use MHTML or rewrite local paths
+        let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let path = final_dir.join("snapshot.mhtml");
+        std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
+        Ok(path)
     }
 
     pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
