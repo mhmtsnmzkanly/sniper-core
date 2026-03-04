@@ -1,4 +1,4 @@
-# 🎯 SNIPER STUDIO // V1.2.0
+# 🎯 SNIPER STUDIO // V1.2.7
 ### Advanced Browser Forensics & Intelligent Automation Engine
 
 Sniper Studio is a high-precision, Rust-powered tool designed for web forensics, asset extraction, and complex browser automation. It combines low-level CDP (Chrome DevTools Protocol) control with a modern, block-based automation interface.
@@ -14,15 +14,15 @@ Sniper Studio is a high-precision, Rust-powered tool designed for web forensics,
 - **Smart Execution:** Automatic element focus, smooth scrolling, and existence checks for bulletproof stability.
 
 ### 2. Digital Forensics & Monitoring
-- **Deep CSS Scan:** Automatically extract hidden assets (icons, fonts, backgrounds) from CSS files.
+- **Deep CSS Scan:** Automatically extract assets (icons, fonts, backgrounds, imports) from CSS files using recursive scanning.
 - **Real-time Network Traffic:** Intercept and inspect REQ/RES payloads with a dedicated inspector.
 - **Active URL Blocking:** Block unwanted trackers or resources on the fly.
-- **Media Asset Manager:** Preview images with high-resolution scroll support and batch download capabilities.
+- **Advanced Media Manager:** Filter and preview images, videos, audio, fonts, styles, and scripts with custom resizing and batch extraction.
 
-### 3. Professional Intelligence (V1.2.0+)
+### 3. Professional Intelligence (V1.2.7+)
 - **Selector Discovery:** Instant scan of all IDs, Classes, and Attributes (data-*, href, name) on any page.
-- **Searchable Selector Listbox:** Quick-select the perfect selector for your automation steps.
-- **Robust JS Execution:** Sandbox-wrapped JavaScript execution with detailed error reporting back to Rust.
+- **Storage Intelligence:** Full Cookie Manager with JSON Import/Export capabilities.
+- **Robust JS Execution:** Sandbox-wrapped JavaScript execution with file loading support and detailed console mirroring.
 
 ---
 

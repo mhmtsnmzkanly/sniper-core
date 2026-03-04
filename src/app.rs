@@ -60,6 +60,20 @@ impl eframe::App for CrawlerApp {
 
         // --- EVENT HANDLING ---
         while let Ok(event) = self.event_receiver.try_recv() {
+            // Guard for browser-dependent events
+            if !self.state.is_browser_running {
+                match &event {
+                    AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
+                    AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(_, _) |
+                    AppEvent::RequestCapture(_, _, _) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestTabRefresh => {
+                        self.state.notify("Action Denied", "Browser is not running.", true);
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            
             match event {
                 AppEvent::RequestLogPathSet(path) => {
                     crate::logger::set_log_path(path, &self.state.session_timestamp);
@@ -73,7 +87,9 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::BrowserTerminated => {
                     self.state.is_browser_running = false;
-                    self.state.notify("System", "Browser instance closed.", false);
+                    self.state.available_tabs.clear();
+                    self.state.selected_tab_id = None;
+                    self.state.notify("System", "Browser instance disconnected.", true);
                     tracing::info!("[USER] Browser instance terminated externally.");
                 }
                 AppEvent::TerminateBrowser => {
@@ -81,6 +97,8 @@ impl eframe::App for CrawlerApp {
                     if let Some(mut child) = lock.take() {
                         let _ = child.kill();
                         self.state.is_browser_running = false;
+                        self.state.available_tabs.clear();
+                        self.state.selected_tab_id = None;
                         self.state.notify("System", "Browser instance terminated.", false);
                         tracing::info!("[USER] Browser instance terminated by user.");
                     }
@@ -666,18 +684,29 @@ fn state_bridge_render_sniffer(ui: &mut egui::Ui, state: &mut AppState, tid: &st
     state.selected_tab_id = Some(tid.to_string());
     if let Some(ws) = state.workspaces.get_mut(tid) {
         ui.label(RichText::new("JAVASCRIPT INJECTOR").strong());
-        ui.add(
-            egui::TextEdit::multiline(&mut ws.js_script)
-                .font(egui::FontId::monospace(13.0))
-                .desired_rows(6)
-                .desired_width(f32::INFINITY),
-        );
-        if ui.button("EXECUTE SCRIPT").clicked() {
-            crate::ui::scrape::emit(AppEvent::RequestScriptExecution(
-                tid.to_string(),
-                ws.js_script.clone(),
-            ));
-        }
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut ws.js_script)
+                    .font(egui::FontId::monospace(13.0))
+                    .desired_rows(6)
+                    .desired_width(f32::INFINITY),
+            );
+        });
+        ui.horizontal(|ui| {
+            if ui.button("EXECUTE SCRIPT").clicked() {
+                crate::ui::scrape::emit(AppEvent::RequestScriptExecution(
+                    tid.to_string(),
+                    ws.js_script.clone(),
+                ));
+            }
+            if ui.button("📂 LOAD JS FILE").clicked() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        ws.js_script = content;
+                    }
+                }
+            }
+        });
         if !ws.js_result.is_empty() {
             ui.label(
                 RichText::new(format!("> {}", ws.js_result))

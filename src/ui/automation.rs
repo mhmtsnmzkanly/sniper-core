@@ -155,17 +155,25 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button(RichText::new("🗑 CLEAR").color(Color32::LIGHT_RED)).clicked() {
+                auto_steps.clear();
+            }
             if ui.button("📁 LOAD DSL").clicked() {
                 if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
                     if let Ok(content) = std::fs::read_to_string(path) {
-                        if let Ok(dsl) = serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
-                            auto_steps = map_dsl_to_steps(dsl.steps);
-                            for step in &auto_steps {
-                                if let AutomationStep::SetVariable { key, value } = step {
-                                    variables.insert(key.clone(), value.clone());
+                        match serde_json::from_str::<crate::core::automation::dsl::AutomationDsl>(&content) {
+                            Ok(dsl) => {
+                                auto_steps = map_dsl_to_steps(dsl.steps);
+                                for step in &auto_steps {
+                                    if let AutomationStep::SetVariable { key, value } = step {
+                                        variables.insert(key.clone(), value.clone());
+                                    }
                                 }
+                                tracing::info!("[AUTO-UI] DSL loaded: {} steps", auto_steps.len());
                             }
-                            tracing::info!("[AUTO-UI] DSL loaded: {} steps", auto_steps.len());
+                            Err(e) => {
+                                tracing::error!("[AUTO-UI] DSL Parse Error: {}", e);
+                            }
                         }
                     }
                 }

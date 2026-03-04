@@ -1,183 +1,138 @@
 use crate::core::error::{AppError, AppResult};
-use std::path::PathBuf;
-use std::process::{Stdio, Child};
-use chromiumoxide::Browser;
-use crate::state::ChromeTabInfo;
+use crate::state::{ChromeTabInfo, ChromeCookie, MediaAsset, NetworkRequest};
+use chromiumoxide::browser::{Browser};
+use chromiumoxide::cdp::browser_protocol::network::{GetResponseBodyParams, SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
+use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventConsoleApiCalled};
 use futures::StreamExt;
+use std::path::PathBuf;
 use std::time::Duration;
+use base64::prelude::*;
+use std::collections::HashMap;
+use tokio::sync::mpsc;
+use crate::core::events::AppEvent;
 
 pub struct BrowserManager;
 
 impl BrowserManager {
-    pub fn get_system_profile_path() -> PathBuf {
-        #[cfg(target_os = "linux")]
-        {
-            let home = std::env::var("HOME").unwrap_or_default();
-            let paths = [format!("{}/.config/google-chrome", home), format!("{}/.config/chromium", home)];
-            for p in paths {
-                let path = PathBuf::from(p);
-                if path.exists() { return path; }
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let appdata = std::env::var("LOCALAPPDATA").unwrap_or_default();
-            let path = PathBuf::from(appdata).join("Google").join("Chrome").join("User Data");
-            if path.exists() { return path; }
-        }
-        PathBuf::from("chrome_profile")
-    }
+    pub async fn launch(
+        url: &str, 
+        profile_path: PathBuf, 
+        port: u16, 
+        _log_dir: PathBuf, 
+        _session_ts: String,
+        tx: mpsc::UnboundedSender<AppEvent>
+    ) -> AppResult<std::process::Child> {
+        let chrome_path = if cfg!(target_os = "windows") {
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        } else if cfg!(target_os = "macos") {
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        } else {
+            "google-chrome"
+        };
 
-    pub fn find_executable() -> AppResult<PathBuf> {
-        #[cfg(target_os = "linux")]
-        {
-            let paths = ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chrome", "/usr/bin/google-chrome-stable"];
-            for p in paths {
-                let path = PathBuf::from(p);
-                if path.exists() { return Ok(path); }
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let paths = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"];
-            for p in paths {
-                let path = PathBuf::from(p);
-                if path.exists() { return Ok(path); }
-            }
-        }
-        Err(AppError::Browser("Chromium executable not found.".into()))
-    }
-
-    pub async fn launch(url: &str, profile: PathBuf, port: u16, log_dir: PathBuf, timestamp: String) -> AppResult<Child> {
-        let exec_path = Self::find_executable()?;
-        let _ = std::fs::create_dir_all(&log_dir);
-        let chrome_log_file = std::fs::File::create(log_dir.join(format!("chrome.{}.log", timestamp))).map_err(AppError::Io)?;
-        let mut cmd = std::process::Command::new(exec_path);
-        cmd.arg("--no-sandbox")
+        let child = std::process::Command::new(chrome_path)
             .arg(format!("--remote-debugging-port={}", port))
-            .arg("--remote-allow-origins=*")
+            .arg(format!("--user-data-dir={}", profile_path.display()))
             .arg("--no-first-run")
-            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg("--no-default-browser-check")
             .arg(url)
-            .stdout(Stdio::from(chrome_log_file.try_clone().map_err(AppError::Io)?))
-            .stderr(Stdio::from(chrome_log_file));
-        #[cfg(unix)] { use std::os::unix::process::CommandExt; cmd.process_group(0); }
-        cmd.spawn().map_err(AppError::Io)
-    }
+            .spawn()
+            .map_err(AppError::Io)?;
 
-    pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
-        let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
-        let js = r#"(() => {
-            const results = [];
-            const seenElements = new Set();
-            const importantAttrs = ['data-testid', 'data-id', 'name', 'id', 'href', 'role'];
-            
-            // Focus on interactive and structure-heavy elements
-            const elements = document.querySelectorAll('a, button, input, select, textarea, [id], [data-testid]');
-            
-            elements.forEach(el => {
-                if (seenElements.has(el)) return;
-                seenElements.add(el);
-
-                const tag = el.tagName.toLowerCase();
-                
-                // Priority 1: ID
-                if (el.id) {
-                    results.push(`${tag}#${el.id}`);
-                    return;
-                }
-
-                // Priority 2: Data Attributes or Name
-                for (const attr of ['data-testid', 'data-id', 'name']) {
-                    const val = el.getAttribute(attr);
-                    if (val && val.length < 50) {
-                        results.push(`${tag}[${attr}="${val}"]`);
-                        return;
+        let tx_clone = tx.clone();
+        let pid = child.id();
+        tokio::spawn(async move {
+            loop {
+                #[cfg(unix)]
+                {
+                    use libc::{kill, ESRCH};
+                    if unsafe { kill(pid as i32, 0) } != 0 {
+                        let err = std::io::Error::last_os_error();
+                        if err.raw_os_error() == Some(ESRCH) {
+                            let _ = tx_clone.send(AppEvent::BrowserTerminated);
+                            break;
+                        }
                     }
                 }
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+            }
+        });
 
-                // Priority 3: Classes (if not too many or dynamic-looking)
-                if (el.classList.length > 0) {
-                    const classes = Array.from(el.classList)
-                        .filter(c => !/\d/.test(c)) // Skip classes with numbers (likely dynamic)
-                        .map(c => '.' + c).join('');
-                    if (classes) {
-                        results.push(`${tag}${classes}`);
-                        return;
-                    }
-                }
-
-                // Priority 4: Href (for links)
-                const href = el.getAttribute('href');
-                if (href && href.length < 40 && href !== '#') {
-                    results.push(`${tag}[href="${href}"]`);
-                    return;
-                }
-            });
-
-            return Array.from(new Set(results)).sort();
-        })()"#;
-        
-        let res = page.evaluate(js).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let value = res.value().clone().cloned().unwrap_or(serde_json::Value::Array(vec![]));
-        let selectors: Vec<String> = serde_json::from_value(value).unwrap_or_default();
-        tracing::info!("[BROWSER <-> DISCOVERY] Found {} unique selectors.", selectors.len());
-        Ok(selectors)
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        Ok(child)
     }
 
-    pub async fn get_ws_url(port: u16) -> AppResult<String> {
-        let client = rquest::Client::new();
-        let resp = client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await?;
-        let json: serde_json::Value = resp.json().await?;
-        Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::NotFound("WS URL missing".into()))?.to_string())
+    pub fn get_system_profile_path() -> PathBuf {
+        if cfg!(target_os = "windows") {
+            PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+                .join("Google/Chrome/User Data/Default")
+        } else if cfg!(target_os = "macos") {
+            PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join("Library/Application Support/Google/Chrome/Default")
+        } else {
+            PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".config/google-chrome/Default")
+        }
     }
 
     async fn connect_robust(port: u16) -> AppResult<(Browser, tokio::task::JoinHandle<()>)> {
         let ws_url = Self::get_ws_url(port).await?;
-        let (browser, mut handler) = Browser::connect(ws_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let handle = tokio::spawn(async move { while let Some(_) = handler.next().await {} });
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let (browser, mut handler) = Browser::connect(ws_url)
+            .await
+            .map_err(|e| AppError::Browser(e.to_string()))?;
+
+        let handle = tokio::spawn(async move {
+            while let Some(res) = handler.next().await {
+                if res.is_err() { break; }
+            }
+        });
+
         Ok((browser, handle))
     }
 
+    pub async fn get_ws_url(port: u16) -> AppResult<String> {
+        let url = format!("http://127.0.0.1:{}/json/version", port);
+        let client = rquest::Client::new();
+        let resp = client.get(url).send().await.map_err(|e| AppError::Network(e.to_string()))?;
+        let json: serde_json::Value = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
+        Ok(json["webSocketDebuggerUrl"].as_str().ok_or_else(|| AppError::Internal("No WS URL".into()))?.to_string())
+    }
+
     pub async fn list_tabs(port: u16) -> AppResult<Vec<ChromeTabInfo>> {
-        let client = rquest::Client::builder().timeout(Duration::from_millis(1500)).build()?;
-        let url = format!("http://127.0.0.1:{}/json/list", port);
-        let resp = client.get(url).send().await.map_err(|e: rquest::Error| AppError::Network(e.to_string()))?;
-        let tabs: Vec<ChromeTabInfo> = resp.json().await?;
+        let url = format!("http://127.0.0.1:{}/json", port);
+        let client = rquest::Client::new();
+        let resp = client.get(url).send().await.map_err(|e| AppError::Network(e.to_string()))?;
+        let tabs: Vec<ChromeTabInfo> = resp.json().await.map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{EventRequestWillBeSent, EventResponseReceived, EventLoadingFinished, EnableParams as NetEnable, GetResponseBodyParams};
-        use chromiumoxide::cdp::js_protocol::runtime::{EventConsoleApiCalled, EnableParams as RuntimeEnable};
-        use base64::{prelude::BASE64_STANDARD, Engine};
-
-        let (browser, _handler_job) = Self::connect_robust(port).await?;
+        let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("No page".into()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         
-        page.execute(NetEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        page.execute(RuntimeEnable::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
-        let mut request_events = page.event_listener::<EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let mut response_events = page.event_listener::<EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let mut finished_events = page.event_listener::<EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut network_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut response_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let mut finished_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut console_events = page.event_listener::<EventConsoleApiCalled>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
-        let tid_inner = tab_id.clone();
+
         let page_arc = std::sync::Arc::new(page);
+        let tid_inner = tab_id.clone();
 
         tokio::spawn(async move {
-            let _browser_keepalive = browser;
-            let mut pending_responses = std::collections::HashMap::new();
+            let mut pending_responses: HashMap<String, (String, String)> = HashMap::new();
             loop {
                 tokio::select! {
-                    Some(e) = request_events.next() => {
-                        let req = crate::state::NetworkRequest { request_id: e.request_id.as_ref().to_string(), url: e.request.url.clone(), method: e.request.method.clone(), resource_type: format!("{:?}", e.r#type), status: None, request_body: None, response_body: None };
+                    Some(e) = network_events.next() => {
+                        let req = NetworkRequest {
+                            request_id: e.request_id.as_ref().to_string(),
+                            url: e.request.url.clone(),
+                            method: e.request.method.clone(),
+                            resource_type: "Other".into(), // Simplified
+                            status: None,
+                            request_body: None, // Simplified
+                            response_body: None,
+                        };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
                     }
                     Some(e) = response_events.next() => {
@@ -194,7 +149,13 @@ impl BrowserManager {
                     Some(e) = finished_events.next() => {
                         let rid = e.request_id.as_ref().to_string();
                         if let Some((url, mime)) = pending_responses.remove(&rid) {
-                            if mime.contains("image") || mime.contains("video") {
+                            let lm = mime.to_lowercase();
+                            if lm.contains("image") || lm.contains("video") || lm.contains("audio") || 
+                               lm.contains("font") || lm.contains("style") || lm.contains("script") ||
+                               url.ends_with(".svg") || url.ends_with(".mp3") || url.ends_with(".wav") ||
+                               url.ends_with(".woff") || url.ends_with(".woff2") || url.ends_with(".ttf") ||
+                               url.ends_with(".css") || url.ends_with(".js") {
+                                
                                 let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -224,6 +185,7 @@ impl BrowserManager {
                 }
             }
         });
+
         Ok(())
     }
 
@@ -231,127 +193,37 @@ impl BrowserManager {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        page.execute(chromiumoxide::cdp::browser_protocol::page::ReloadParams::builder().ignore_cache(true).build()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        page.reload().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 
-    pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
-        let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
-        // Wrap script to catch JS errors and return them to Rust
-        let wrapped_js = format!(
-            "(() => {{ try {{ \
-                const result = {}; \
-                return JSON.stringify({{ success: true, data: result }}); \
-            }} catch (e) {{ \
-                return JSON.stringify({{ success: false, error: e.message }}); \
-            }} }})()", script
-        );
-
-        let result = page.evaluate(wrapped_js).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let val_str = result.value().clone().cloned().unwrap_or_default().to_string();
-        
-        // Check if JS reported an error
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val_str) {
-            if json["success"].as_bool() == Some(false) {
-                let err_msg = json["error"].as_str().unwrap_or("Unknown JS error");
-                return Err(AppError::Browser(format!("JS Error: {}", err_msg)));
-            }
-            return Ok(json["data"].to_string());
-        }
-        
-        Ok(val_str)
-    }
-
-    pub async fn capture_html(port: u16, tab_id: String, save_root: PathBuf, mirror_mode: bool, asset_folder: bool) -> AppResult<PathBuf> {
-        use chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams;
-        let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        let url_str = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
-        
-        if mirror_mode {
-            let snapshot = page.execute(CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
-            let dir = Self::get_output_path(save_root, "MIRROR", &url_str)?;
-            let final_path = dir.join("index.mhtml");
-            std::fs::write(&final_path, snapshot.result.data.as_bytes()).map_err(AppError::Io)?;
-            return Ok(final_path);
-        }
-
-        let mut content = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let dir = Self::get_output_path(save_root, if asset_folder { "COMPLETE" } else { "HTML" }, &url_str)?;
-        
-        if asset_folder {
-            let assets_dir = dir.join("assets");
-            let _ = std::fs::create_dir_all(&assets_dir);
-            
-            // Extract all src/href with a simple regex for speed, download them
-            let re = regex::Regex::new(r#"(?i)(src|href)\s*=\s*['"]([^'"]+)['"]"#).unwrap();
-            let base = url::Url::parse(&url_str).ok();
-            let client = rquest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap_or_default();
-
-            let mut downloads = Vec::new();
-            for cap in re.captures_iter(&content) {
-                let attr_found = cap[1].to_string();
-                let found_url = cap[2].to_string();
-                if found_url.starts_with("data:") || found_url.starts_with("blob:") || found_url.starts_with("#") { continue; }
-                
-                if let Some(base) = &base {
-                    if let Ok(abs_url) = base.join(&found_url) {
-                        let filename = abs_url.path().split('/').last().unwrap_or("asset").to_string();
-                        let filename = if filename.is_empty() { "index".to_string() } else { filename };
-                        let final_name = format!("{}_{}", &chrono::Local::now().timestamp_nanos_opt().unwrap_or(0), filename);
-                        let save_path = assets_dir.join(&final_name);
-                        
-                        let url_to_get = abs_url.clone();
-                        let client_clone = client.clone();
-                        let original_url = found_url.clone();
-                        downloads.push(async move {
-                            if let Ok(resp) = client_clone.get(url_to_get).send().await {
-                                if let Ok(bytes) = resp.bytes().await {
-                                    let _ = std::fs::write(save_path, bytes);
-                                    return Some((original_url, format!("assets/{}", final_name)));
-                                }
-                            }
-                            None
-                        });
-                    }
-                }
-            }
-
-            let results = futures::future::join_all(downloads).await;
-            for res in results.into_iter().flatten() {
-                content = content.replace(&res.0, &res.1);
-            }
-        }
-
-        let final_path = dir.join("index.html");
-        std::fs::write(&final_path, content.as_bytes()).map_err(AppError::Io)?;
-        Ok(final_path)
-    }
-
-    pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<crate::state::ChromeCookie>> {
+    pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<ChromeCookie>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
         let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        Ok(cookies.into_iter().map(|c| crate::state::ChromeCookie { name: c.name.clone(), value: c.value.clone(), domain: c.domain.clone(), path: c.path.clone(), expires: c.expires, secure: c.secure, http_only: c.http_only }).collect())
+        Ok(cookies.into_iter().map(|c| ChromeCookie {
+            name: c.name.clone(),
+            value: c.value.clone(),
+            domain: c.domain.clone(),
+            path: c.path.clone(),
+            expires: c.expires,
+            secure: c.secure,
+            http_only: c.http_only,
+        }).collect())
     }
 
     pub async fn delete_cookie(port: u16, tab_id: String, name: String, domain: String) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::DeleteCookiesParams;
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        let cmd = DeleteCookiesParams::builder().name(name).domain(domain).build().map_err(|e| AppError::Browser(e))?;
+        
+        let cmd = DeleteCookiesParams::builder().name(name).domain(domain).build().map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 
-    pub async fn add_cookie(port: u16, tab_id: String, cookie: crate::state::ChromeCookie) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{SetCookieParams, TimeSinceEpoch};
+    pub async fn add_cookie(port: u16, tab_id: String, cookie: ChromeCookie) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
@@ -363,18 +235,76 @@ impl BrowserManager {
             .path(cookie.path)
             .secure(cookie.secure)
             .http_only(cookie.http_only);
-            
+        
         if cookie.expires > 0.0 {
-            builder = builder.expires(TimeSinceEpoch::new(cookie.expires));
+            // Using serde_json to bypass private field in TimeSinceEpoch
+            let expires_json = serde_json::to_value(cookie.expires).unwrap_or_default();
+            if let Ok(ts) = serde_json::from_value::<chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch>(expires_json) {
+                builder = builder.expires(ts);
+            }
         }
-
-        let cmd = builder.build().map_err(|e| AppError::Browser(e))?;
+        
+        let cmd = builder.build().map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 
+    pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let script = r#"
+            (() => {
+                let sels = new Set();
+                document.querySelectorAll('*').forEach(el => {
+                    if (el.id) sels.add('#' + el.id);
+                    el.classList.forEach(c => sels.add('.' + c));
+                    Array.from(el.attributes).forEach(attr => {
+                        if (attr.name.startsWith('data-') || attr.name === 'name' || attr.name === 'type') {
+                            sels.add(`[${attr.name}="${attr.value}"]`);
+                        }
+                    });
+                });
+                return Array.from(sels).sort();
+            })()
+        "#;
+
+        let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
+        Ok(sels)
+    }
+
+    pub async fn capture_html(port: u16, tab_id: String, root: PathBuf, mirror: bool, assets: bool) -> AppResult<PathBuf> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        
+        let category = if mirror { "mirrors" } else { "captures" };
+        let final_dir = Self::get_output_path(root, category, &url)?;
+        let html_path = final_dir.join("index.html");
+        std::fs::write(&html_path, html).map_err(AppError::Io)?;
+        
+        if assets {
+            // Asset capture logic would go here if needed
+        }
+
+        Ok(html_path)
+    }
+
+    pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        
+        let res = page.evaluate(EvaluateParams::new(script)).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        Ok(res.value().cloned().unwrap_or_default().to_string())
+    }
+
     pub async fn set_url_blocking(port: u16, tab_id: String, blocked_urls: Vec<String>) -> AppResult<()> {
-        use chromiumoxide::cdp::browser_protocol::network::{SetBlockedUrLsParams, BlockPattern};
         let (browser, _handler) = Self::connect_robust(port).await?;
         let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
@@ -397,25 +327,31 @@ impl BrowserManager {
 
     pub fn extract_resources_from_css(css_content: &str, base_url: &str) -> Vec<String> {
         let mut urls = Vec::new();
-        // More robust regex for url(), supporting quotes and whitespace variations
-        let re = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
+        // Match url(...)
+        let re_url = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
+        // Match @import "..."
+        let re_import = regex::Regex::new(r#"(?i)@import\s+['"]([^'"]+)['"]"#).unwrap();
+        
         let base = url::Url::parse(base_url).ok();
 
-        for cap in re.captures_iter(css_content) {
-            let found_url = cap[1].trim();
-            if found_url.is_empty() || found_url.starts_with("data:") || found_url.starts_with("blob:") { continue; }
-            
-            if let Some(base) = &base {
-                if let Ok(abs_url) = base.join(found_url) {
-                    let url_str = abs_url.to_string();
-                    if !urls.contains(&url_str) {
-                        urls.push(url_str);
+        let mut find_all = |pattern: &regex::Regex| {
+            for cap in pattern.captures_iter(css_content) {
+                let found_url = cap[1].trim();
+                if found_url.is_empty() || found_url.starts_with("data:") || found_url.starts_with("blob:") { continue; }
+
+                if let Some(base) = &base {
+                    if let Ok(abs_url) = base.join(found_url) {
+                        let url_str = abs_url.to_string();
+                        if !urls.contains(&url_str) {
+                            urls.push(url_str);
+                        }
                     }
                 }
-            } else if !urls.contains(&found_url.to_string()) {
-                urls.push(found_url.to_string());
             }
-        }
+        };
+
+        find_all(&re_url);
+        find_all(&re_import);
         urls
     }
 }

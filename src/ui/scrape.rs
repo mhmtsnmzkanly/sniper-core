@@ -46,8 +46,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let port = state.config.remote_debug_port;
                     let ts = state.session_timestamp.clone();
                     let log_dir = state.config.output_dir.clone();
+                    let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
                     tokio::spawn(async move {
-                        if let Ok(child) = crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts).await {
+                        if let Ok(child) = crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts, tx).await {
                             emit(AppEvent::BrowserStarted(child));
                         }
                     });

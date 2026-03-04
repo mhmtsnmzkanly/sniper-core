@@ -52,6 +52,25 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             if ui.button("🔄 REFRESH").clicked() {
                 emit(AppEvent::RequestCookies(tid.clone()));
             }
+            if ui.button("📤 EXPORT").on_hover_text("Export filtered cookies to JSON").clicked() {
+                let export_data: Vec<crate::state::ChromeCookie> = filtered_cookies.iter().map(|(_, c)| c.clone()).collect();
+                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("cookies.json").save_file() {
+                    if let Ok(json) = serde_json::to_string_pretty(&export_data) {
+                        let _ = std::fs::write(path, json);
+                    }
+                }
+            }
+            if ui.button("📥 IMPORT").on_hover_text("Import cookies from JSON").clicked() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        if let Ok(imported_cookies) = serde_json::from_str::<Vec<crate::state::ChromeCookie>>(&content) {
+                            for cookie in imported_cookies {
+                                emit(AppEvent::RequestCookieAdd(tid.clone(), cookie));
+                            }
+                        }
+                    }
+                }
+            }
             ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(Color32::GRAY));
         });
     });
