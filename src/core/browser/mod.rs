@@ -27,7 +27,6 @@ impl BrowserManager {
         } else if cfg!(target_os = "macos") {
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string()
         } else {
-            // Linux fallback list
             let mut found_path = "google-chrome".to_string();
             let fallbacks = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
             for bin in fallbacks {
@@ -53,7 +52,6 @@ impl BrowserManager {
                    .arg("--disable-dev-shm-usage");
         }
 
-        // Pre-check if something is already on that port
         let client = rquest::Client::new();
         if client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await.is_ok() {
             tracing::info!("[BROWSER] Found existing instance on port {}. Skipping launch.", port);
@@ -142,21 +140,27 @@ impl BrowserManager {
     }
 
     async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        for page in pages {
-            // Check both id and target_id because chromiumoxide can return either
-            if page.target_id().as_ref() == tab_id {
-                return Ok(page);
+        // Retry loop to allow chromiumoxide handler to discover existing targets
+        for attempt in 0..10 {
+            let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+            for page in &pages {
+                if page.target_id().as_ref() == tab_id {
+                    return Ok(page.clone());
+                }
             }
-        }
-        // Fallback: try to find by substring if exact match fails
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        for page in pages {
-            if page.target_id().as_ref().contains(tab_id) || tab_id.contains(page.target_id().as_ref()) {
-                return Ok(page);
+            
+            if attempt > 0 {
+                tracing::debug!("[BROWSER] Attempt {} to find tab {}...", attempt + 1, tab_id);
             }
+            tokio::time::sleep(Duration::from_millis(150)).await;
         }
-        Err(AppError::NotFound(format!("Page not found: {}", tab_id)))
+
+        // If still not found, list all available for debugging
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let available_ids: Vec<_> = pages.iter().map(|p| p.target_id().as_ref()).collect();
+        tracing::error!("[BROWSER] Tab {} not found. Available pages: {:?}", tab_id, available_ids);
+        
+        Err(AppError::NotFound(format!("Page not found: {}. Available: {:?}", tab_id, available_ids)))
     }
 
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
