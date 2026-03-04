@@ -7,21 +7,34 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => { ui.label("No active tab selected."); return; }
     };
 
-    let (media_assets, media_count, selected_media_urls, media_search, _sort_col, _sort_asc, type_filter, preview_size) = {
+    // Extract state for local use to avoid borrow conflicts
+    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size) = {
         let ws = state.workspaces.get(&tid).unwrap();
-        (ws.media_assets.clone(), ws.media_assets.len(), ws.selected_media_urls.clone(), ws.media_search.clone(), ws.media_sort_col.clone(), ws.media_sort_asc, ws.media_type_filter.clone(), ws.media_preview_size)
+        (
+            ws.media_assets.clone(), 
+            ws.media_assets.len(), 
+            ws.selected_media_urls.clone(), 
+            ws.media_search.clone(), 
+            ws.media_type_filter.clone(), 
+            ws.media_preview_size
+        )
     };
 
     ui.vertical(|ui| {
-        // Control Header
+        // --- CONTROL HEADER ---
         Frame::group(ui.style()).fill(Color32::from_gray(25)).inner_margin(8.0).show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.button(RichText::new("🗑 CLEAR").color(Color32::LIGHT_RED)).clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) { ws.media_assets.clear(); ws.selected_media_urls.clear(); }
+                    if let Some(ws) = state.workspaces.get_mut(&tid) { 
+                        ws.media_assets.clear(); 
+                        ws.selected_media_urls.clear(); 
+                    }
                 }
                 
                 ui.separator();
-                ui.label(RichText::new("TYPE:").color(Color32::LIGHT_BLUE));
+                
+                // TYPE FILTER (RESTORED)
+                ui.label(RichText::new("TYPE:").color(Color32::LIGHT_BLUE).strong());
                 if let Some(ws) = state.workspaces.get_mut(&tid) {
                     let types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"];
                     ui.menu_button(format!("TYPES ({})", ws.media_type_filter.len()), |ui| {
@@ -32,6 +45,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 else { ws.media_type_filter.remove(t); }
                             }
                         }
+                        if ui.button("CLEAR ALL").clicked() { ws.media_type_filter.clear(); }
                     });
                 }
 
@@ -42,6 +56,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
 
                 ui.separator();
+                // BATCH DOWNLOAD
                 let can_download = !selected_media_urls.is_empty();
                 if ui.add_enabled(can_download, egui::Button::new(RichText::new(format!("📥 DOWNLOAD SELECTED ({})", selected_media_urls.len())).strong().color(Color32::GREEN))).clicked() {
                     tracing::info!("[UI] Click: BATCH DOWNLOAD {} items", selected_media_urls.len());
@@ -64,9 +79,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
         ui.add_space(5.0);
 
+        // --- FILTERING LOGIC ---
         let filtered_assets: Vec<_> = media_assets.into_iter().filter(|asset| {
             let search = media_search.to_lowercase();
             if !search.is_empty() && !asset.url.to_lowercase().contains(&search) && !asset.name.to_lowercase().contains(&search) { return false; }
+            
             if !type_filter.is_empty() {
                 let mt = asset.mime_type.to_lowercase();
                 let mut match_type = false;
@@ -81,9 +98,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             true
         }).collect();
 
-        // SCROLL AREA with fixed max height to prevent window overflow
+        // --- ASSET GRID ---
         egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
-            egui::Grid::new("media_grid_v2").striped(true).num_columns(6).spacing([15.0, 10.0]).show(ui, |ui| {
+            egui::Grid::new("media_grid_v3").striped(true).num_columns(6).spacing([15.0, 10.0]).show(ui, |ui| {
                 for asset in filtered_assets {
                     let mut is_selected = selected_media_urls.contains(&asset.url);
                     if ui.checkbox(&mut is_selected, "").changed() {
@@ -101,11 +118,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     .max_size(egui::vec2(preview_size, preview_size)));
                             }
                         } else {
-                            ui.centered_and_justified(|ui| { ui.label(RichText::new("FILE").color(Color32::GRAY)); });
+                            let icon = if asset.mime_type.contains("video") { "🎬" }
+                                      else if asset.mime_type.contains("audio") { "🎵" }
+                                      else if asset.mime_type.contains("font") { "🅰" }
+                                      else if asset.mime_type.contains("style") || asset.url.ends_with(".css") { "🎨" }
+                                      else if asset.mime_type.contains("script") || asset.url.ends_with(".js") { "📜" }
+                                      else { "📄" };
+                            ui.centered_and_justified(|ui| { ui.label(RichText::new(icon).size(24.0)); });
                         }
                     });
 
-                    // Info Column with URL Wrap
+                    // Info
                     ui.vertical(|ui| {
                         ui.set_width(300.0);
                         ui.label(RichText::new(&asset.name).strong());
