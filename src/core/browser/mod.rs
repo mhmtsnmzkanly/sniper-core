@@ -57,8 +57,6 @@ impl BrowserManager {
         let client = rquest::Client::new();
         if client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await.is_ok() {
             tracing::info!("[BROWSER] Found existing instance on port {}. Skipping launch.", port);
-            // We don't have a child process to return, but we can return a dummy or error
-            // For now, let's just proceed and see if connect works.
         }
 
         let child = command.arg(url)
@@ -72,7 +70,6 @@ impl BrowserManager {
         let client_heartbeat = client.clone();
         let port_clone = port;
         
-        // CDP Heartbeat approach - more reliable across OS and process wrappers
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await; 
             let hb_url = format!("http://127.0.0.1:{}/json/version", port_clone);
@@ -144,10 +141,27 @@ impl BrowserManager {
         Ok(tabs.into_iter().filter(|t| t.tab_type == "page").collect())
     }
 
+    async fn find_tab(browser: &Browser, tab_id: &str) -> AppResult<chromiumoxide::Page> {
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        for page in pages {
+            // Check both id and target_id because chromiumoxide can return either
+            if page.target_id().as_ref() == tab_id {
+                return Ok(page);
+            }
+        }
+        // Fallback: try to find by substring if exact match fails
+        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
+        for page in pages {
+            if page.target_id().as_ref().contains(tab_id) || tab_id.contains(page.target_id().as_ref()) {
+                return Ok(page);
+            }
+        }
+        Err(AppError::NotFound(format!("Page not found: {}", tab_id)))
+    }
+
     pub async fn setup_tab_listeners(port: u16, tab_id: String) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
         
         let mut network_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut response_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -229,16 +243,14 @@ impl BrowserManager {
 
     pub async fn reload_page(port: u16, tab_id: String) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
         page.reload().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
     }
 
     pub async fn get_cookies(port: u16, tab_id: String) -> AppResult<Vec<ChromeCookie>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let cookies = page.get_cookies().await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(cookies.into_iter().map(|c| ChromeCookie {
             name: c.name.clone(),
@@ -253,9 +265,7 @@ impl BrowserManager {
 
     pub async fn delete_cookie(port: u16, tab_id: String, name: String, domain: String) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let cmd = DeleteCookiesParams::builder().name(name).domain(domain).build().map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
@@ -263,9 +273,7 @@ impl BrowserManager {
 
     pub async fn add_cookie(port: u16, tab_id: String, cookie: ChromeCookie) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let mut builder = SetCookieParams::builder()
             .name(cookie.name)
             .value(cookie.value)
@@ -280,7 +288,6 @@ impl BrowserManager {
                 builder = builder.expires(ts);
             }
         }
-        
         let cmd = builder.build().map_err(|e| AppError::Browser(e.to_string()))?;
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(())
@@ -288,9 +295,7 @@ impl BrowserManager {
 
     pub async fn get_page_selectors(port: u16, tab_id: String) -> AppResult<Vec<String>> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let script = r#"
             (() => {
                 let sels = new Set();
@@ -306,7 +311,6 @@ impl BrowserManager {
                 return Array.from(sels).sort();
             })()
         "#;
-
         let res = page.evaluate(script).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let sels: Vec<String> = serde_json::from_value(res.value().cloned().unwrap_or_default()).unwrap_or_default();
         Ok(sels)
@@ -314,38 +318,27 @@ impl BrowserManager {
 
     pub async fn capture_html(port: u16, tab_id: String, root: PathBuf, mirror: bool, assets: bool) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let url = page.url().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        
         let category = if mirror { "mirrors" } else { "captures" };
         let final_dir = Self::get_output_path(root, category, &url)?;
         let html_path = final_dir.join("index.html");
         std::fs::write(&html_path, html).map_err(AppError::Io)?;
-        
-        if assets {
-            // Asset capture logic would go here
-        }
-
+        if assets {}
         Ok(html_path)
     }
 
     pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let res = page.evaluate(EvaluateParams::new(script)).await.map_err(|e| AppError::Browser(e.to_string()))?;
         Ok(res.value().cloned().unwrap_or_default().to_string())
     }
 
     pub async fn set_url_blocking(port: u16, tab_id: String, blocked_urls: Vec<String>) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
-        let pages = browser.pages().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let page = pages.into_iter().find(|p| p.target_id().as_ref() == tab_id).ok_or_else(|| AppError::NotFound("Page not found".into()))?;
-        
+        let page = Self::find_tab(&browser, &tab_id).await?;
         let url_patterns = blocked_urls.into_iter().map(|url| BlockPattern { url_pattern: url, block: true }).collect();
         let cmd = SetBlockedUrLsParams { url_patterns: Some(url_patterns) };
         page.execute(cmd).await.map_err(|e| AppError::Browser(e.to_string()))?;
@@ -366,25 +359,19 @@ impl BrowserManager {
         let mut urls = Vec::new();
         let re_url = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
         let re_import = regex::Regex::new(r#"(?i)@import\s+['"]([^'"]+)['"]"#).unwrap();
-        
         let base = url::Url::parse(base_url).ok();
-
         let mut find_all = |pattern: &regex::Regex| {
             for cap in pattern.captures_iter(css_content) {
                 let found_url = cap[1].trim();
                 if found_url.is_empty() || found_url.starts_with("data:") || found_url.starts_with("blob:") { continue; }
-
                 if let Some(base) = &base {
                     if let Ok(abs_url) = base.join(found_url) {
                         let url_str = abs_url.to_string();
-                        if !urls.contains(&url_str) {
-                            urls.push(url_str);
-                        }
+                        if !urls.contains(&url_str) { urls.push(url_str); }
                     }
                 }
             }
         };
-
         find_all(&re_url);
         find_all(&re_import);
         urls

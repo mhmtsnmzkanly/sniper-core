@@ -78,7 +78,9 @@ impl eframe::App for CrawlerApp {
                     AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
                     AppEvent::RequestCapture(_, _, _) | AppEvent::RequestPageSelectors(_) |
                     AppEvent::RequestTabRefresh => {
-                        self.state.notify("Action Denied", "Browser is not running.", true);
+                        let msg = "Action Denied: Browser is not running.";
+                        self.state.notify("Denied", msg, true);
+                        tracing::warn!("[APP] {}", msg);
                         continue;
                     }
                     _ => {}
@@ -93,12 +95,14 @@ impl eframe::App for CrawlerApp {
                     *self.browser_process.lock().unwrap() = Some(child);
                     self.state.is_browser_running = true;
                     self.state.notify("System", "Browser instance launched.", false);
+                    tracing::info!("[APP] Browser started.");
                 }
                 AppEvent::BrowserTerminated => {
                     self.state.is_browser_running = false;
                     self.state.available_tabs.clear();
                     self.state.selected_tab_id = None;
                     self.state.notify("System", "Browser instance disconnected.", true);
+                    tracing::warn!("[APP] Browser terminated.");
                 }
                 AppEvent::TerminateBrowser => {
                     if let Some(mut child) = self.browser_process.lock().unwrap().take() {
@@ -107,6 +111,7 @@ impl eframe::App for CrawlerApp {
                         self.state.available_tabs.clear();
                         self.state.selected_tab_id = None;
                         self.state.notify("System", "Browser instance terminated.", false);
+                        tracing::info!("[APP] Browser terminated by user.");
                     }
                 }
                 AppEvent::TabsUpdated(tabs) => {
@@ -114,7 +119,8 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::ConsoleLogAdded(tid, msg) => {
                     let ws = self.ensure_workspace(&tid);
-                    ws.console_logs.push(msg);
+                    ws.console_logs.push(msg.clone());
+                    tracing::debug!("[CONSOLE][{}] {}", tid, msg);
                 }
                 AppEvent::SelectorsReceived(tid, sels) => {
                     let ws = self.ensure_workspace(&tid);
@@ -137,10 +143,12 @@ impl eframe::App for CrawlerApp {
                 AppEvent::AutomationFinished(tid) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.auto_status = AutomationStatus::Finished;
+                    tracing::info!("[APP][{}] Automation finished.", tid);
                 }
                 AppEvent::AutomationError(tid, err) => {
                     let ws = self.ensure_workspace(&tid);
-                    ws.auto_status = AutomationStatus::Error(err);
+                    ws.auto_status = AutomationStatus::Error(err.clone());
+                    tracing::error!("[APP][{}] Automation error: {}", tid, err);
                 }
                 AppEvent::AutomationDatasetUpdated(tid, data) => {
                     let ws = self.ensure_workspace(&tid);
@@ -157,14 +165,21 @@ impl eframe::App for CrawlerApp {
                         req.response_body = body;
                     }
                 }
-                AppEvent::OperationSuccess(msg) => self.state.notify("Success", &msg, false),
-                AppEvent::OperationError(msg) => self.state.notify("Error", &msg, true),
+                AppEvent::OperationSuccess(msg) => {
+                    self.state.notify("Success", &msg, false);
+                    tracing::info!("[OP] {}", msg);
+                }
+                AppEvent::OperationError(msg) => {
+                    self.state.notify("Error", &msg, true);
+                    tracing::error!("[OP] {}", msg);
+                }
                 
                 AppEvent::RequestCookies(tid) => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        if let Ok(cookies) = crate::core::browser::BrowserManager::get_cookies(port, tid.clone()).await {
-                            crate::ui::scrape::emit(AppEvent::CookiesReceived(tid, cookies));
+                        match crate::core::browser::BrowserManager::get_cookies(port, tid.clone()).await {
+                            Ok(cookies) => crate::ui::scrape::emit(AppEvent::CookiesReceived(tid, cookies)),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Cookie Error: {}", e))),
                         }
                     });
                 }
@@ -172,7 +187,9 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        if crate::core::browser::BrowserManager::delete_cookie(port, tid.clone(), name, domain).await.is_ok() {
+                        if let Err(e) = crate::core::browser::BrowserManager::delete_cookie(port, tid.clone(), name, domain).await {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Delete Error: {}", e)));
+                        } else {
                             let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
                             });
@@ -183,7 +200,9 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        if crate::core::browser::BrowserManager::add_cookie(port, tid.clone(), cookie).await.is_ok() {
+                        if let Err(e) = crate::core::browser::BrowserManager::add_cookie(port, tid.clone(), cookie).await {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Add Error: {}", e)));
+                        } else {
                             let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
                             });
@@ -193,14 +212,17 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestPageReload(tid) => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        let _ = crate::core::browser::BrowserManager::reload_page(port, tid).await;
+                        if let Err(e) = crate::core::browser::BrowserManager::reload_page(port, tid).await {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Reload Error: {}", e)));
+                        }
                     });
                 }
                 AppEvent::RequestTabRefresh => {
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        if let Ok(tabs) = crate::core::browser::BrowserManager::list_tabs(port).await {
-                            crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs));
+                        match crate::core::browser::BrowserManager::list_tabs(port).await {
+                            Ok(tabs) => crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs)),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Refresh Error: {}", e))),
                         }
                     });
                 }
@@ -210,7 +232,7 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::execute_script(port, tid, script).await {
                             Ok(res) => crate::ui::scrape::emit(AppEvent::ScriptFinished(tid_clone, res)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(e.to_string())),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Script Error: {}", e))),
                         }
                     });
                 }
@@ -222,14 +244,13 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        if let Ok(sels) = crate::core::browser::BrowserManager::get_page_selectors(port, tid).await {
-                            crate::ui::scrape::emit(AppEvent::SelectorsReceived(tid_clone, sels));
+                        match crate::core::browser::BrowserManager::get_page_selectors(port, tid).await {
+                            Ok(sels) => crate::ui::scrape::emit(AppEvent::SelectorsReceived(tid_clone, sels)),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Selector Error: {}", e))),
                         }
                     });
                 }
-                AppEvent::RequestNetworkToggle(_tid, _active) => {
-                    // Handled in sniffer
-                }
+                AppEvent::RequestNetworkToggle(_tid, _active) => {}
                 AppEvent::RequestUrlBlock(tid, pattern) => {
                     let port = self.state.config.remote_debug_port;
                     let ws = self.ensure_workspace(&tid);
@@ -254,38 +275,30 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::capture_html(port, tid, root, mirror, assets).await {
                             Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured: {:?}", path))),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(e.to_string())),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture Error: {}", e))),
                         }
                     });
                 }
                 AppEvent::RequestAutomationRun(tid, steps, funcs, auto_config) => {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
-                    
                     let mut dsl_funcs = std::collections::HashMap::new();
-                    for (name, f_steps) in funcs {
-                        dsl_funcs.insert(name, map_ui_steps_to_dsl(&f_steps));
-                    }
-
+                    for (name, f_steps) in funcs { dsl_funcs.insert(name, map_ui_steps_to_dsl(&f_steps)); }
                     let dsl = crate::core::automation::dsl::AutomationDsl {
-                        dsl_version: 1,
-                        metadata: None,
-                        functions: dsl_funcs,
-                        steps: map_ui_steps_to_dsl(&steps),
+                        dsl_version: 1, metadata: None, functions: dsl_funcs, steps: map_ui_steps_to_dsl(&steps),
                     };
                     tracing::info!("[USER] Automation pipeline started for tab: {}", tid_clone);
-
                     let output_dir = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
-                        let mut engine = crate::core::automation::engine::AutomationEngine::new(
-                            port, tid_clone, output_dir,
-                        );
+                        let mut engine = crate::core::automation::engine::AutomationEngine::new(port, tid_clone, output_dir);
                         engine.config = crate::core::automation::engine::ExecutionConfig {
                             step_timeout: std::time::Duration::from_millis(auto_config.step_timeout_ms),
                             retry_attempts: auto_config.retry_attempts,
                             screenshot_on_error: auto_config.screenshot_on_error,
                         };
-                        let _ = engine.run(dsl).await;
+                        if let Err(e) = engine.run(dsl).await {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Automation Failed: {}", e)));
+                        }
                     });
                 }
             }
@@ -312,18 +325,13 @@ impl eframe::App for CrawlerApp {
         if !self.state.output_confirmed {
             egui::Window::new("Sniper Core - Initial Setup")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false)
-                .resizable(false)
+                .collapsible(false).resizable(false)
                 .show(ctx, |ui| {
                     ui.heading("Select Output Directory");
-                    ui.label("Captured data, logs and assets will be saved here.");
-                    ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{:?}", self.state.config.output_dir)).color(Color32::KHAKI));
                         if ui.button("Browse...").clicked() {
-                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                                self.state.config.output_dir = path;
-                            }
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() { self.state.config.output_dir = path; }
                         }
                     });
                     ui.add_space(20.0);
@@ -339,23 +347,16 @@ impl eframe::App for CrawlerApp {
         if !self.state.profile_confirmed {
             egui::Window::new("Browser Profile Setup")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false)
-                .resizable(false)
+                .collapsible(false).resizable(false)
                 .show(ctx, |ui| {
                     ui.heading("Select Browser Profile Mode");
-                    ui.add_space(10.0);
                     ui.vertical(|ui| {
-                        if ui.selectable_label(self.state.use_custom_profile, "🏠 ISOLATED PROFILE (Recommended - Created in output folder)").clicked() {
-                            self.state.use_custom_profile = true;
-                        }
-                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SYSTEM PROFILE (Uses your existing Chrome/Chromium data)").clicked() {
-                            self.state.use_custom_profile = false;
-                        }
+                        if ui.selectable_label(self.state.use_custom_profile, "🏠 ISOLATED PROFILE").clicked() { self.state.use_custom_profile = true; }
+                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SYSTEM PROFILE").clicked() { self.state.use_custom_profile = false; }
                     });
                     ui.add_space(20.0);
                     if ui.button(RichText::new("CONFIRM & LAUNCH").strong()).clicked() {
                         self.state.profile_confirmed = true;
-                        tracing::info!("[USER] Profile type selected: {}", if self.state.use_custom_profile { "Isolated" } else { "System" });
                     }
                 });
             return;
@@ -372,16 +373,11 @@ impl eframe::App for CrawlerApp {
         if let Some(notif) = &self.state.notification {
             let mut open = true;
             egui::Window::new(&notif.title)
-                .open(&mut open)
-                .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label(&notif.message);
-                });
+                .open(&mut open).anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
+                .collapsible(false).resizable(false)
+                .show(ctx, |ui| { ui.label(&notif.message); });
             if !open { self.state.notification = None; }
         }
-
         ctx.request_repaint();
     }
 }
