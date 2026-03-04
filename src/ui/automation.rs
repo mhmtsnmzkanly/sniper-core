@@ -147,11 +147,29 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             _ => "▶ START EXECUTION".into(),
         };
 
-        if ui.add_enabled(!is_running && !auto_steps.is_empty(), 
-            egui::Button::new(RichText::new(btn_text).strong()).min_size([200.0, 40.0].into()))
-            .clicked() {
-            auto_status = AutomationStatus::Running(0);
-            emit(AppEvent::RequestAutomationRun(tid.to_string(), auto_steps.clone()));
+        if let Some(ws) = state.workspaces.get_mut(tid) {
+            if ui.add_enabled(!is_running && !auto_steps.is_empty(), 
+                egui::Button::new(RichText::new(btn_text).strong()).min_size([200.0, 40.0].into()))
+                .clicked() {
+                ws.auto_status = AutomationStatus::Running(0);
+                emit(AppEvent::RequestAutomationRun(tid.to_string(), auto_steps.clone(), ws.auto_config.clone()));
+            }
+        }
+
+        ui.separator();
+        
+        if let Some(ws) = state.workspaces.get_mut(tid) {
+            ui.menu_button("⚙ SETTINGS", |ui| {
+                ui.checkbox(&mut ws.auto_config.screenshot_on_error, "📸 Screenshot on Error");
+                ui.horizontal(|ui| {
+                    ui.label("Retry Attempts:");
+                    ui.add(egui::DragValue::new(&mut ws.auto_config.retry_attempts).range(0..=10));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Step Timeout (ms):");
+                    ui.add(egui::DragValue::new(&mut ws.auto_config.step_timeout_ms).range(1000..=60000).speed(100));
+                });
+            });
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

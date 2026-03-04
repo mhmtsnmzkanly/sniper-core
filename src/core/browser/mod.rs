@@ -30,31 +30,60 @@ impl BrowserManager {
             "google-chrome"
         };
 
-        let child = std::process::Command::new(chrome_path)
-            .arg(format!("--remote-debugging-port={}", port))
+        let mut command = std::process::Command::new(chrome_path);
+        command.arg(format!("--remote-debugging-port={}", port))
             .arg(format!("--user-data-dir={}", profile_path.display()))
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
-            .arg(url)
+            .arg("--remote-allow-origins=*");
+
+        #[cfg(target_os = "linux")]
+        {
+            command.arg("--no-sandbox")
+                   .arg("--disable-setuid-sandbox")
+                   .arg("--disable-dev-shm-usage");
+        }
+
+        // Pre-check if something is already on that port
+        let client = rquest::Client::new();
+        if client.get(format!("http://127.0.0.1:{}/json/version", port)).send().await.is_ok() {
+            tracing::info!("[BROWSER] Found existing instance on port {}. Skipping launch.", port);
+            // We don't have a child process to return, but we can return a dummy or error
+            // For now, let's just proceed and see if connect works.
+        }
+
+        let child = command.arg(url)
             .spawn()
-            .map_err(AppError::Io)?;
+            .map_err(|e| {
+                tracing::error!("[BROWSER] Failed to spawn {}: {}", chrome_path, e);
+                AppError::Io(e)
+            })?;
 
         let tx_clone = tx.clone();
-        let pid = child.id();
+        let client_heartbeat = client.clone();
+        let port_clone = port;
+        
+        // CDP Heartbeat approach - more reliable across OS and process wrappers
         tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(5)).await; 
+            let hb_url = format!("http://127.0.0.1:{}/json/version", port_clone);
+            let mut fail_count = 0;
+            
             loop {
-                #[cfg(unix)]
-                {
-                    use libc::{kill, ESRCH};
-                    if unsafe { kill(pid as i32, 0) } != 0 {
-                        let err = std::io::Error::last_os_error();
-                        if err.raw_os_error() == Some(ESRCH) {
+                match client_heartbeat.get(&hb_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        fail_count = 0;
+                    }
+                    _ => {
+                        fail_count += 1;
+                        if fail_count >= 3 {
+                            tracing::warn!("[BROWSER] CDP Heartbeat failed at {}. Triggering termination.", hb_url);
                             let _ = tx_clone.send(AppEvent::BrowserTerminated);
                             break;
                         }
                     }
                 }
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+                tokio::time::sleep(Duration::from_millis(2000)).await;
             }
         });
 
@@ -128,9 +157,9 @@ impl BrowserManager {
                             request_id: e.request_id.as_ref().to_string(),
                             url: e.request.url.clone(),
                             method: e.request.method.clone(),
-                            resource_type: "Other".into(), // Simplified
+                            resource_type: "Other".into(),
                             status: None,
-                            request_body: None, // Simplified
+                            request_body: None,
                             response_body: None,
                         };
                         crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
@@ -237,7 +266,6 @@ impl BrowserManager {
             .http_only(cookie.http_only);
         
         if cookie.expires > 0.0 {
-            // Using serde_json to bypass private field in TimeSinceEpoch
             let expires_json = serde_json::to_value(cookie.expires).unwrap_or_default();
             if let Ok(ts) = serde_json::from_value::<chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch>(expires_json) {
                 builder = builder.expires(ts);
@@ -289,7 +317,7 @@ impl BrowserManager {
         std::fs::write(&html_path, html).map_err(AppError::Io)?;
         
         if assets {
-            // Asset capture logic would go here if needed
+            // Asset capture logic would go here
         }
 
         Ok(html_path)
@@ -327,9 +355,7 @@ impl BrowserManager {
 
     pub fn extract_resources_from_css(css_content: &str, base_url: &str) -> Vec<String> {
         let mut urls = Vec::new();
-        // Match url(...)
         let re_url = regex::Regex::new(r#"(?i)url\s*\(\s*['"]?([^'")]*)['"]?\s*\)"#).unwrap();
-        // Match @import "..."
         let re_import = regex::Regex::new(r#"(?i)@import\s+['"]([^'"]+)['"]"#).unwrap();
         
         let base = url::Url::parse(base_url).ok();

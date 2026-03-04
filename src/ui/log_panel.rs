@@ -2,44 +2,39 @@ use crate::state::AppState;
 use egui::{Ui, Color32, RichText};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    ui.group(|ui| {
+    ui.vertical(|ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("SESSION LOGS").strong().size(16.0));
+            ui.heading(RichText::new("SYSTEM LOGS").color(Color32::LIGHT_BLUE));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("COPY ALL LOGS").clicked() {
-                    let full_log: String = state.logs.iter()
-                        .map(|l| format!("[{}] {}", l.timestamp, l.message))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    ui.ctx().copy_text(full_log);
+                if ui.button("🗑 CLEAR").clicked() { state.logs.clear(); }
+                if ui.button("📋 COPY ALL").clicked() {
+                    let all = state.logs.iter()
+                        .map(|l| format!("[{}] [{}] {}", l.timestamp, l.level, l.message))
+                        .collect::<Vec<_>>().join("\n");
+                    ui.ctx().copy_text(all);
                 }
             });
         });
-        ui.add_space(5.0);
-        ui.separator();
 
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .stick_to_bottom(true)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width()); // Tam genişlik
-                ui.vertical(|ui| {
-                    for log in &state.logs {
-                        let color = match log.level {
-                            tracing::Level::ERROR => Color32::RED,
-                            tracing::Level::WARN => Color32::YELLOW,
-                            tracing::Level::INFO => Color32::LIGHT_GRAY,
-                            tracing::Level::DEBUG => Color32::GRAY,
-                            tracing::Level::TRACE => Color32::DARK_GRAY,
-                        };
-                        
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("[{}]", log.timestamp)).color(Color32::DARK_GRAY).monospace().size(12.0));
-                            ui.add(egui::Label::new(RichText::new(&log.message).color(color).monospace().size(13.0)).selectable(true));
-                        });
-                        ui.add_space(3.0);
-                    }
+        ui.add_space(5.0);
+
+        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            
+            for log in &state.logs {
+                let color = match log.level.as_str() {
+                    "ERROR" => Color32::RED,
+                    "WARN" => Color32::YELLOW,
+                    "DEBUG" => Color32::GRAY,
+                    "TRACE" => Color32::DARK_GRAY,
+                    _ => Color32::LIGHT_GRAY,
+                };
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("[{}]", log.timestamp)).color(Color32::DARK_GRAY).monospace().size(12.0));
+                    ui.add(egui::Label::new(RichText::new(&log.message).color(color).monospace().size(13.0)).selectable(true));
                 });
-            });
+            }
+        });
     });
 }

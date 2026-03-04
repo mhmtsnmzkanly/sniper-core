@@ -3,75 +3,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// Represents the primary navigation sections of the application.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Tab {
     Scrape,
     Automation,
     Translate,
+    Media,
+    Network,
+    Storage,
     Settings,
+    Logs,
 }
 
-/// Captured binary media asset.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MediaAsset {
-    pub name: String,
-    pub url: String,
-    pub mime_type: String,
-    pub size_bytes: usize,
-    pub data: Option<Vec<u8>>,
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
 }
 
-/// Atomic operation in the automation pipeline.
-/// SYMMETRIC WITH dsl::Step FOR PERFECT SAVE/LOAD
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum AutomationStep {
-    Navigate(String),
-    Click(String),
-    RightClick(String),
-    Hover(String),
-    Type {
-        selector: String,
-        value: String,
-        is_variable: bool,
-    },
-    Wait(u64),
-    WaitSelector {
-        selector: String,
-        timeout_ms: u64,
-    },
-    WaitUntilIdle {
-        timeout_ms: u64,
-    },
-    WaitNetworkIdle {
-        timeout_ms: u64,
-        min_idle_ms: u64,
-    },
-    Extract {
-        selector: String,
-        as_key: String,
-        add_to_dataset: bool,
-    },
-    SetVariable {
-        key: String,
-        value: String,
-    },
-    NewRow,
-    Export(String),
-    Screenshot(String),
-    ScrollBottom,
-    SwitchFrame(String),
-    If {
-        selector: String,
-        then_steps: Vec<AutomationStep>,
-    },
-    ForEach {
-        selector: String,
-        body: Vec<AutomationStep>,
-    },
-}
-
-/// Current status of a tab's automation pipeline.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum AutomationStatus {
     Idle,
     Running(usize),
@@ -79,20 +30,55 @@ pub enum AutomationStatus {
     Error(String),
 }
 
-/// Metadata for a Chrome/Chromium tab retrieved via CDP.
-#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AutomationStep {
+    Navigate(String),
+    Click(String),
+    RightClick(String),
+    Hover(String),
+    Type { selector: String, value: String, is_variable: bool },
+    Wait(u64),
+    WaitSelector { selector: String, timeout_ms: u64 },
+    WaitUntilIdle { timeout_ms: u64 },
+    WaitNetworkIdle { timeout_ms: u64, min_idle_ms: u64 },
+    Extract { selector: String, as_key: String, add_to_dataset: bool },
+    NewRow,
+    Export(String),
+    Screenshot(String),
+    SetVariable { key: String, value: String },
+    ScrollBottom,
+    SwitchFrame(String),
+    If { selector: String, then_steps: Vec<AutomationStep> },
+    ForEach { selector: String, body: Vec<AutomationStep> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationConfig {
+    pub retry_attempts: u32,
+    pub screenshot_on_error: bool,
+    pub step_timeout_ms: u64,
+}
+
+impl Default for AutomationConfig {
+    fn default() -> Self {
+        Self {
+            retry_attempts: 0,
+            screenshot_on_error: true,
+            step_timeout_ms: 30000,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChromeTabInfo {
     pub id: String,
     pub title: String,
     pub url: String,
     #[serde(rename = "type")]
     pub tab_type: String,
-    #[serde(rename = "webSocketDebuggerUrl")]
-    pub web_socket_url: String,
 }
 
-/// Browser cookie metadata.
-#[derive(Clone, Debug, serde::Deserialize, Serialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ChromeCookie {
     pub name: String,
     pub value: String,
@@ -103,8 +89,16 @@ pub struct ChromeCookie {
     pub http_only: bool,
 }
 
-/// Intercepted network request/response pair.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct MediaAsset {
+    pub name: String,
+    pub url: String,
+    pub mime_type: String,
+    pub size_bytes: usize,
+    pub data: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct NetworkRequest {
     pub request_id: String,
     pub url: String,
@@ -131,6 +125,8 @@ pub struct TabWorkspace {
     pub show_cookie_modal: bool,
     pub auto_steps: Vec<AutomationStep>,
     pub auto_status: AutomationStatus,
+    pub auto_config: AutomationConfig,
+    pub discovered_selectors: Vec<String>,
     pub variables: HashMap<String, String>,
     pub extracted_data: Vec<HashMap<String, String>>,
     pub var_edit_key: String,
@@ -144,20 +140,19 @@ pub struct TabWorkspace {
     pub show_media_export: bool,
     pub media_export_types: HashSet<String>,
     pub media_export_cols: HashSet<String>,
+    pub media_sort_col: String,
+    pub media_sort_asc: bool,
     pub sniffer_active: bool,
     pub auto_reload_triggered: bool,
     pub open_time: f64,
     pub active_request_id: Option<String>,
     pub active_media_url: Option<String>,
-    pub blocked_urls: HashSet<String>,
-    pub discovered_selectors: Vec<String>,
     pub selector_search: String,
-    pub media_sort_col: String,
-    pub media_sort_asc: bool,
+    pub blocked_urls: HashSet<String>,
 }
 
 impl TabWorkspace {
-    pub fn new(_id: String, title: String) -> Self {
+    pub fn new(_tid: String, title: String) -> Self {
         Self {
             title,
             show_network: false,
@@ -173,6 +168,8 @@ impl TabWorkspace {
             show_cookie_modal: false,
             auto_steps: Vec::new(),
             auto_status: AutomationStatus::Idle,
+            auto_config: AutomationConfig::default(),
+            discovered_selectors: Vec::new(),
             variables: HashMap::new(),
             extracted_data: Vec::new(),
             var_edit_key: String::new(),
@@ -186,25 +183,17 @@ impl TabWorkspace {
             show_media_export: false,
             media_export_types: HashSet::new(),
             media_export_cols: HashSet::new(),
+            media_sort_col: "name".to_string(),
+            media_sort_asc: true,
             sniffer_active: false,
             auto_reload_triggered: false,
             open_time: 0.0,
             active_request_id: None,
             active_media_url: None,
-            blocked_urls: HashSet::new(),
-            discovered_selectors: Vec::new(),
             selector_search: String::new(),
-            media_sort_col: "name".to_string(),
-            media_sort_asc: true,
+            blocked_urls: HashSet::new(),
         }
     }
-}
-
-#[derive(Clone)]
-pub struct LogEntry {
-    pub message: String,
-    pub level: tracing::Level,
-    pub timestamp: String,
 }
 
 pub struct Notification {
@@ -213,39 +202,41 @@ pub struct Notification {
 }
 
 pub struct AppState {
-    pub active_tab: Tab,
+    pub current_tab: Tab,
+    pub active_tab: Tab, // Duplicate or alias for transition
     pub config: AppConfig,
+    pub is_browser_running: bool,
+    pub available_tabs: Vec<ChromeTabInfo>,
+    pub selected_tab_id: Option<String>,
+    pub workspaces: HashMap<String, TabWorkspace>,
+    pub logs: Vec<LogEntry>,
     pub session_timestamp: String,
+    pub notification: Option<Notification>,
+    pub last_tab_refresh: f64,
+    pub is_translating: bool,
     pub output_confirmed: bool,
     pub profile_confirmed: bool,
     pub use_custom_profile: bool,
-    pub notification: Option<Notification>,
-    pub available_tabs: Vec<ChromeTabInfo>,
-    pub selected_tab_id: Option<String>,
-    pub is_browser_running: bool,
-    pub last_tab_refresh: f64,
-    pub is_translating: bool,
-    pub workspaces: HashMap<String, TabWorkspace>,
-    pub logs: Vec<LogEntry>,
 }
 
 impl AppState {
-    pub fn new(config: AppConfig, timestamp: String) -> Self {
+    pub fn new(config: AppConfig, session_ts: String) -> Self {
         Self {
+            current_tab: Tab::Scrape,
             active_tab: Tab::Scrape,
             config,
-            session_timestamp: timestamp,
+            is_browser_running: false,
+            available_tabs: Vec::new(),
+            selected_tab_id: None,
+            workspaces: HashMap::new(),
+            logs: Vec::new(),
+            session_timestamp: session_ts,
+            notification: None,
+            last_tab_refresh: 0.0,
+            is_translating: false,
             output_confirmed: false,
             profile_confirmed: false,
             use_custom_profile: true,
-            notification: None,
-            available_tabs: Vec::new(),
-            selected_tab_id: None,
-            is_browser_running: false,
-            last_tab_refresh: 0.0,
-            is_translating: false,
-            workspaces: HashMap::new(),
-            logs: Vec::new(),
         }
     }
 

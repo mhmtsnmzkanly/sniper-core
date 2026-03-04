@@ -1,20 +1,41 @@
 use crate::core::automation::dsl::{AutomationDsl, Step};
 use crate::core::automation::context::AutomationContext;
+use crate::core::automation::driver::{AutomationDriver};
+use crate::core::automation::cdp_driver::CdpDriver;
 use crate::core::error::{AppError, AppResult};
 use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 use std::sync::{Arc, Mutex};
-use chromiumoxide::{Browser, Page};
+use chromiumoxide::{Browser};
 use futures::StreamExt;
+use std::time::Instant;
+
+pub struct ExecutionConfig {
+    pub step_timeout: std::time::Duration,
+    pub retry_attempts: u32,
+    pub screenshot_on_error: bool,
+}
+
+impl Default for ExecutionConfig {
+    fn default() -> Self {
+        Self {
+            step_timeout: std::time::Duration::from_secs(30),
+            retry_attempts: 0,
+            screenshot_on_error: true,
+        }
+    }
+}
 
 pub struct AutomationEngine {
     pub context: Arc<Mutex<AutomationContext>>,
+    pub config: ExecutionConfig,
 }
 
 impl AutomationEngine {
     pub fn new(port: u16, tab_id: String, output_dir: std::path::PathBuf) -> Self {
         Self {
             context: Arc::new(Mutex::new(AutomationContext::new(port, tab_id, output_dir))),
+            config: ExecutionConfig::default(),
         }
     }
 
@@ -43,6 +64,7 @@ impl AutomationEngine {
 
         let page = page.ok_or_else(|| AppError::NotFound(format!("Target page {} not found", tid)))?;
         
+        // Setup page
         page.execute(chromiumoxide::cdp::browser_protocol::page::EnableParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         let mut dialog_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::page::EventJavascriptDialogOpening>().await.map_err(|e| AppError::Browser(e.to_string()))?;
         let page_for_dialog = page.clone();
@@ -52,35 +74,61 @@ impl AutomationEngine {
             }
         });
 
+        // Initialize Driver
+        let driver = Box::new(CdpDriver::new(page));
+
         let steps = dsl.steps.clone();
 
         for (idx, step) in steps.iter().enumerate() {
+            let start_time = Instant::now();
             {
                 let mut ctx = self.context.lock().unwrap();
                 ctx.current_step = idx;
                 emit(AppEvent::AutomationProgress(ctx.tab_id.clone(), idx));
             }
             
-            match self.execute_step_internal(step, &page).await {
-                Ok(_) => {
-                    tracing::debug!("[AUTO-ENGINE] Step {} completed.", idx + 1);
+            tracing::info!("[AUTO-ENGINE] Executing Step {}: {:?}", idx + 1, step);
+
+            let mut attempts = 0;
+            let max_attempts = self.config.retry_attempts + 1;
+            let mut last_error = None;
+
+            while attempts < max_attempts {
+                match self.execute_step_internal(step, driver.as_ref()).await {
+                    Ok(_) => {
+                        let duration = start_time.elapsed();
+                        tracing::info!("[AUTO-ENGINE] Step {} completed in {:?} (Attempts: {})", idx + 1, duration, attempts + 1);
+                        last_error = None;
+                        break;
+                    }
+                    Err(e) => {
+                        attempts += 1;
+                        tracing::warn!("[AUTO-ENGINE] Step {} attempt {} failed: {}", idx + 1, attempts, e);
+                        last_error = Some(e);
+                        if attempts < max_attempts {
+                            tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64)).await;
+                        }
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("[AUTO-ENGINE] Step {} failed: {}", idx + 1, e);
-                    
+            }
+
+            if let Some(e) = last_error {
+                tracing::error!("[AUTO-ENGINE] Step {} failed after {} attempts: {}", idx + 1, max_attempts, e);
+                
+                if self.config.screenshot_on_error {
                     let ts = chrono::Local::now().format("%H%M%S").to_string();
                     let filename = format!("FAIL_STEP_{}_{}.png", idx + 1, ts);
                     let full_path = output_dir.join(&filename);
                     
-                    if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
+                    if let Ok(data) = driver.screenshot().await {
                         let _ = std::fs::write(&full_path, data);
                         tracing::warn!("[AUTO-ENGINE] Failure screenshot saved to {:?}", full_path);
                         emit(AppEvent::OperationError(format!("Failure! Saved to: {}", filename)));
                     }
-
-                    emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
-                    return Err(e);
                 }
+
+                emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
+                return Err(e);
             }
         }
 
@@ -91,39 +139,22 @@ impl AutomationEngine {
 
     fn interpolate(&self, text: &str) -> String {
         let ctx = self.context.lock().unwrap();
-        let mut result = text.to_string();
-        for (key, val) in &ctx.variables {
-            let placeholder = format!("{{{{{}}}}}", key);
-            result = result.replace(&placeholder, val);
-        }
-        result
-    }
-
-    async fn run_js(&self, page: &Page, script: String) -> AppResult<String> {
-        let wrapped_js = format!(
-            "(() => {{ try {{ \
-                const result = (async () => {{ {} }})(); \
-                return Promise.resolve(result).then(r => JSON.stringify({{ success: true, data: r }})); \
-            }} catch (e) {{ \
-                return JSON.stringify({{ success: false, error: e.message }}); \
-            }} }})()", script
-        );
-
-        let result = page.evaluate(wrapped_js).await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let val_str = result.value().clone().cloned().unwrap_or_default().to_string();
         
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&val_str) {
-            if json["success"].as_bool() == Some(false) {
-                let err_msg = json["error"].as_str().unwrap_or("Unknown JS error");
-                return Err(AppError::Browser(format!("JS Error: {}", err_msg)));
+        // Find all {{variable}} patterns
+        let re = regex::Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+        
+        let mut final_result = text.to_string();
+        for cap in re.captures_iter(text) {
+            let full_match = &cap[0];
+            let var_name = cap[1].trim();
+            if let Some(val) = ctx.get_variable(var_name) {
+                final_result = final_result.replace(full_match, &val);
             }
-            let data = json["data"].to_string();
-            return Ok(data.trim_matches('"').to_string());
         }
-        Ok(val_str)
+        final_result
     }
 
-    fn execute_step_internal<'a>(&'a self, step: &'a Step, page: &'a Page) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
+    fn execute_step_internal<'a>(&'a self, step: &'a Step, driver: &'a dyn AutomationDriver) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let (_tid, output_dir) = { 
                 let ctx = self.context.lock().unwrap();
@@ -133,55 +164,31 @@ impl AutomationEngine {
             match step {
                 Step::Navigate { url } => {
                     let final_url = self.interpolate(url);
-                    page.goto(final_url).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    driver.navigate(&final_url).await?;
                 }
                 Step::Click { selector } => {
-                    let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let js = format!(
-                        "const el = document.querySelector('{}'); \
-                         if (!el) throw new Error('Element not found'); \
-                         el.style.outline = '3px solid #ff00ff'; \
-                         el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
-                         return true;", final_sel
-                    );
-                    self.run_js(page, js).await?;
-                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let final_sel = self.interpolate(selector);
+                    driver.click(&final_sel).await?;
                 }
                 Step::RightClick { selector } => {
-                    let final_sel = self.interpolate(selector).replace("'", "\\'");
+                    let final_sel = self.interpolate(selector);
                     let js = format!(
                         "const el = document.querySelector('{}'); \
                          if (!el) throw new Error('Element not found'); \
                          const ev = new MouseEvent('contextmenu', {{ bubbles: true, cancelable: true, view: window, button: 2 }}); \
                          el.dispatchEvent(ev); \
-                         return true;", final_sel
+                         return true;", final_sel.replace("'", "\\'")
                     );
-                    let _ = self.run_js(page, js).await?;
+                    let _: String = driver.eval(&js).await?;
                 }
                 Step::Hover { selector } => {
-                    let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    el.hover().await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    let final_sel = self.interpolate(selector);
+                    driver.hover(&final_sel).await?;
                 }
                 Step::Type { selector, value, .. } => {
                     let final_sel = self.interpolate(selector);
                     let final_val = self.interpolate(value);
-                    let highlight_js = format!(
-                        "(() => {{ \
-                            const el = document.querySelector('{}'); \
-                            if (!el) throw new Error('Input not found'); \
-                            el.style.outline = '3px solid #00ffff'; \
-                            el.scrollIntoView({{behavior: 'instant', block: 'center'}}); \
-                            return true; \
-                        }})()", final_sel.replace("'", "\\'")
-                    );
-                    self.run_js(page, highlight_js).await?;
-                    let el = page.find_element(&final_sel).await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    el.click().await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    el.type_str(final_val).await.map_err(|e| AppError::Browser(e.to_string()))?;
+                    driver.type_text(&final_sel, &final_val).await?;
                 }
                 Step::Wait { seconds } => {
                     tokio::time::sleep(std::time::Duration::from_secs(*seconds)).await;
@@ -204,7 +211,7 @@ impl AutomationEngine {
                             }}, 200); \
                         }})", final_sel, timeout
                     );
-                    self.run_js(page, js).await?;
+                    let _: String = driver.eval(&js).await?;
                 }
                 Step::Extract { selector, as_key, add_to_row } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
@@ -214,11 +221,11 @@ impl AutomationEngine {
                          el.style.backgroundColor = 'rgba(0, 255, 0, 0.2)'; \
                          return el.innerText || el.value || '';", final_sel
                     );
-                    let text = self.run_js(page, js).await?;
+                    let text: String = driver.eval(&js).await?;
                     if text != "NOT_FOUND" {
                         let (tid_clone, current_rows) = {
                             let mut ctx = self.context.lock().unwrap();
-                            ctx.variables.insert(as_key.clone(), text.clone());
+                            ctx.set_variable(as_key.clone(), text.clone());
                             if *add_to_row {
                                 ctx.current_row.insert(as_key.clone(), text.clone());
                             }
@@ -255,72 +262,55 @@ impl AutomationEngine {
                 Step::Screenshot { filename } => {
                     let final_name = self.interpolate(filename);
                     let full_path = output_dir.join(&final_name);
-                    if let Ok(data) = page.screenshot(chromiumoxide::page::ScreenshotParams::builder().full_page(true).build()).await {
+                    if let Ok(data) = driver.screenshot().await {
                         let _ = std::fs::write(full_path, data);
                     }
                 }
                 Step::WaitUntilIdle { timeout_ms } => {
-                    let _ = page.wait_for_navigation().await;
+                    driver.wait_for_navigation().await?;
                     tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await;
                 }
-                Step::WaitNetworkIdle { timeout_ms, min_idle_ms } => {
-                    use chromiumoxide::cdp::browser_protocol::network::EnableParams;
-                    let _ = page.execute(EnableParams::default()).await;
-                    let mut request_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    let mut response_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-                    let mut failed_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFailed>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-
-                    let start = std::time::Instant::now();
-                    let mut last_activity = std::time::Instant::now();
-                    let mut active_requests: i32 = 0;
-
-                    loop {
-                        if start.elapsed().as_millis() > *timeout_ms as u128 { break; }
-                        if active_requests == 0 && last_activity.elapsed().as_millis() > *min_idle_ms as u128 { break; }
-
-                        tokio::select! {
-                            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
-                            Some(_) = request_events.next() => { active_requests += 1; last_activity = std::time::Instant::now(); }
-                            Some(_) = response_events.next() => { active_requests = active_requests.saturating_sub(1); last_activity = std::time::Instant::now(); }
-                            Some(_) = failed_events.next() => { active_requests = active_requests.saturating_sub(1); last_activity = std::time::Instant::now(); }
-                        }
-                    }
+                Step::WaitNetworkIdle { timeout_ms, .. } => {
+                    tokio::time::sleep(std::time::Duration::from_millis(*timeout_ms)).await;
                 }
                 Step::SetVariable { key, value } => {
                     let final_val = self.interpolate(value);
                     let mut ctx = self.context.lock().unwrap();
-                    ctx.variables.insert(key.clone(), final_val);
+                    ctx.set_variable(key.clone(), final_val);
                 }
                 Step::ScrollBottom => {
-                    self.run_js(page, "window.scrollTo(0, document.body.scrollHeight)".into()).await?;
+                    let _: String = driver.eval("window.scrollTo(0, document.body.scrollHeight)").await?;
                 }
                 Step::SwitchFrame { selector } => {
-                    if selector.is_empty() {
-                        let _ = page.mainframe();
-                    } else {
-                        let final_sel = self.interpolate(selector).replace("'", "\\'");
-                        let js = format!("document.querySelector('{}').contentWindow.focus()", final_sel);
-                        let _ = self.run_js(page, js).await?;
+                    let final_sel = self.interpolate(selector);
+                    if !final_sel.is_empty() {
+                        let js = format!("document.querySelector('{}').contentWindow.focus()", final_sel.replace("'", "\\'"));
+                        let _: String = driver.eval(&js).await?;
                     }
                 }
                 Step::If { selector, then_steps } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let res = self.run_js(page, format!("!!document.querySelector('{}')", final_sel)).await?;
+                    let res: String = driver.eval(&format!("!!document.querySelector('{}')", final_sel)).await?;
                     if res == "true" {
-                        for s in then_steps { self.execute_step_internal(s, page).await?; }
+                        for s in then_steps { self.execute_step_internal(s, driver).await?; }
                     }
                 }
                 Step::ForEach { selector, body } => {
                     let final_sel = self.interpolate(selector).replace("'", "\\'");
-                    let count_str = self.run_js(page, format!("document.querySelectorAll('{}').length", final_sel)).await?;
+                    let count_str: String = driver.eval(&format!("document.querySelectorAll('{}').length", final_sel)).await?;
                     let count = count_str.parse::<usize>().unwrap_or(0);
                     for i in 0..count {
                         {
                             let mut ctx = self.context.lock().unwrap();
-                            ctx.variables.insert("index".into(), i.to_string());
-                            ctx.variables.insert("item".into(), format!("{}:nth-child({})", final_sel, i + 1));
+                            ctx.push_scope();
+                            ctx.set_variable("index".into(), i.to_string());
+                            ctx.set_variable("item".into(), format!("{}:nth-child({})", final_sel, i + 1));
                         }
-                        for s in body { self.execute_step_internal(s, page).await?; }
+                        for s in body { self.execute_step_internal(s, driver).await?; }
+                        {
+                            let mut ctx = self.context.lock().unwrap();
+                            ctx.pop_scope();
+                        }
                     }
                 }
             }

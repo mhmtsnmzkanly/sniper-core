@@ -4510,6 +4510,7 @@ dependencies = [
 name = "sniper-core"
 version = "1.2.8"
 dependencies = [
+ "async-trait",
  "base64",
  "chromiumoxide",
  "chrono",

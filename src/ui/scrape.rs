@@ -48,8 +48,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let log_dir = state.config.output_dir.clone();
                     let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
                     tokio::spawn(async move {
-                        if let Ok(child) = crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts, tx).await {
-                            emit(AppEvent::BrowserStarted(child));
+                        match crate::core::browser::BrowserManager::launch(&url, profile, port, log_dir, ts, tx).await {
+                            Ok(child) => {
+                                emit(AppEvent::BrowserStarted(child));
+                            }
+                            Err(e) => {
+                                tracing::error!("[LAUNCH] Browser launch failed: {}", e);
+                                emit(AppEvent::OperationError(format!("Launch Failed: {}", e)));
+                            }
                         }
                     });
                 }
