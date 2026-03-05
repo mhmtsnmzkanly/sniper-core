@@ -204,7 +204,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         });
 
         // --- ASSET GRID/LIST ---
-        egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
+        let list_height = ui.available_height();
+        egui::ScrollArea::vertical()
+            .max_height(list_height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
             if gallery_mode {
                 ui.horizontal_wrapped(|ui| {
                     for asset in filtered_assets {

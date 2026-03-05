@@ -128,7 +128,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             true
         }).collect();
 
-        egui::ScrollArea::vertical().max_height(520.0).show(ui, |ui| {
+        let list_height = ui.available_height();
+        egui::ScrollArea::vertical()
+            .max_height(list_height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
             for req in filtered_requests {
                 Frame::group(ui.style())
                     .stroke(egui::Stroke::new(1.0, Color32::from_gray(55)))
