@@ -9,7 +9,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     // Extract state for local use
-    let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, preview_size, show_export, gallery_mode, sort_col, sort_asc, min_size_kb) = {
+    let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, mut preview_size, show_export, gallery_mode, sort_col, sort_asc, min_size_kb) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.media_assets.clone(), 
@@ -59,9 +59,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                 ui.separator();
                 ui.label("SIZE:");
-                if let Some(ws) = state.workspaces.get_mut(&tid) {
-                    ui.add(egui::Slider::new(&mut ws.media_preview_size, 40.0..=250.0).show_value(false));
-                }
+                // KOD NOTU: Slider artık local mut değişkeni kullanıyor ve sabit bir ID'ye sahip.
+                ui.add(egui::Slider::new(&mut preview_size, 40.0..=250.0).show_value(false));
 
                 ui.separator();
                 // BATCH DOWNLOAD
@@ -301,5 +300,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     if let Some(ws) = state.workspaces.get_mut(&tid) {
         ws.media_search = media_search;
         ws.media_type_filter = type_filter;
+        ws.media_preview_size = preview_size;
     }
 }
