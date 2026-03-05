@@ -444,9 +444,21 @@ impl eframe::App for CrawlerApp {
                     self.state.is_script_running = true;
                     let token = Arc::new(std::sync::atomic::AtomicBool::new(true));
                     self.state.scripting_cancel_token = Some(token.clone());
+                    let (selected_tab_console_logs, selected_tab_cookies) = if let Some(tab_id) = &selected_tab_id {
+                        if let Some(ws) = self.state.workspaces.get(tab_id) {
+                            let cookies = ws.cookies.iter().map(|c| (c.name.clone(), c.value.clone())).collect();
+                            (ws.console_logs.clone(), cookies)
+                        } else {
+                            (Vec::new(), std::collections::HashMap::new())
+                        }
+                    } else {
+                        (Vec::new(), std::collections::HashMap::new())
+                    };
                     let req = crate::core::scripting::types::ScriptExecutionRequest {
                         package,
                         selected_tab_id,
+                        selected_tab_console_logs,
+                        selected_tab_cookies,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: token,

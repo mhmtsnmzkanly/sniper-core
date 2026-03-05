@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// KOD NOTU: Script import/export için tek bir JSON paket sözleşmesi tutulur.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,8 @@ impl Default for ScriptPackage {
 pub struct ScriptExecutionRequest {
     pub package: ScriptPackage,
     pub selected_tab_id: Option<String>,
+    pub selected_tab_console_logs: Vec<String>,
+    pub selected_tab_cookies: HashMap<String, String>,
     pub port: u16,
     pub output_dir: std::path::PathBuf,
     pub cancel_token: Arc<AtomicBool>,

@@ -23,6 +23,12 @@ struct ElementRef {
 }
 
 #[derive(Clone)]
+struct ElementQuery {
+    token: i64,
+    selector: String,
+}
+
+#[derive(Clone)]
 struct CaptureApi {
     token: i64,
 }
@@ -67,6 +73,19 @@ enum ScriptAction {
 struct ScriptBuildState {
     next_token: i64,
     actions: Vec<ScriptAction>,
+    token_bindings: HashMap<i64, TokenBinding>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TokenBinding {
+    New,
+    Current,
+}
+
+struct ScriptStaticContext {
+    output_dir: PathBuf,
+    selected_tab_console_logs: Vec<String>,
+    selected_tab_cookies: HashMap<String, String>,
 }
 
 fn new_token(state: &Arc<Mutex<ScriptBuildState>>) -> i64 {
@@ -132,13 +151,14 @@ pub fn check_script(package: &ScriptPackage) -> ScriptingCheckReport {
 }
 
 /// KOD NOTU: Rhai script'i sync fazda sadece action listesine çevrilir; async browser işlemleri ikinci fazda çalıştırılır.
-fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
+fn collect_actions(package: &ScriptPackage, static_ctx: &ScriptStaticContext) -> AppResult<Vec<ScriptAction>> {
     let build = Arc::new(Mutex::new(ScriptBuildState::default()));
     let mut engine = Engine::new();
     let mut scope = Scope::new();
 
     engine.register_type::<TabRef>();
     engine.register_type::<ElementRef>();
+    engine.register_type::<ElementQuery>();
     engine.register_type::<CaptureApi>();
     engine.register_type::<ConsoleApi>();
     engine.register_type::<NetworkApi>();
@@ -149,6 +169,9 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         engine.register_fn("Tab", move |url: &str| -> TabRef {
             let token = new_token(&build);
             push_action(&build, ScriptAction::NewTab { token, url: Some(url.to_string()) });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::New);
+            }
             TabRef { token }
         });
     }
@@ -157,6 +180,9 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         engine.register_fn("Tab", move || -> TabRef {
             let token = new_token(&build);
             push_action(&build, ScriptAction::NewTab { token, url: None });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::New);
+            }
             TabRef { token }
         });
     }
@@ -165,6 +191,20 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         engine.register_fn("TabNew", move || -> TabRef {
             let token = new_token(&build);
             push_action(&build, ScriptAction::NewTab { token, url: None });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::New);
+            }
+            TabRef { token }
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("tab_new", move || -> TabRef {
+            let token = new_token(&build);
+            push_action(&build, ScriptAction::NewTab { token, url: None });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::New);
+            }
             TabRef { token }
         });
     }
@@ -173,6 +213,31 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         engine.register_fn("TabCatch", move || -> TabRef {
             let token = new_token(&build);
             push_action(&build, ScriptAction::CatchTab { token });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::Current);
+            }
+            TabRef { token }
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("TabCurrent", move || -> TabRef {
+            let token = new_token(&build);
+            push_action(&build, ScriptAction::CatchTab { token });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::Current);
+            }
+            TabRef { token }
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("tab_catch", move || -> TabRef {
+            let token = new_token(&build);
+            push_action(&build, ScriptAction::CatchTab { token });
+            if let Ok(mut lock) = build.lock() {
+                lock.token_bindings.insert(token, TokenBinding::Current);
+            }
             TabRef { token }
         });
     }
@@ -203,7 +268,12 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
             push_action(&build, ScriptAction::FsMkdirAll { rel_dir: rel_dir.to_string() });
         });
     }
-    engine.register_fn("fs_exists", |_rel_path: &str| -> bool { false });
+    let exists_root = static_ctx.output_dir.clone();
+    engine.register_fn("fs_exists", move |rel_path: &str| -> bool {
+        file_in_scope(&exists_root, rel_path)
+            .map(|p| p.exists())
+            .unwrap_or(false)
+    });
 
     {
         let build = build.clone();
@@ -229,8 +299,8 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
             push_action(&build, ScriptAction::Screenshot { token: tab.token, filename: name.to_string() });
         });
     }
-    engine.register_fn("find_el", move |tab: &mut TabRef, selector: &str| -> ElementRef {
-        ElementRef { token: tab.token, selector: selector.to_string() }
+    engine.register_fn("find_el", move |tab: &mut TabRef, selector: &str| -> ElementQuery {
+        ElementQuery { token: tab.token, selector: selector.to_string() }
     });
     {
         let build = build.clone();
@@ -249,6 +319,43 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         let build = build.clone();
         engine.register_fn("type", move |el: &mut ElementRef, value: &str| {
             push_action(&build, ScriptAction::Type { token: el.token, selector: el.selector.clone(), value: value.to_string() });
+        });
+    }
+
+    engine.register_fn("filter_id", |query: &mut ElementQuery, id: &str| -> ElementQuery {
+        if !id.trim().is_empty() {
+            query.selector = format!("{}#{}", query.selector, id.trim());
+        }
+        query.clone()
+    });
+    engine.register_fn("filter_class", |query: &mut ElementQuery, class_name: &str| -> ElementQuery {
+        if !class_name.trim().is_empty() {
+            query.selector = format!("{}.{}", query.selector, class_name.trim());
+        }
+        query.clone()
+    });
+    engine.register_fn("filter_attr", |query: &mut ElementQuery, key: &str, value: &str| -> ElementQuery {
+        if !key.trim().is_empty() {
+            query.selector = format!("{}[{}='{}']", query.selector, key.trim(), value.replace('\'', "\\'"));
+        }
+        query.clone()
+    });
+    engine.register_fn("first_or_none", |query: &mut ElementQuery| -> String {
+        query.selector.clone()
+    });
+    engine.register_fn("all", |query: &mut ElementQuery| -> rhai::Array {
+        vec![rhai::Dynamic::from(query.selector.clone())]
+    });
+    {
+        let build = build.clone();
+        engine.register_fn("click", move |query: &mut ElementQuery| {
+            push_action(&build, ScriptAction::Click { token: query.token, selector: query.selector.clone() });
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("type", move |query: &mut ElementQuery, value: &str| {
+            push_action(&build, ScriptAction::Type { token: query.token, selector: query.selector.clone(), value: value.to_string() });
         });
     }
 
@@ -282,7 +389,26 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
             push_action(&build, ScriptAction::ConsoleInject { token: cons.token, js: js.to_string() });
         });
     }
-    engine.register_fn("logs", |_cons: &mut ConsoleApi| -> rhai::Array { rhai::Array::new() });
+    {
+        let build = build.clone();
+        let selected_logs = static_ctx.selected_tab_console_logs.clone();
+        engine.register_fn("logs", move |cons: &mut ConsoleApi| -> rhai::Array {
+            let is_current = build
+                .lock()
+                .ok()
+                .and_then(|s| s.token_bindings.get(&cons.token).copied())
+                == Some(TokenBinding::Current);
+            if is_current {
+                selected_logs
+                    .iter()
+                    .cloned()
+                    .map(rhai::Dynamic::from)
+                    .collect::<rhai::Array>()
+            } else {
+                rhai::Array::new()
+            }
+        });
+    }
 
     {
         let build = build.clone();
@@ -318,7 +444,25 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
             });
         });
     }
-    engine.register_fn("get_all", |_cookies: &mut CookiesApi| -> rhai::Map { rhai::Map::new() });
+    {
+        let build = build.clone();
+        let selected_cookies = static_ctx.selected_tab_cookies.clone();
+        engine.register_fn("get_all", move |cookies: &mut CookiesApi| -> rhai::Map {
+            let is_current = build
+                .lock()
+                .ok()
+                .and_then(|s| s.token_bindings.get(&cookies.token).copied())
+                == Some(TokenBinding::Current);
+            if is_current {
+                selected_cookies
+                    .iter()
+                    .map(|(k, v)| (k.clone().into(), rhai::Dynamic::from(v.clone())))
+                    .collect::<rhai::Map>()
+            } else {
+                rhai::Map::new()
+            }
+        });
+    }
 
     let ast = engine
         .compile(&package.code)
@@ -342,7 +486,12 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
 
 /// KOD NOTU: Script execution iki fazlıdır: action toplama (sync) + action yürütme (async).
 pub async fn run_script(req: ScriptExecutionRequest) -> AppResult<()> {
-    let actions = collect_actions(&req.package)?;
+    let static_ctx = ScriptStaticContext {
+        output_dir: req.output_dir.clone(),
+        selected_tab_console_logs: req.selected_tab_console_logs.clone(),
+        selected_tab_cookies: req.selected_tab_cookies.clone(),
+    };
+    let actions = collect_actions(&req.package, &static_ctx)?;
     execute_actions(req, actions).await
 }
 
