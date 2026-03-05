@@ -22,12 +22,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.vertical(|ui| {
         design::title(ui, "Network Inspector", design::ACCENT_CYAN);
         ui.add_space(6.0);
+
+        // --- FILTER BAR ---
         Frame::group(ui.style()).fill(design::BG_SURFACE).inner_margin(8.0).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // KOD NOTU: horizontal_wrapped() dar ekranlarda kontrollerin alt satıra geçmesini sağlar.
+            ui.horizontal_wrapped(|ui| {
                 // Type filter
-                ui.label(RichText::new("FILTER").strong().color(design::ACCENT_ORANGE));
+                ui.label(RichText::new("FILTER:").strong().color(design::ACCENT_ORANGE));
                 let types = ["XHR", "JS", "CSS", "IMG", "DOC", "OTHER"];
-                ui.menu_button(format!("TYPES ({})", type_filter.len() as usize), |ui| {
+                ui.menu_button(format!("TYPES ({})", type_filter.len()), |ui| {
+                    ui.set_width(120.0);
                     for t in types {
                         let mut is_selected = type_filter.contains(t);
                         if ui.checkbox(&mut is_selected, t).changed() {
@@ -43,7 +47,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 for (label, val, color) in [
                     ("ALL", "all", design::TEXT_MUTED),
                     ("2xx", "ok", design::ACCENT_GREEN),
-                    ("4xx/5xx", "error", Color32::from_rgb(255, 140, 140)),
+                    ("4xx/5xx", "error", Color32::from_rgb(255, 120, 120)),
                 ] {
                     let selected = status_filter == val;
                     if ui.selectable_label(selected, RichText::new(label).color(color)).clicked() {
@@ -53,67 +57,54 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                 ui.separator();
                 ui.label("SEARCH:");
-                ui.add(egui::TextEdit::singleline(&mut search).desired_width(220.0).hint_text("url contains..."));
-                if ui.button("Block").clicked() && !search.trim().is_empty() {
-                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(
-                        tid.clone(),
-                        search.trim().to_string(),
-                    ));
-                }
-                if ui.button("Unblock").clicked() && !search.trim().is_empty() {
-                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(
-                        tid.clone(),
-                        search.trim().to_string(),
-                    ));
+                ui.add(egui::TextEdit::singleline(&mut search).desired_width(180.0).hint_text("url contains..."));
+                
+                ui.horizontal(|ui| {
+                    if ui.button("Block").clicked() && !search.trim().is_empty() {
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(tid.clone(), search.trim().to_string()));
+                    }
+                    if ui.button("Unblock").clicked() && !search.trim().is_empty() {
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), search.trim().to_string()));
+                    }
+                });
+
+                ui.separator();
+                // Actions (Right aligned in wrapped layout usually stays at far right or next row)
+                if ui.button("🗑 CLEAR").clicked() {
+                    if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
                 }
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(format!("TOTAL: {}", requests.len())).color(design::ACCENT_GREEN).monospace());
-                    ui.separator();
-                    if ui.button("🗑 CLEAR").clicked() {
-                        if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
-                    }
-                    ui.separator();
-                    // KOD NOTU: Engellenen URL'lerin listesini gösteren ve yönetmeyi sağlayan menü.
-                    ui.menu_button(RichText::new(format!("🛡 BLOCKED ({})", blocked_urls.len() as usize)).color(design::ACCENT_ORANGE), |ui| {
-                        ui.set_width(260.0);
-                        if blocked_urls.is_empty() {
-                            ui.label("No active blocks.");
-                        } else {
-                            for url in blocked_urls.clone().into_iter() {
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new(&url).small());
-                                    if ui.button("x").clicked() {
-                                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), url));
-                                    }
-                                });
-                            }
+                ui.menu_button(RichText::new(format!("🛡 BLOCKED ({})", blocked_urls.len())).color(design::ACCENT_ORANGE), |ui| {
+                    ui.set_width(260.0);
+                    if blocked_urls.is_empty() {
+                        ui.label("No active blocks.");
+                    } else {
+                        for url in blocked_urls.clone().into_iter() {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(&url).small());
+                                if ui.button("x").clicked() {
+                                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), url));
+                                }
+                            });
                         }
-                    });
+                    }
                 });
+                
+                ui.label(RichText::new(format!("TOTAL: {}", requests.len())).color(design::ACCENT_GREEN).monospace());
             });
         });
 
         ui.add_space(5.0);
 
+        // --- REQUEST LIST ---
         let filtered_requests: Vec<crate::state::NetworkRequest> = requests.into_iter().filter(|r| {
             let s = search.to_lowercase();
             if !s.is_empty() && !r.url.to_lowercase().contains(&s) { return false; }
-
             match status_filter.as_str() {
-                "ok" => {
-                    if !matches!(r.status, Some(code) if (200..300).contains(&code)) {
-                        return false;
-                    }
-                }
-                "error" => {
-                    if !matches!(r.status, Some(code) if code >= 400) {
-                        return false;
-                    }
-                }
+                "ok" => if !matches!(r.status, Some(code) if (200..300).contains(&code)) { return false; },
+                "error" => if !matches!(r.status, Some(code) if code >= 400) { return false; },
                 _ => {}
             }
-            
             if !type_filter.is_empty() {
                 let rt = r.resource_type.to_lowercase();
                 let mut match_type = false;
@@ -131,6 +122,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let list_height = ui.available_height();
         egui::ScrollArea::vertical()
             .max_height(list_height)
+            .id_salt("net_list_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| {
             for req in filtered_requests {
@@ -141,38 +133,31 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     .corner_radius(6.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            // Method badge
                             let method_col = match req.method.as_str() {
                                 "GET" => Color32::from_rgb(90, 180, 255),
-                                "POST" => Color32::from_rgb(255, 170, 80),
+                                "POST" => design::ACCENT_ORANGE,
                                 "PUT" => Color32::from_rgb(180, 150, 255),
                                 "DELETE" => Color32::from_rgb(255, 120, 140),
                                 _ => design::TEXT_MUTED,
                             };
                             ui.label(RichText::new(req.method.clone()).color(method_col).monospace().strong());
 
-                            // Status badge
                             let status_txt = req.status.map(|s| s.to_string()).unwrap_or_else(|| "...".into());
                             let status_col = match req.status {
                                 Some(s) if (200..300).contains(&s) => design::ACCENT_GREEN,
                                 Some(s) if s >= 400 => Color32::from_rgb(255, 120, 120),
-                                Some(_) => Color32::from_rgb(240, 200, 100),
-                                None => design::TEXT_MUTED,
+                                _ => Color32::from_gray(140),
                             };
                             ui.label(RichText::new(status_txt).color(status_col).monospace());
-
-                            // Type
-                            ui.label(RichText::new(req.resource_type.clone()).color(Color32::from_gray(180)).monospace());
-
+                            ui.label(RichText::new(req.resource_type.clone()).color(design::TEXT_MUTED).size(10.0));
+                            
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(RichText::new(format!("ID: {}", req.request_id)).size(10.0).color(design::TEXT_MUTED));
+                                ui.label(RichText::new(format!("ID: {}", req.request_id)).size(9.0).color(Color32::from_gray(80)));
                             });
                         });
-
-                        ui.add_space(4.0);
                         ui.add(egui::Label::new(RichText::new(&req.url).monospace().size(11.0).color(Color32::from_gray(210))).truncate());
                     });
-                ui.add_space(6.0);
+                ui.add_space(4.0);
             }
         });
     });

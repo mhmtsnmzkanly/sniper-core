@@ -12,7 +12,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
-                ui.label(RichText::new("⚠ SELECT A TAB IN THE SCRAPE PANEL TO VIEW STORAGE").strong().color(Color32::YELLOW));
+                ui.label(RichText::new("⚠ SELECT A TAB IN THE OPS PANEL TO VIEW STORAGE").strong().color(Color32::YELLOW));
             });
             return;
         }
@@ -36,8 +36,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         (ws.cookies.clone(), ws.title.clone(), ws.show_cookie_modal, ws.cookie_edit_buffer.clone())
     };
 
-    // FILTER COOKIES BY DOMAIN
-    // We show cookies where the cookie domain is a suffix of the target domain or vice-versa
     let filtered_cookies: Vec<(usize, crate::state::ChromeCookie)> = cookies.iter().enumerate()
         .filter(|(_, c)| {
             if target_domain.is_empty() { return true; }
@@ -48,42 +46,48 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         .collect();
 
     design::title(ui, "Storage / Cookie Manager", design::ACCENT_CYAN);
-    ui.add_space(4.0);
+    ui.add_space(6.0);
 
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("Workspace: {}", title)).color(design::TEXT_MUTED));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("🔄 REFRESH").clicked() {
-                emit(AppEvent::RequestCookies(tid.clone()));
-            }
-            if ui.button("📤 EXPORT").on_hover_text("Export filtered cookies to JSON").clicked() {
-                let export_data: Vec<crate::state::ChromeCookie> = filtered_cookies.iter().map(|(_, c)| c.clone()).collect();
-                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("cookies.json").save_file() {
-                    if let Ok(json) = serde_json::to_string_pretty(&export_data) {
-                        let _ = std::fs::write(path, json);
+    egui::Frame::group(ui.style()).fill(design::BG_SURFACE).inner_margin(8.0).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(format!("Workspace: {}", title)).color(design::TEXT_MUTED));
+            ui.separator();
+            ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(design::ACCENT_ORANGE));
+            
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("🔄 REFRESH").clicked() {
+                    emit(AppEvent::RequestCookies(tid.clone()));
+                }
+                if ui.button("📤 EXPORT").on_hover_text("Export filtered cookies to JSON").clicked() {
+                    let export_data: Vec<crate::state::ChromeCookie> = filtered_cookies.iter().map(|(_, c)| c.clone()).collect();
+                    if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("cookies.json").save_file() {
+                        if let Ok(json) = serde_json::to_string_pretty(&export_data) {
+                            let _ = std::fs::write(path, json);
+                        }
                     }
                 }
-            }
-            if ui.button("📥 IMPORT").on_hover_text("Import cookies from JSON").clicked() {
-                if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        if let Ok(imported_cookies) = serde_json::from_str::<Vec<crate::state::ChromeCookie>>(&content) {
-                            for cookie in imported_cookies {
-                                emit(AppEvent::RequestCookieAdd(tid.clone(), cookie));
+                if ui.button("📥 IMPORT").on_hover_text("Import cookies from JSON").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            if let Ok(imported_cookies) = serde_json::from_str::<Vec<crate::state::ChromeCookie>>(&content) {
+                                for cookie in imported_cookies {
+                                    emit(AppEvent::RequestCookieAdd(tid.clone(), cookie));
+                                }
                             }
                         }
                     }
                 }
-            }
-            ui.label(RichText::new(format!("DOMAIN: {}", target_domain)).small().color(design::TEXT_MUTED));
+            });
         });
     });
+    
     ui.add_space(10.0);
 
     let mut cookie_to_delete = None;
     let mut cookie_to_update = None;
 
     // RESPONSIVE TABLE
+    let _table_h = ui.available_height() - 80.0;
     ui.push_id("cookie_table_area", |ui| {
         let table = TableBuilder::new(ui)
             .striped(true)
@@ -94,16 +98,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .column(Column::remainder().at_least(200.0))           // VALUE
             .column(Column::auto().at_least(40.0));                // DELETE
 
-        table.header(20.0, |mut header| {
+        table.header(25.0, |mut header| {
             header.col(|ui| { ui.strong("DOMAIN"); });
             header.col(|ui| { ui.strong("KEY"); });
             header.col(|ui| { ui.strong("VALUE"); });
             header.col(|ui| { ui.strong(""); });
         })
         .body(|body| {
-            body.rows(25.0, filtered_cookies.len(), |mut row| {
+            body.rows(30.0, filtered_cookies.len(), |mut row| {
                 let row_idx = row.index();
-                let (original_idx, _cookie) = &filtered_cookies[row_idx];
+                let (original_idx, _) = &filtered_cookies[row_idx];
                 let original_idx = *original_idx;
                 
                 let cookie = &mut cookies[original_idx];
@@ -120,7 +124,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     }
                 });
                 row.col(|ui| {
-                    if ui.button(RichText::new("🗑").color(Color32::RED)).clicked() {
+                    if ui.button(RichText::new("🗑").color(Color32::from_rgb(255, 80, 80))).clicked() {
                         cookie_to_delete = Some(original_idx);
                     }
                 });
@@ -137,15 +141,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         emit(AppEvent::RequestCookieAdd(tid.clone(), cookies[idx].clone()));
     }
 
-    ui.add_space(15.0);
-    ui.separator();
     ui.add_space(10.0);
+    ui.separator();
+    ui.add_space(8.0);
 
     // ADD NEW COOKIE BUTTON AT BOTTOM
     ui.horizontal(|ui| {
         if ui.add(egui::Button::new(RichText::new("➕ ADD NEW COOKIE").strong())
             .min_size([200.0, 35.0].into())
-            .fill(Color32::from_rgb(0, 120, 215))).clicked() {
+            .fill(Color32::from_rgb(0, 100, 180))).clicked() {
             edit_buffer = crate::state::ChromeCookie {
                 domain: if target_domain.is_empty() { "example.com".into() } else { target_domain.clone() },
                 path: "/".to_string(),

@@ -883,7 +883,7 @@ impl eframe::App for CrawlerApp {
         // --- UI RENDERING ---
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.vertical(|ui| {
                     ui.label(RichText::new("SNIPER STUDIO").strong().size(20.0).color(ui::design::ACCENT_ORANGE));
                     ui.label(RichText::new("Browser Forensics + Automation Console").small().color(ui::design::TEXT_MUTED));
@@ -1043,7 +1043,7 @@ impl eframe::App for CrawlerApp {
             let age_secs = (chrono::Local::now().timestamp_millis() as f64 / 1000.0 - created_at).max(0.0);
             egui::Window::new(title)
                 .open(&mut open)
-                .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0 - (idx as f32 * 100.0)])
+                .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0 - (idx as f32 * 110.0)])
                 .collapsible(false)
                 .resizable(false)
                 .frame(egui::Frame::window(&ctx.style()).fill(bg))

@@ -11,11 +11,21 @@ pub const TEXT_MUTED: Color32 = Color32::from_rgb(154, 173, 188);
 pub const FONT_TITLE: f32 = 18.0;
 pub const FONT_BODY: f32 = 13.0;
 pub const FONT_SMALL: f32 = 11.0;
-pub const INPUT_HEIGHT: f32 = 30.0;
-pub const BUTTON_HEIGHT: f32 = 36.0;
+pub const INPUT_HEIGHT: f32 = 28.0;
+pub const BUTTON_HEIGHT: f32 = 32.0;
 
+/// KOD NOTU: Tema sadece ilk frame'de ve değişiklik varsa uygulanır.
+/// Her frame'de ctx.set_style() çağrısı gereksiz repaint ve glitch'e neden olur.
 pub fn apply_theme(ctx: &Context) {
-    let mut style = (*ctx.style()).clone();
+    // Mevcut style ile compare edelim; sadece gerektiğinde güncelle.
+    let current = ctx.style();
+    if current.visuals.panel_fill == BG_PRIMARY
+        && current.visuals.override_text_color == Some(TEXT_PRIMARY)
+    {
+        return; // Zaten uygulanmış, atla.
+    }
+
+    let mut style = (*current).clone();
     style.visuals.panel_fill = BG_PRIMARY;
     style.visuals.window_fill = BG_SURFACE;
     style.visuals.widgets.noninteractive.bg_fill = BG_SURFACE;
@@ -26,9 +36,9 @@ pub fn apply_theme(ctx: &Context) {
     style.visuals.extreme_bg_color = BG_PRIMARY;
     style.visuals.faint_bg_color = BG_SURFACE;
     style.visuals.override_text_color = Some(TEXT_PRIMARY);
-    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
-    style.spacing.button_padding = egui::vec2(10.0, 7.0);
-    style.spacing.interact_size = egui::vec2(64.0, INPUT_HEIGHT);
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(8.0, 5.0);
+    style.spacing.interact_size = egui::vec2(60.0, INPUT_HEIGHT);
     style.text_styles.insert(
         egui::TextStyle::Body,
         egui::FontId::proportional(FONT_BODY),
@@ -51,6 +61,15 @@ pub fn section_frame() -> Frame {
         .stroke(Stroke::new(1.0, Color32::from_rgb(43, 64, 78)))
         .corner_radius(CornerRadius::same(12))
         .inner_margin(Margin::same(12))
+}
+
+#[allow(dead_code)]
+pub fn card_frame() -> Frame {
+    Frame::new()
+        .fill(BG_ELEVATED)
+        .stroke(Stroke::new(1.0, Color32::from_rgb(40, 60, 74)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(8))
 }
 
 pub fn title(ui: &mut Ui, text: &str, accent: Color32) {

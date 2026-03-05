@@ -19,8 +19,15 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     ui.label(RichText::new("Compose blocks, reusable functions and live dataset previews").small().color(design::TEXT_MUTED));
     ui.add_space(8.0);
 
-    ui.columns(2, |cols| {
-        cols[0].vertical(|ui| {
+    // KOD NOTU: columns() yerine hesaplanmış genişlikli horizontal layout kullanılır.
+    // Bu sayede dar pencerede layout çökmez.
+    let avail = ui.available_width();
+    let left_w = (avail * 0.52).clamp(280.0, 520.0);
+    let right_w = avail - left_w - ui.spacing().item_spacing.x;
+
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+        ui.set_width(left_w);
             ui.horizontal(|ui| {
                 if let Some(fn_name) = &active_fn_editor {
                     ui.label(RichText::new(format!("Editing Function: {}", fn_name)).strong().color(design::ACCENT_ORANGE));
@@ -111,7 +118,8 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             }
         });
 
-        cols[1].vertical(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(right_w);
             ui.group(|ui| {
                 ui.label(RichText::new("Variables").strong().color(design::ACCENT_ORANGE));
                 ui.horizontal(|ui| {
@@ -155,7 +163,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 }
             });
         });
-    });
+    }); // horizontal block end
 
     ui.add_space(10.0);
     ui.horizontal(|ui| {
