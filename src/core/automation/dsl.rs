@@ -46,6 +46,12 @@ pub enum Step {
     Screenshot { filename: String },
     SetVariable { key: String, value: String },
     ScrollBottom,
+    /// KOD NOTU: Lazy-load sayfalarda kontrollü kaydırma için akıllı scroll adımı.
+    SmartScroll {
+        until_selector: Option<String>,
+        max_rounds: u32,
+        settle_ms: u64,
+    },
     SwitchFrame { selector: String },
     If { selector: String, then_steps: Vec<Step> },
     ForEach { selector: String, body: Vec<Step> },

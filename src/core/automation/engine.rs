@@ -397,6 +397,54 @@ impl AutomationEngine {
                     tracing::info!("[ENGINE] Scrolling to page bottom.");
                     let _: String = driver.eval("window.scrollTo(0, document.body.scrollHeight)").await?; 
                 }
+                Step::SmartScroll { until_selector, max_rounds, settle_ms } => {
+                    let target_selector = until_selector
+                        .as_ref()
+                        .map(|s| self.interpolate(s))
+                        .unwrap_or_default();
+                    let selector_js = target_selector.replace('\'', "\\'");
+                    let rounds = (*max_rounds).max(1);
+                    let settle = (*settle_ms).max(50);
+                    tracing::info!(
+                        "[ENGINE] SmartScroll started (selector: '{}', max_rounds: {}, settle_ms: {})",
+                        target_selector,
+                        rounds,
+                        settle
+                    );
+                    // KOD NOTU: Akıllı scroll, hedef selector görünene veya sayfa yüksekliği artmayı bırakana kadar ilerler.
+                    let js = format!(
+                        "return new Promise((resolve) => {{
+                            const target = '{selector}';
+                            const maxRounds = {rounds};
+                            const settleMs = {settle};
+                            let stagnantRounds = 0;
+                            let round = 0;
+                            let lastHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+                            const done = (reason) => resolve(`smart_scroll:${{reason}}:${{round}}`);
+                            const loop = () => {{
+                                round += 1;
+                                if (target && document.querySelector(target)) return done('selector_found');
+                                window.scrollTo(0, document.body.scrollHeight);
+                                setTimeout(() => {{
+                                    if (target && document.querySelector(target)) return done('selector_found');
+                                    const currentHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+                                    if (currentHeight <= lastHeight) stagnantRounds += 1;
+                                    else stagnantRounds = 0;
+                                    lastHeight = currentHeight;
+                                    if (stagnantRounds >= 2) return done('end_of_feed');
+                                    if (round >= maxRounds) return done('max_rounds');
+                                    loop();
+                                }}, settleMs);
+                            }};
+                            loop();
+                        }})",
+                        selector = selector_js,
+                        rounds = rounds,
+                        settle = settle
+                    );
+                    let status: String = driver.eval(&js).await?;
+                    tracing::info!("[ENGINE] SmartScroll finished: {}", status);
+                }
                 Step::SwitchFrame { selector } => {
                     let s = self.interpolate(selector);
                     if !s.is_empty() { 

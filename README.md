@@ -83,7 +83,8 @@ Central log stream for:
 
 ## Rhai Helpers (Current)
 Tab and action helpers include:
-- `Tab()`, `Tab("url")`, `TabNew()`, `TabCatch()`
+- `Tab()`, `Tab("url")`, `TabNew()`, `tab_new()`, `Tab.new()`
+- `TabCatch()`, `TabCurrent()`, `tab_catch()`, `Tab.catch()`
 - `tab.navigate(url)`
 - `tab.find_el(selector).click()` / `.type(value)`
 - `tab.capture.html()/mirror()/complete()`
@@ -96,6 +97,7 @@ File helpers (write scope restricted to output directory tree):
 - `fs_write_text(rel_path, content)`
 - `fs_append_text(rel_path, content)`
 - `fs_mkdir_all(rel_dir)`
+- `fs_exists(rel_path)`
 
 ## Log Files
 Inside selected output directory:
@@ -111,7 +113,6 @@ Inside selected output directory:
 - each toast can be closed independently.
 
 ## Known Limitations
-- `Tab.catch()` alias currently exposed as `TabCatch()` in scripts.
 - Script stop is cooperative; long single external operations may finish current step before full stop.
 - Some legacy UI modules still contain unused state fields; cleanup can be done incrementally.
 

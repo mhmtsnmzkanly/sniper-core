@@ -186,6 +186,7 @@ Executes DSL steps with retry/timeout semantics and emits progress events.
 Includes actions such as:
 - navigation, click, type, wait
 - wait selector / wait idle / wait network idle
+- smart lazy-load scrolling (`SmartScroll`)
 - extract, export, screenshot
 - conditionals (`If`) and loops (`ForEach`)
 - function calls

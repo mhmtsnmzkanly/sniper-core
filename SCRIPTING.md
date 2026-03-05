@@ -81,7 +81,7 @@ fn main() {
       "functions": {},
       "steps": [
         { "type": "Wait", "seconds": 1 },
-        { "type": "ScrollBottom" }
+        { "type": "SmartScroll", "until_selector": "#results", "max_rounds": 12, "settle_ms": 450 }
       ]
     }`;
 
