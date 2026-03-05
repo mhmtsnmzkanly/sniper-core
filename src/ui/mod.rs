@@ -1,4 +1,5 @@
 pub mod scrape;
+pub mod scripting;
 pub mod automation;
 pub mod network_panel;
 pub mod storage_panel;

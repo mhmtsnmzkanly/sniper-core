@@ -103,6 +103,7 @@ impl eframe::App for CrawlerApp {
                     AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
                     AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
                     AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestScriptingRun(..) |
                     AppEvent::RequestTabRefresh => {
                         let msg = "Action Denied: Browser instance is not active.";
                         self.state.notify("Denied", msg, true);
@@ -219,6 +220,21 @@ impl eframe::App for CrawlerApp {
                 AppEvent::OperationError(msg) => {
                     self.state.notify("Error", &msg, true);
                     tracing::error!("[CORE -> APP] Failure: {}", msg);
+                }
+                AppEvent::ScriptingOutput(msg) => {
+                    self.state.script_output.push(msg);
+                    if self.state.script_output.len() > 2000 {
+                        self.state.script_output.remove(0);
+                    }
+                }
+                AppEvent::ScriptingFinished => {
+                    self.state.is_script_running = false;
+                    self.state.notify("Scripting", "Script execution completed.", false);
+                }
+                AppEvent::ScriptingError(msg) => {
+                    self.state.is_script_running = false;
+                    self.state.script_error = Some(msg.clone());
+                    self.state.notify("Scripting", &msg, true);
                 }
                 
                 // --- COMMAND ROUTING WITH AUDIT LOGS ---
@@ -372,16 +388,72 @@ impl eframe::App for CrawlerApp {
                     };
                     let output_dir = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
-                        let mut engine = crate::core::automation::engine::AutomationEngine::new(port, tid_clone, output_dir);
-                        engine.config = crate::core::automation::engine::ExecutionConfig {
+                        let config = crate::core::automation::engine::ExecutionConfig {
                             step_timeout: std::time::Duration::from_millis(auto_config.step_timeout_ms),
                             retry_attempts: auto_config.retry_attempts,
                             screenshot_on_error: auto_config.screenshot_on_error,
                         };
-                        if let Err(e) = engine.run(dsl).await {
+                        // KOD NOTU: UI Automation ve Scripting ortak runtime helper kullanır.
+                        if let Err(e) = crate::core::automation::runtime::run_dsl_on_tab(
+                            port,
+                            tid_clone,
+                            output_dir,
+                            config,
+                            dsl,
+                        )
+                        .await
+                        {
                             tracing::error!("[ENGINE -> APP] Pipeline ABORTED on tab {}: {}", tid, e);
                         }
                     });
+                }
+                AppEvent::RequestScriptingRun(package, selected_tab_id) => {
+                    if self.state.is_script_running {
+                        self.state.notify("Scripting", "Another script is already running.", true);
+                        continue;
+                    }
+                    self.state.is_script_running = true;
+                    let req = crate::core::scripting::types::ScriptExecutionRequest {
+                        package,
+                        selected_tab_id,
+                        port: self.state.config.remote_debug_port,
+                        output_dir: self.state.config.output_dir.clone(),
+                    };
+                    tokio::spawn(async move {
+                        let result = crate::core::scripting::engine::run_script(req).await;
+                        match result {
+                            Ok(_) => crate::ui::scrape::emit(AppEvent::ScriptingFinished),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(e.to_string())),
+                        }
+                    });
+                }
+                AppEvent::RequestScriptingStop => {
+                    // KOD NOTU: İlk sürümde script durdurma cooperative değildir; flag'i resetleyip bilgi mesajı gösterir.
+                    self.state.is_script_running = false;
+                    self.state.notify("Scripting", "Stop requested (current script may finish current step).", false);
+                }
+                AppEvent::RequestScriptingImport(path) => {
+                    match std::fs::read_to_string(path) {
+                        Ok(content) => match serde_json::from_str::<crate::core::scripting::types::ScriptPackage>(&content) {
+                            Ok(pkg) => {
+                                self.state.script_package = pkg;
+                                self.state.script_error = None;
+                                self.state.notify("Scripting", "Script imported.", false);
+                            }
+                            Err(e) => self.state.script_error = Some(format!("Import parse error: {}", e)),
+                        },
+                        Err(e) => self.state.script_error = Some(format!("Import read error: {}", e)),
+                    }
+                }
+                AppEvent::RequestScriptingExport(path, mut pkg) => {
+                    pkg.updated_at = chrono::Local::now().timestamp();
+                    match serde_json::to_string_pretty(&pkg) {
+                        Ok(json) => match std::fs::write(path, json) {
+                            Ok(_) => self.state.notify("Scripting", "Script exported.", false),
+                            Err(e) => self.state.script_error = Some(format!("Export write error: {}", e)),
+                        },
+                        Err(e) => self.state.script_error = Some(format!("Export serialize error: {}", e)),
+                    }
                 }
                 _ => {}
             }
@@ -398,6 +470,7 @@ impl eframe::App for CrawlerApp {
 
                 ui.add_space(14.0);
                 ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "Ops");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Scripting, "Scripting");
                 ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "Config");
                 ui.selectable_value(&mut self.state.active_tab, Tab::Logs, "Logs");
 
@@ -454,6 +527,7 @@ impl eframe::App for CrawlerApp {
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| match self.state.active_tab {
                     Tab::Scrape => ui::scrape::render(ui, &mut self.state),
+                    Tab::Scripting => ui::scripting::render(ui, &mut self.state),
                     Tab::Settings => ui::config_panel::render(ui, &mut self.state),
                     Tab::Logs => ui::log_panel::render(ui, &mut self.state),
                     _ => { ui.label("Panel not implemented."); }

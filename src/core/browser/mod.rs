@@ -124,6 +124,32 @@ impl BrowserManager {
         Err(AppError::Network(format!("Failed to connect to browser API: {}", last_err.unwrap())))
     }
 
+    /// KOD NOTU: Script tarafının yeni hedef sekme açabilmesi için /json/new uç noktası kullanılır.
+    pub async fn create_tab(port: u16, url: Option<&str>) -> AppResult<ChromeTabInfo> {
+        let target = url.unwrap_or("about:blank");
+        let encoded = url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>();
+        let endpoint = format!("http://127.0.0.1:{}/json/new?{}", port, encoded);
+        let client = rquest::Client::new();
+        let resp = client
+            .put(endpoint)
+            .send()
+            .await
+            .map_err(|e| AppError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(AppError::Browser(format!(
+                "Failed to create tab. HTTP status: {}",
+                resp.status()
+            )));
+        }
+
+        let tab: ChromeTabInfo = resp
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        Ok(tab)
+    }
+
     /// KOD NOTU: Browser'ın remote debugging portunun aktif olup olmadığını hızlıca kontrol eder.
     /// Bu fonksiyon, bağlantı hatalarını erkenden yakalamak için kullanılır.
     pub async fn check_health(port: u16) -> bool {

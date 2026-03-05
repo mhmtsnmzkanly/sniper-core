@@ -43,6 +43,7 @@ impl Default for AppConfig {
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Tab {
     Scrape,
+    Scripting,
     Automation,
     Translate,
     Media,
@@ -281,6 +282,12 @@ pub struct AppState {
     pub last_tab_refresh: f64,
     pub last_health_check: f64,
     pub is_translating: bool,
+    // Scripting panel state
+    pub script_package: crate::core::scripting::types::ScriptPackage,
+    pub script_output: Vec<String>,
+    pub script_error: Option<String>,
+    pub is_script_running: bool,
+    pub scripting_tab_binding: Option<String>,
     // Setup wizard flags
     pub output_confirmed: bool,
     pub profile_confirmed: bool,
@@ -302,6 +309,11 @@ impl AppState {
             last_tab_refresh: 0.0,
             last_health_check: 0.0,
             is_translating: false,
+            script_package: crate::core::scripting::types::ScriptPackage::default(),
+            script_output: Vec::new(),
+            script_error: None,
+            is_script_running: false,
+            scripting_tab_binding: None,
             output_confirmed: false,
             profile_confirmed: false,
             use_custom_profile: true,
