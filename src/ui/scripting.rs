@@ -188,6 +188,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
             });
     });
+    ui.horizontal(|ui| {
+        ui.checkbox(
+            &mut state.scripting_check_preflight,
+            "Check preflight on selected tab (validate selectors)",
+        );
+    });
 
     ui.separator();
     ui.label(RichText::new("Code").strong());

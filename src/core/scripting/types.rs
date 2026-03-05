@@ -49,7 +49,34 @@ pub struct ScriptExecutionRequest {
 #[derive(Debug, Clone)]
 pub struct ScriptingCheckReport {
     pub ok: bool,
-    pub diagnostics: Vec<String>,
+    pub diagnostics: Vec<ScriptDiagnostic>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warn,
+    Info,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DiagnosticStage {
+    Compile,
+    Entry,
+    ApiGuard,
+    Lint,
+    Preflight,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptDiagnostic {
+    pub code: String,
+    pub stage: DiagnosticStage,
+    pub severity: DiagnosticSeverity,
+    pub message: String,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone)]

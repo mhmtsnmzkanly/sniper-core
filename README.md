@@ -59,6 +59,7 @@ cargo run -- --port 9222
 - Import/Export JSON script package.
 - Built-in Template Library (`Apply Template`) for quick script bootstrap.
 - `Check`: compile + basic lint without executing browser actions.
+- `Check` now emits structured diagnostics (`code/stage/severity/line/column/hint`).
 - `Dry-Run`: build action plan without browser execution.
 - `Debugger`: build step preview and inspect actions one-by-one in Scripting tab.
 - `Break Condition`: stop execution when an action text matches your condition.
@@ -132,5 +133,4 @@ Inside selected output directory:
 
 ## Development Notes
 - Run `cargo check` before commit.
-- Keep comments brief (`KOD NOTU`) only where behavior is non-obvious.
 - Prefer extending shared runtime over creating parallel execution paths.

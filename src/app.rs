@@ -303,11 +303,22 @@ impl eframe::App for CrawlerApp {
                     if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
                 }
                 AppEvent::ScriptingCheckResult(report) => {
-                    for line in report.diagnostics {
+                    for d in report.diagnostics {
+                        let level = match d.severity {
+                            crate::core::scripting::types::DiagnosticSeverity::Error => "CHECK-ERR",
+                            crate::core::scripting::types::DiagnosticSeverity::Warn => "CHECK-WARN",
+                            crate::core::scripting::types::DiagnosticSeverity::Info => "CHECK",
+                        };
+                        let loc = match (d.line, d.column) {
+                            (Some(l), Some(c)) => format!(" @{}:{}", l, c),
+                            (Some(l), None) => format!(" @{}", l),
+                            _ => String::new(),
+                        };
+                        let hint = d.hint.map(|h| format!(" | hint: {}", h)).unwrap_or_default();
                         self.state.logs.push(LogEntry {
                             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                            level: if report.ok { "CHECK".to_string() } else { "CHECK-ERR".to_string() },
-                            message: line,
+                            level: level.to_string(),
+                            message: format!("[{}::{:?}] {}{}{}", d.code, d.stage, d.message, loc, hint),
                         });
                     }
                     self.state.notify(
@@ -762,9 +773,19 @@ impl eframe::App for CrawlerApp {
                     });
                 }
                 AppEvent::RequestScriptingCheck(package, selected_tab_id) => {
-                    let _selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());
-                    let report = crate::core::scripting::engine::check_script(&package);
-                    crate::ui::scrape::emit(AppEvent::ScriptingCheckResult(report));
+                    let selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());
+                    let port = self.state.config.remote_debug_port;
+                    let run_preflight = self.state.scripting_check_preflight;
+                    tokio::spawn(async move {
+                        let report = crate::core::scripting::engine::check_script(
+                            &package,
+                            selected,
+                            Some(port),
+                            run_preflight,
+                        )
+                        .await;
+                        crate::ui::scrape::emit(AppEvent::ScriptingCheckResult(report));
+                    });
                 }
                 AppEvent::RequestScriptingDryRun(package, selected_tab_id) => {
                     let selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());

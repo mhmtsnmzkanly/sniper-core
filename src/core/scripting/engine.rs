@@ -4,8 +4,12 @@ use crate::core::automation::engine::ExecutionConfig;
 use crate::core::automation::runtime::run_dsl_on_tab;
 use crate::core::error::{AppError, AppResult};
 use crate::core::events::AppEvent;
-use crate::core::scripting::types::{ScriptExecutionRequest, ScriptPackage, ScriptingCheckReport};
+use crate::core::scripting::types::{
+    DiagnosticSeverity, DiagnosticStage, ScriptDiagnostic, ScriptExecutionRequest, ScriptPackage,
+    ScriptingCheckReport,
+};
 use rhai::{Engine, EvalAltResult, Scope};
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -121,38 +125,285 @@ fn normalize_scripting_code(raw: &str) -> String {
         .replace("Tab.catch(", "TabCatch(")
 }
 
-pub fn check_script(package: &ScriptPackage) -> ScriptingCheckReport {
-    let mut diagnostics = Vec::new();
-    let mut ok = true;
+fn extract_line_col(message: &str) -> (Option<usize>, Option<usize>) {
+    let Ok(re) = Regex::new(r"line\s+(\d+),\s*position\s+(\d+)") else {
+        return (None, None);
+    };
+    if let Some(caps) = re.captures(message) {
+        let line = caps.get(1).and_then(|m| m.as_str().parse::<usize>().ok());
+        let col = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok());
+        (line, col)
+    } else {
+        (None, None)
+    }
+}
 
-    let engine = Engine::new();
-    let normalized_code = normalize_scripting_code(&package.code);
-    match engine.compile(&normalized_code) {
-        Ok(_) => diagnostics.push("[OK] Rhai compile success".to_string()),
-        Err(e) => {
-            diagnostics.push(format!("[ERROR] Rhai compile error: {}", e));
-            ok = false;
+fn push_diag(
+    diagnostics: &mut Vec<ScriptDiagnostic>,
+    code: &str,
+    stage: DiagnosticStage,
+    severity: DiagnosticSeverity,
+    message: impl Into<String>,
+    line: Option<usize>,
+    column: Option<usize>,
+    hint: Option<String>,
+) {
+    diagnostics.push(ScriptDiagnostic {
+        code: code.to_string(),
+        stage,
+        severity,
+        message: message.into(),
+        line,
+        column,
+        hint,
+    });
+}
+
+fn selectors_from_actions(actions: &[ScriptAction]) -> Vec<String> {
+    let mut out = Vec::new();
+    for action in actions {
+        match action {
+            ScriptAction::Click { selector, .. } | ScriptAction::Type { selector, .. } => {
+                if !out.contains(selector) {
+                    out.push(selector.clone());
+                }
+            }
+            _ => {}
         }
     }
+    out
+}
 
-    if package.entry.trim().is_empty() {
-        diagnostics.push("[ERROR] Entry function name is empty".to_string());
-        ok = false;
-    } else {
-        let pattern = format!("fn {}", package.entry.trim());
-        if !package.code.contains(&pattern) {
-            diagnostics.push(format!("[ERROR] Entry function '{}' not found in script text", package.entry));
+async fn preflight_selectors(port: u16, tab_id: &str, selectors: &[String]) -> AppResult<Vec<(String, bool, bool)>> {
+    let mut results = Vec::new();
+    for selector in selectors {
+        let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+        let script = format!(
+            "(() => {{
+                try {{
+                    const s = '{}';
+                    const exists = !!document.querySelector(s);
+                    return JSON.stringify({{ valid: true, exists }});
+                }} catch (_e) {{
+                    return JSON.stringify({{ valid: false, exists: false }});
+                }}
+            }})()",
+            escaped
+        );
+        let raw = crate::core::browser::BrowserManager::execute_script(port, tab_id.to_string(), script).await?;
+        let decoded: String = serde_json::from_str(&raw).unwrap_or(raw);
+        let parsed = serde_json::from_str::<serde_json::Value>(&decoded).unwrap_or_default();
+        let valid = parsed.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+        let exists = parsed.get("exists").and_then(|v| v.as_bool()).unwrap_or(false);
+        results.push((selector.clone(), valid, exists));
+    }
+    Ok(results)
+}
+
+pub async fn check_script(
+    package: &ScriptPackage,
+    selected_tab_id: Option<String>,
+    port: Option<u16>,
+    run_preflight: bool,
+) -> ScriptingCheckReport {
+    let mut diagnostics: Vec<ScriptDiagnostic> = Vec::new();
+    let mut ok = true;
+    let mut selectors_for_preflight: Vec<String> = Vec::new();
+
+    {
+        let engine = Engine::new();
+        let normalized_code = normalize_scripting_code(&package.code);
+        match engine.compile(&normalized_code) {
+            Ok(_) => push_diag(
+                &mut diagnostics,
+                "SC-COMPILE-OK",
+                DiagnosticStage::Compile,
+                DiagnosticSeverity::Info,
+                "Rhai compile success",
+                None,
+                None,
+                None,
+            ),
+            Err(e) => {
+                let msg = format!("Rhai compile error: {}", e);
+                let (line, column) = extract_line_col(&msg);
+                push_diag(
+                    &mut diagnostics,
+                    "SC-COMPILE-ERR",
+                    DiagnosticStage::Compile,
+                    DiagnosticSeverity::Error,
+                    msg,
+                    line,
+                    column,
+                    Some("Fix syntax and run Check again.".to_string()),
+                );
+                ok = false;
+            }
+        }
+
+        if package.entry.trim().is_empty() {
+            push_diag(
+                &mut diagnostics,
+                "SC-ENTRY-EMPTY",
+                DiagnosticStage::Entry,
+                DiagnosticSeverity::Error,
+                "Entry function name is empty",
+                None,
+                None,
+                Some("Set `entry` to a function name like `main`.".to_string()),
+            );
             ok = false;
         } else {
-            diagnostics.push(format!("[OK] Entry function '{}' exists", package.entry));
+            let pattern = format!("fn {}", package.entry.trim());
+            if !package.code.contains(&pattern) {
+                push_diag(
+                    &mut diagnostics,
+                    "SC-ENTRY-MISSING",
+                    DiagnosticStage::Entry,
+                    DiagnosticSeverity::Error,
+                    format!("Entry function '{}' not found in script text", package.entry),
+                    None,
+                    None,
+                    Some("Define the entry function or update `entry`.".to_string()),
+                );
+                ok = false;
+            }
+        }
+
+        if package.code.contains("r#\"") {
+            push_diag(
+                &mut diagnostics,
+                "SC-LINT-RAWSTR",
+                DiagnosticStage::Lint,
+                DiagnosticSeverity::Warn,
+                "Rust raw-string syntax detected; Rhai expects backtick strings (`...`)",
+                None,
+                None,
+                Some("Replace r#\"...\"# with `...`".to_string()),
+            );
+        }
+        if package.code.contains("TabCatch(") {
+            push_diag(
+                &mut diagnostics,
+                "SC-LINT-DEPRECATED-TABCATCH",
+                DiagnosticStage::Lint,
+                DiagnosticSeverity::Warn,
+                "Deprecated API: prefer Tab.catch() alias style",
+                None,
+                None,
+                Some("Use Tab.catch() for new scripts.".to_string()),
+            );
+        }
+        if package.code.contains("inject(") && package.code.contains('`') {
+            push_diag(
+                &mut diagnostics,
+                "SC-LINT-INJECT-QUOTE",
+                DiagnosticStage::Lint,
+                DiagnosticSeverity::Warn,
+                "Potential quote mismatch around inject() arguments",
+                None,
+                None,
+                Some("Use inject(\"...\") and escape nested quotes.".to_string()),
+            );
+        }
+
+        if ok {
+            let static_ctx = ScriptStaticContext {
+                output_dir: std::env::temp_dir(),
+                selected_tab_console_logs: Vec::new(),
+                selected_tab_cookies: HashMap::new(),
+            };
+            match collect_actions(package, &static_ctx) {
+                Ok(actions) => {
+                    push_diag(
+                        &mut diagnostics,
+                        "SC-APIGUARD-OK",
+                        DiagnosticStage::ApiGuard,
+                        DiagnosticSeverity::Info,
+                        format!("API guard passed. Planned actions: {}", actions.len()),
+                        None,
+                        None,
+                        None,
+                    );
+                    selectors_for_preflight = selectors_from_actions(&actions);
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    let (line, column) = extract_line_col(&msg);
+                    push_diag(
+                        &mut diagnostics,
+                        "SC-APIGUARD-ERR",
+                        DiagnosticStage::ApiGuard,
+                        DiagnosticSeverity::Error,
+                        format!("API guard failed: {}", msg),
+                        line,
+                        column,
+                        Some("Check function names and argument counts/types.".to_string()),
+                    );
+                    ok = false;
+                }
+            }
         }
     }
 
-    if package.code.contains("r#\"") {
-        diagnostics.push("[WARN] Rust raw-string syntax (r#\"...\"#) detected; Rhai expects backtick strings (`...`)".to_string());
-    }
-    if package.code.contains("TabCatch(") {
-        diagnostics.push("[WARN] Deprecated API: use Tab.catch() style alias via TabCatch() migration path".to_string());
+    if run_preflight && ok {
+        if let (Some(tab_id), Some(real_port)) = (selected_tab_id.clone(), port) {
+            if !selectors_for_preflight.is_empty() {
+                match preflight_selectors(real_port, &tab_id, &selectors_for_preflight).await {
+                    Ok(results) => {
+                        for (selector, valid, exists) in results {
+                            if !valid {
+                                push_diag(
+                                    &mut diagnostics,
+                                    "SC-PREFLIGHT-SELECTOR-INVALID",
+                                    DiagnosticStage::Preflight,
+                                    DiagnosticSeverity::Error,
+                                    format!("Invalid selector syntax: {}", selector),
+                                    None,
+                                    None,
+                                    Some("Fix CSS selector syntax.".to_string()),
+                                );
+                                ok = false;
+                            } else if !exists {
+                                push_diag(
+                                    &mut diagnostics,
+                                    "SC-PREFLIGHT-SELECTOR-NOTFOUND",
+                                    DiagnosticStage::Preflight,
+                                    DiagnosticSeverity::Warn,
+                                    format!("Selector not found on selected tab: {}", selector),
+                                    None,
+                                    None,
+                                    Some("Page may not be ready; add wait or update selector.".to_string()),
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_diag(
+                            &mut diagnostics,
+                            "SC-PREFLIGHT-ERR",
+                            DiagnosticStage::Preflight,
+                            DiagnosticSeverity::Warn,
+                            format!("Preflight failed: {}", e),
+                            None,
+                            None,
+                            Some("Ensure selected tab is still open and browser is online.".to_string()),
+                        );
+                    }
+                }
+            }
+        } else {
+            push_diag(
+                &mut diagnostics,
+                "SC-PREFLIGHT-SKIP",
+                DiagnosticStage::Preflight,
+                DiagnosticSeverity::Info,
+                "Preflight skipped: no selected tab context",
+                None,
+                None,
+                Some("Select an execution target tab to enable selector preflight.".to_string()),
+            );
+        }
     }
 
     ScriptingCheckReport { ok, diagnostics }

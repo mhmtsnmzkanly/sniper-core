@@ -287,10 +287,19 @@ Outputs:
 - non-empty `entry`
 - entry function name presence in code text
 - known warning patterns (e.g. Rust raw string style usage)
+- API guard by running compile+binding stage to catch arity/type misuse
+- optional selector preflight against selected tab
 
 It does **not**:
 - execute browser actions
 - guarantee selector correctness at runtime
+
+Structured diagnostics:
+- `code`: stable diagnostic code (`SC-*`)
+- `stage`: Compile / Entry / ApiGuard / Lint / Preflight
+- `severity`: Error / Warn / Info
+- optional `line` / `column`
+- optional `hint`
 
 ### Dry-Run
 - Compiles script and builds internal action list.
