@@ -165,12 +165,14 @@ Potential errors:
 - Sort presets: `Name`, `Size`, `Type` with asc/desc.
 - Visual Gallery mode for card-based media browsing.
 - One-click HLS Video Downloader for non-DRM `.m3u8` sources (uses `ffmpeg`).
+- Blob `De-Masker` attempts to map `blob:http...` URLs to likely original media source URLs.
 
 Potential errors:
 - binary decode failures
 - very large payload memory pressure
 - `ffmpeg` not installed or inaccessible in PATH
 - HLS source blocked/expired or DRM-protected stream
+- Blob source cannot be resolved with confidence (best-effort heuristic)
 
 ## 6.3 Cookies
 - read/add/delete cookie APIs via browser manager.

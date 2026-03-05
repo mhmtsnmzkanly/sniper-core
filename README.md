@@ -13,6 +13,7 @@ It combines:
 - Captures page content (`html`, `complete`, `mirror`).
 - Collects network/media/cookie/console data per tab.
 - Downloads non-DRM HLS streams (`.m3u8`) from Media panel with one click.
+- Includes a Blob URL `De-Masker` to resolve `blob:http...` media URLs to probable source URLs.
 - Runs automation pipelines from UI blocks.
 - Runs Rhai scripts that can call automation actions.
 

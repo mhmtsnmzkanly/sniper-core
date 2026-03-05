@@ -108,6 +108,7 @@ impl eframe::App for CrawlerApp {
                     AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
                     AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
                     AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestBlobDemask(_) |
                     AppEvent::RequestVideoDownload(..) |
                     AppEvent::RequestScriptingRun(..) |
                     AppEvent::RequestTabRefresh => {
@@ -195,6 +196,52 @@ impl eframe::App for CrawlerApp {
                         tracing::debug!("[BROWSER -> CORE] Media sniffed: {} ({})", asset.name, asset.mime_type);
                         ws.media_assets.push(asset);
                     }
+                }
+                AppEvent::BlobDemaskResult(tid, mappings) => {
+                    let mut blob_logs: Vec<String> = Vec::new();
+                    let mut added = 0usize;
+                    {
+                        let ws = self.ensure_workspace(&tid);
+                        for (blob_url, resolved_url, reason) in mappings {
+                            if resolved_url.is_empty() {
+                                blob_logs.push(format!("Unresolved blob: {} ({})", blob_url, reason));
+                                continue;
+                            }
+                            if ws.media_assets.iter().any(|m| m.url == resolved_url) {
+                                continue;
+                            }
+                            let file_name = resolved_url
+                                .split('/')
+                                .last()
+                                .unwrap_or("blob_resolved_media")
+                                .split('?')
+                                .next()
+                                .unwrap_or("blob_resolved_media")
+                                .to_string();
+                            ws.media_assets.push(crate::state::MediaAsset {
+                                name: file_name,
+                                url: resolved_url.clone(),
+                                mime_type: "video/blob-demasked".to_string(),
+                                size_bytes: 0,
+                                data: None,
+                                thumbnail: None,
+                            });
+                            blob_logs.push(format!("Resolved {} -> {} ({})", blob_url, resolved_url, reason));
+                            added += 1;
+                        }
+                    }
+                    for message in blob_logs {
+                        self.state.logs.push(LogEntry {
+                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                            level: "BLOB".to_string(),
+                            message,
+                        });
+                    }
+                    self.state.notify(
+                        if added > 0 { NotificationLevel::Ok } else { NotificationLevel::Warn },
+                        "De-Masker",
+                        &format!("Blob de-mask completed. Added {} resolved URL(s).", added),
+                    );
                 }
                 AppEvent::CookiesReceived(tid, cookies) => {
                     let ws = self.ensure_workspace(&tid);
@@ -494,6 +541,108 @@ impl eframe::App for CrawlerApp {
                                 "Video download failed: {}",
                                 e
                             ))),
+                        }
+                    });
+                }
+                AppEvent::RequestBlobDemask(tid) => {
+                    tracing::info!("[UI -> CORE] Blob de-mask requested for tab {}", tid);
+                    let port = self.state.config.remote_debug_port;
+                    let tid_clone = tid.clone();
+                    tokio::spawn(async move {
+                        let script = r#"(() => {
+                            const bag = window.__sniperBlobDemask || (window.__sniperBlobDemask = { recent: [], map: {} });
+                            const pushRecent = (u, via) => {
+                                if (!u || typeof u !== 'string') return;
+                                const lower = u.toLowerCase();
+                                if (lower.startsWith('blob:')) return;
+                                if (!(lower.includes('.m3u8') || lower.includes('.mpd') || lower.includes('.mp4') || lower.includes('.webm') || lower.includes('.ts') || lower.includes('.m4s') || lower.includes('mime=video'))) return;
+                                bag.recent.push({ url: u, via, ts: Date.now() });
+                                if (bag.recent.length > 80) bag.recent = bag.recent.slice(-80);
+                            };
+
+                            if (!window.__sniperBlobDemaskInstalled) {
+                                window.__sniperBlobDemaskInstalled = true;
+                                const _createObjectURL = URL.createObjectURL.bind(URL);
+                                URL.createObjectURL = function(obj) {
+                                    const b = _createObjectURL(obj);
+                                    bag.map[b] = {
+                                        type: obj && obj.type ? obj.type : '',
+                                        size: obj && obj.size ? obj.size : 0,
+                                        ts: Date.now()
+                                    };
+                                    return b;
+                                };
+                                const _fetch = window.fetch ? window.fetch.bind(window) : null;
+                                if (_fetch) {
+                                    window.fetch = async function(...args) {
+                                        try {
+                                            const reqUrl = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+                                            pushRecent(reqUrl, 'fetch');
+                                        } catch (_e) {}
+                                        return _fetch(...args);
+                                    };
+                                }
+                                const _open = XMLHttpRequest.prototype.open;
+                                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                                    try { this.__sniperUrl = url; pushRecent(url, 'xhr'); } catch (_e) {}
+                                    return _open.call(this, method, url, ...rest);
+                                };
+                                const _send = XMLHttpRequest.prototype.send;
+                                XMLHttpRequest.prototype.send = function(...args) {
+                                    this.addEventListener('loadend', () => {
+                                        try { if (this.__sniperUrl) pushRecent(this.__sniperUrl, 'xhr_loadend'); } catch (_e) {}
+                                    });
+                                    return _send.apply(this, args);
+                                };
+                            }
+
+                            try {
+                                performance.getEntriesByType('resource').forEach(e => pushRecent(e.name, 'perf'));
+                            } catch (_e) {}
+
+                            const blobUrls = new Set();
+                            Array.from(document.querySelectorAll('video,audio,source')).forEach(el => {
+                                const src = el.currentSrc || el.src || el.getAttribute('src') || '';
+                                if (typeof src === 'string' && src.startsWith('blob:')) blobUrls.add(src);
+                            });
+
+                            const recents = (bag.recent || []).slice(-20);
+                            const out = [];
+                            blobUrls.forEach((blob) => {
+                                let resolved = '';
+                                let reason = 'unresolved';
+                                const meta = bag.map && bag.map[blob] ? bag.map[blob] : null;
+                                const sameType = meta && meta.type ? recents.filter(r => r.url.toLowerCase().includes(meta.type.toLowerCase().split('/')[0])) : [];
+                                if (sameType.length > 0) {
+                                    resolved = sameType[sameType.length - 1].url;
+                                    reason = 'recent_same_type';
+                                } else if (recents.length > 0) {
+                                    resolved = recents[recents.length - 1].url;
+                                    reason = 'recent_fallback';
+                                }
+                                out.push({ blob_url: blob, resolved_url: resolved, reason });
+                            });
+                            return JSON.stringify(out);
+                        })()"#;
+
+                        let result = crate::core::browser::BrowserManager::execute_script(port, tid_clone.clone(), script.to_string()).await;
+                        match result {
+                            Ok(raw) => {
+                                let decoded = decode_js_result(&raw);
+                                let mut mappings: Vec<(String, String, String)> = Vec::new();
+                                if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&decoded) {
+                                    for item in items {
+                                        let blob_url = item.get("blob_url").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                        let resolved_url = item.get("resolved_url").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                        let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                                        mappings.push((blob_url, resolved_url, reason));
+                                    }
+                                }
+                                crate::ui::scrape::emit(AppEvent::BlobDemaskResult(tid_clone, mappings));
+                            }
+                            Err(e) => {
+                                crate::ui::scrape::emit(AppEvent::OperationError(format!("Blob de-mask failed: {}", e)));
+                            }
                         }
                     });
                 }

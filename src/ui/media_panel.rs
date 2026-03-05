@@ -45,6 +45,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ws.selected_media_urls.clear(); 
                     }
                 }
+                if ui
+                    .button(RichText::new("🕵 DE-MASK BLOB").color(Color32::from_rgb(255, 214, 120)))
+                    .on_hover_text("Resolve blob:http URLs to probable media source URLs (best effort, non-DRM).")
+                    .clicked()
+                {
+                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestBlobDemask(tid.clone()));
+                }
                 
                 ui.separator();
                 

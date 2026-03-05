@@ -14,6 +14,7 @@ pub enum AppEvent {
     // --- COMMAND EVENTS ---
     RequestCapture(String, String), // tab_id, mode (html/complete/mirror)
     RequestVideoDownload(String, String, String), // tab_id, hls_url, suggested_name
+    RequestBlobDemask(String), // tab_id
     RequestScriptExecution(String, String),
     RequestNetworkToggle(String, bool),
     RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),
@@ -43,6 +44,7 @@ pub enum AppEvent {
     
     // --- DATA RETURN EVENTS (TAB-AWARE) ---
     MediaCaptured(String, MediaAsset),
+    BlobDemaskResult(String, Vec<(String, String, String)>), // tab_id, (blob_url, resolved_url, reason)
     CookiesReceived(String, Vec<ChromeCookie>),
     AutomationProgress(String, usize),
     AutomationFinished(String),
