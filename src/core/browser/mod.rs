@@ -44,6 +44,11 @@ impl BrowserManager {
             .arg("--disable-domain-reliability")
             .arg("--disable-client-side-phishing-detection")
             .arg("--disable-breakpad") // Disable crash reporting
+            .arg("--disable-logging") // Silence internal Chrome logs
+            .arg("--log-level=3") // Only fatal errors
+            .arg("--disable-extensions") // No extensions noise
+            .arg("--disable-component-extensions-with-background-pages")
+            .arg("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
             .arg("--metrics-recording-only");
 
         #[cfg(target_os = "linux")]
@@ -52,6 +57,7 @@ impl BrowserManager {
             command.arg("--no-sandbox")
                    .arg("--disable-setuid-sandbox")
                    .arg("--disable-dev-shm-usage")
+                   .arg("--no-zygote") // Prevents some GLib/threading issues
                    .arg("--disable-gpu"); // Helps prevent GLib/GPU related errors in logs
         }
 
