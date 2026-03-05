@@ -48,9 +48,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        // KOD NOTU: Browser Control paneli daraltıldı (0.25), Tab listesi genişletildi (0.75).
-        cols[0].set_width(total * 0.25);
-        cols[1].set_width(total * 0.75);
+        // KOD NOTU: Browser Control paneli daha da daraltıldı (0.18), Tab listesi genişletildi (0.82).
+        cols[0].set_width(total * 0.18);
+        cols[1].set_width(total * 0.82);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
