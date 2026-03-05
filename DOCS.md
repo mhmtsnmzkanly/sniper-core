@@ -221,8 +221,9 @@ Flow:
 1. Script package loaded
 2. `Check` performs compile + basic lint
 3. `Dry-Run` can compile and print planned actions without execution
-4. `Execute` compiles and maps Rhai calls to internal actions
-5. Actions are executed via shared automation runtime and browser APIs
+4. `Debugger` can compile and cache planned actions for step preview in UI
+5. `Execute` compiles and maps Rhai calls to internal actions
+6. Actions are executed via shared automation runtime and browser APIs
 
 Current helper families:
 - tab creation/binding (`Tab`, `TabNew`, `tab_new`, `Tab.new`, `TabCatch`, `TabCurrent`, `tab_catch`, `Tab.catch`)

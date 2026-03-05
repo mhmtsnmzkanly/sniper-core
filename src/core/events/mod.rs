@@ -19,6 +19,7 @@ pub enum AppEvent {
     RequestScriptingRun(ScriptPackage, Option<String>),
     RequestScriptingCheck(ScriptPackage, Option<String>),
     RequestScriptingDryRun(ScriptPackage, Option<String>),
+    RequestScriptingDebugPlan(ScriptPackage, Option<String>),
     RequestScriptingStop,
     RequestScriptingImport(std::path::PathBuf),
     RequestScriptingExport(std::path::PathBuf, ScriptPackage),
@@ -51,6 +52,7 @@ pub enum AppEvent {
     ScriptingOutput(String),
     ScriptingCheckResult(ScriptingCheckReport),
     ScriptingDryRunResult(Vec<String>),
+    ScriptingDebugPlanResult(Vec<String>),
     ScriptingFinished,
     ScriptingError(String),
     

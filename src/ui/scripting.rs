@@ -21,6 +21,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             // KOD NOTU: New ile temiz package baslatilir, eski output listesi de sifirlanir.
             state.script_package = ScriptPackage::default();
             state.script_error = None;
+            state.scripting_debug_plan.clear();
+            state.scripting_debug_index = 0;
         }
 
         if ui.button("Import .json").clicked() {
@@ -85,6 +87,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 selected,
             ));
         }
+        if ui
+            .add_enabled(!state.is_script_running, egui::Button::new("Debugger"))
+            .clicked()
+        {
+            let selected = state
+                .scripting_tab_binding
+                .clone()
+                .or_else(|| state.selected_tab_id.clone());
+            emit(AppEvent::RequestScriptingDebugPlan(
+                state.script_package.clone(),
+                selected,
+            ));
+        }
 
         if ui
             .add_enabled(state.is_script_running, egui::Button::new("Stop"))
@@ -121,6 +136,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             {
                 state.script_package = template.package.clone();
                 state.script_error = None;
+                state.scripting_debug_plan.clear();
+                state.scripting_debug_index = 0;
             }
         }
     });
@@ -180,6 +197,48 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .font(egui::TextStyle::Monospace)
             .desired_width(f32::INFINITY),
     );
+
+    ui.separator();
+    ui.label(RichText::new("Script Debugger").strong());
+    if state.scripting_debug_plan.is_empty() {
+        ui.colored_label(Color32::from_gray(170), "No debug plan yet. Click Debugger to build step preview.");
+    } else {
+        let max_idx = state.scripting_debug_plan.len().saturating_sub(1);
+        if state.scripting_debug_index > max_idx {
+            state.scripting_debug_index = max_idx;
+        }
+
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(state.scripting_debug_index > 0, egui::Button::new("Prev"))
+                .clicked()
+            {
+                state.scripting_debug_index = state.scripting_debug_index.saturating_sub(1);
+            }
+            if ui
+                .add_enabled(
+                    state.scripting_debug_index + 1 < state.scripting_debug_plan.len(),
+                    egui::Button::new("Next"),
+                )
+                .clicked()
+            {
+                state.scripting_debug_index += 1;
+            }
+            ui.label(format!(
+                "Step {}/{}",
+                state.scripting_debug_index + 1,
+                state.scripting_debug_plan.len()
+            ));
+        });
+        ui.add_space(4.0);
+        ui.monospace(
+            state
+                .scripting_debug_plan
+                .get(state.scripting_debug_index)
+                .cloned()
+                .unwrap_or_default(),
+        );
+    }
 
     ui.separator();
     ui.label(RichText::new("Runtime").strong());

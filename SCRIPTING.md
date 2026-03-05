@@ -22,6 +22,7 @@ This is intentional: timeout/retry/execution behavior stays consistent.
 Notes:
 - `Check` validates script compile/entry/lint but does **not** execute actions.
 - `Dry-Run` prints planned action sequence to System Telemetry and does **not** execute browser actions.
+- `Debugger` builds the same action plan and shows step-by-step preview inside Scripting tab.
 - Script output is sent to **System Telemetry**.
 
 ## 1.2 Script Package Format (`.json`)
@@ -295,6 +296,11 @@ It does **not**:
 - Compiles script and builds internal action list.
 - Emits planned actions (`[001] ...`) to System Telemetry with `DRYRUN` level.
 - Does not call browser/CDP operations.
+
+### Debugger
+- Compiles script and builds internal action list.
+- Stores plan in Scripting UI panel (`Script Debugger`).
+- Use `Prev` / `Next` to inspect each planned action.
 
 ---
 

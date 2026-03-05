@@ -55,6 +55,7 @@ cargo run -- --port 9222
 - Built-in Template Library (`Apply Template`) for quick script bootstrap.
 - `Check`: compile + basic lint without executing browser actions.
 - `Dry-Run`: build action plan without browser execution.
+- `Debugger`: build step preview and inspect actions one-by-one in Scripting tab.
 - `Execute`: runs script through shared automation runtime.
 - `Stop`: cooperative cancel request.
 - Script output goes to `System Telemetry` (not local script output list).
