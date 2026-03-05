@@ -55,6 +55,7 @@ cargo run -- --port 9222
 - `Execute`: runs script through shared automation runtime.
 - `Stop`: cooperative cancel request.
 - Script output goes to `System Telemetry` (not local script output list).
+- Detailed scripting tutorial + API reference: see [`SCRIPTING.md`](./SCRIPTING.md).
 
 ### Logs (System Telemetry)
 Central log stream for:
