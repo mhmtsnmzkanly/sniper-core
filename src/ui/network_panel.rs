@@ -1,7 +1,6 @@
 use crate::state::AppState;
 use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
-use egui_extras::{TableBuilder, Column};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
@@ -25,6 +24,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.add_space(6.0);
         Frame::group(ui.style()).fill(design::BG_SURFACE).inner_margin(8.0).show(ui, |ui| {
             ui.horizontal(|ui| {
+                // Type filter
                 ui.label(RichText::new("FILTER").strong().color(design::ACCENT_ORANGE));
                 let types = ["XHR", "JS", "CSS", "IMG", "DOC", "OTHER"];
                 ui.menu_button(format!("TYPES ({})", type_filter.len() as usize), |ui| {
@@ -39,55 +39,44 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 });
 
                 ui.separator();
+                ui.label("STATUS:");
+                for (label, val, color) in [
+                    ("ALL", "all", design::TEXT_MUTED),
+                    ("2xx", "ok", design::ACCENT_GREEN),
+                    ("4xx/5xx", "error", Color32::from_rgb(255, 140, 140)),
+                ] {
+                    let selected = status_filter == val;
+                    if ui.selectable_label(selected, RichText::new(label).color(color)).clicked() {
+                        status_filter = val.to_string();
+                    }
+                }
+
+                ui.separator();
                 ui.label("SEARCH:");
-                ui.add(egui::TextEdit::singleline(&mut search).desired_width(150.0));
-                if ui.button("Block Search").clicked() && !search.trim().is_empty() {
+                ui.add(egui::TextEdit::singleline(&mut search).desired_width(220.0).hint_text("url contains..."));
+                if ui.button("Block").clicked() && !search.trim().is_empty() {
                     crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(
                         tid.clone(),
                         search.trim().to_string(),
                     ));
                 }
-                if ui.button("Unblock Search").clicked() && !search.trim().is_empty() {
+                if ui.button("Unblock").clicked() && !search.trim().is_empty() {
                     crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(
                         tid.clone(),
                         search.trim().to_string(),
                     ));
                 }
 
-                ui.separator();
-                ui.label(RichText::new("QUICK").strong().color(design::ACCENT_ORANGE));
-                if ui.button("XHR").clicked() {
-                    type_filter.clear();
-                    type_filter.insert("XHR".to_string());
-                }
-                if ui.button("JS").clicked() {
-                    type_filter.clear();
-                    type_filter.insert("JS".to_string());
-                }
-                if ui.button("IMG").clicked() {
-                    type_filter.clear();
-                    type_filter.insert("IMG".to_string());
-                }
-                if ui.button("Errors").clicked() {
-                    status_filter = "error".to_string();
-                }
-                if ui.button("2xx").clicked() {
-                    status_filter = "ok".to_string();
-                }
-                if ui.button("Reset").clicked() {
-                    type_filter.clear();
-                    status_filter = "all".to_string();
-                    search.clear();
-                }
-
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("🗑 CLEAR LOGS").clicked() {
+                    ui.label(RichText::new(format!("TOTAL: {}", requests.len())).color(design::ACCENT_GREEN).monospace());
+                    ui.separator();
+                    if ui.button("🗑 CLEAR").clicked() {
                         if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
                     }
-                    
+                    ui.separator();
                     // KOD NOTU: Engellenen URL'lerin listesini gösteren ve yönetmeyi sağlayan menü.
                     ui.menu_button(RichText::new(format!("🛡 BLOCKED ({})", blocked_urls.len() as usize)).color(design::ACCENT_ORANGE), |ui| {
-                        ui.set_width(250.0);
+                        ui.set_width(260.0);
                         if blocked_urls.is_empty() {
                             ui.label("No active blocks.");
                         } else {
@@ -139,37 +128,49 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             true
         }).collect();
 
-        TableBuilder::new(ui)
-            .striped(true)
-            .resizable(true)
-            .column(Column::auto())
-            .column(Column::auto())
-            .column(Column::remainder())
-            .column(Column::auto())
-            .header(20.0, |mut h| {
-                h.col(|ui| { ui.strong("METHOD"); });
-                h.col(|ui| { ui.strong("STATUS"); });
-                h.col(|ui| { ui.strong("URL"); });
-                h.col(|ui| { ui.strong("TYPE"); });
-            })
-            .body(|b| {
-                b.rows(20.0, filtered_requests.len(), |mut r| {
-                    let req = &filtered_requests[r.index()];
-                    r.col(|ui| { ui.label(&req.method); });
-                    r.col(|ui| { 
-                        let color = match req.status {
-                            Some(s) if s >= 200 && s < 300 => design::ACCENT_GREEN,
-                            Some(s) if s >= 400 => Color32::from_rgb(255, 120, 120),
-                            _ => design::TEXT_MUTED,
-                        };
-                        ui.label(RichText::new(req.status.map(|s| s.to_string()).unwrap_or("...".into())).color(color));
+        egui::ScrollArea::vertical().max_height(520.0).show(ui, |ui| {
+            for req in filtered_requests {
+                Frame::group(ui.style())
+                    .stroke(egui::Stroke::new(1.0, Color32::from_gray(55)))
+                    .fill(design::BG_SURFACE)
+                    .inner_margin(8.0)
+                    .corner_radius(6.0)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            // Method badge
+                            let method_col = match req.method.as_str() {
+                                "GET" => Color32::from_rgb(90, 180, 255),
+                                "POST" => Color32::from_rgb(255, 170, 80),
+                                "PUT" => Color32::from_rgb(180, 150, 255),
+                                "DELETE" => Color32::from_rgb(255, 120, 140),
+                                _ => design::TEXT_MUTED,
+                            };
+                            ui.label(RichText::new(req.method.clone()).color(method_col).monospace().strong());
+
+                            // Status badge
+                            let status_txt = req.status.map(|s| s.to_string()).unwrap_or_else(|| "...".into());
+                            let status_col = match req.status {
+                                Some(s) if (200..300).contains(&s) => design::ACCENT_GREEN,
+                                Some(s) if s >= 400 => Color32::from_rgb(255, 120, 120),
+                                Some(_) => Color32::from_rgb(240, 200, 100),
+                                None => design::TEXT_MUTED,
+                            };
+                            ui.label(RichText::new(status_txt).color(status_col).monospace());
+
+                            // Type
+                            ui.label(RichText::new(req.resource_type.clone()).color(Color32::from_gray(180)).monospace());
+
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(RichText::new(format!("ID: {}", req.request_id)).size(10.0).color(design::TEXT_MUTED));
+                            });
+                        });
+
+                        ui.add_space(4.0);
+                        ui.add(egui::Label::new(RichText::new(&req.url).monospace().size(11.0).color(Color32::from_gray(210))).truncate());
                     });
-                    r.col(|ui| {
-                        ui.label(&req.url);
-                    });
-                    r.col(|ui| { ui.label(&req.resource_type); });
-                });
-            });
+                ui.add_space(6.0);
+            }
+        });
     });
 
     if let Some(ws) = state.workspaces.get_mut(&tid) {
