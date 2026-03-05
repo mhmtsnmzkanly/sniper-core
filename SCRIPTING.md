@@ -219,11 +219,11 @@ Appends class filter.
 ### `query.filter_attr(key: string, value: string) -> ElementQuery`
 Appends attribute filter.
 
-### `query.first_or_none() -> string`
-Returns resolved selector string.
+### `query.first_or_none() -> ElementRef`
+Returns first element handle (current implementation maps selector as one handle).
 
-### `query.all() -> Array<string>`
-Returns selector list (current implementation returns a single resolved selector).
+### `query.all() -> Array<ElementRef>`
+Returns element handles (current implementation returns one selector-mapped handle).
 
 ### `query.click()`
 Queues click action.
@@ -307,7 +307,7 @@ Chrome console logs additionally appear in:
 ## 2.9 Current Known Gaps
 
 - Dot-style construction (`Tab.new`, `Tab.catch`) is still not available; function aliases are used.
-- Query result model is still selector-centric (`first_or_none` / `all`) rather than concrete element objects.
+- Query execution still uses selector mapping; it does not yet fetch and cache concrete DOM node snapshots.
 - Runtime selector validation remains dynamic (compile-time check cannot validate DOM presence).
 
 ---

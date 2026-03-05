@@ -340,11 +340,17 @@ fn collect_actions(package: &ScriptPackage, static_ctx: &ScriptStaticContext) ->
         }
         query.clone()
     });
-    engine.register_fn("first_or_none", |query: &mut ElementQuery| -> String {
-        query.selector.clone()
+    engine.register_fn("first_or_none", |query: &mut ElementQuery| -> ElementRef {
+        ElementRef {
+            token: query.token,
+            selector: query.selector.clone(),
+        }
     });
-    engine.register_fn("all", |query: &mut ElementQuery| -> rhai::Array {
-        vec![rhai::Dynamic::from(query.selector.clone())]
+    engine.register_fn("all", |query: &mut ElementQuery| -> Vec<ElementRef> {
+        vec![ElementRef {
+            token: query.token,
+            selector: query.selector.clone(),
+        }]
     });
     {
         let build = build.clone();

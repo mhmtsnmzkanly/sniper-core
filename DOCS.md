@@ -224,7 +224,7 @@ Important behavior:
 
 Known limitations:
 - dot-style constructor names (`Tab.new`, `Tab.catch`) are not yet available
-- query outputs are selector-centric instead of concrete element objects
+- query APIs return `ElementRef` handles, but execution is still selector-mapped (no DOM snapshot cache)
 - compile-time check cannot guarantee runtime selector existence
 
 See full API in [`SCRIPTING.md`](./SCRIPTING.md).
