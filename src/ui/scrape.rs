@@ -48,9 +48,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        // KOD NOTU: Browser Control paneli iyice daraltıldı (≈%8).
-        cols[0].set_width(total * 0.08);
-        cols[1].set_width(total * 0.92);
+        // KOD NOTU: Browser Control paneli yeniden genişletildi (~%22) ki alanlar sıkışmasın.
+        cols[0].set_width(total * 0.22);
+        cols[1].set_width(total * 0.78);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
@@ -62,8 +62,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             );
             ui.add_space(2.0);
 
-            // KOD NOTU: Ayarlar dikeyde de minimize edildi (100px) ve metinler kısaltıldı.
-            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(100.0).show(ui, |ui| {
+            // KOD NOTU: Ayarlar daha rahat okunabilir olması için yükseklik artırıldı.
+            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(180.0).show(ui, |ui| {
                 ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
                 egui::Grid::new("browser_config_grid")
                     .spacing([4.0, 4.0])
@@ -98,7 +98,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
 
             ui.add_space(4.0);
-            let compact_btn_h = design::BUTTON_HEIGHT - 10.0;
+            let compact_btn_h = design::BUTTON_HEIGHT - 4.0;
             if !state.is_browser_running {
                 if ui
                     .add(
