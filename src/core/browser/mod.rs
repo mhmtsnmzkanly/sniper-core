@@ -25,6 +25,84 @@ pub struct BrowserLaunchOptions {
 }
 
 impl BrowserManager {
+    /// KOD NOTU: Hafif stealth script; webdriver/webgl/canvas gibi fingerprint sinyallerini normalize eder.
+    fn stealth_script(seed: u32) -> String {
+        let hc = 4 + (seed % 8);
+        let dm = 4 + (seed % 12);
+        let tz = ["Europe/Istanbul", "Europe/Berlin", "America/New_York", "Asia/Tokyo"][(seed as usize) % 4];
+        format!(
+            r#"(() => {{
+                const define = (obj, key, value) => {{
+                    try {{ Object.defineProperty(obj, key, {{ get: () => value, configurable: true }}); }} catch (_e) {{}}
+                }};
+                define(Navigator.prototype, 'webdriver', undefined);
+                define(Navigator.prototype, 'hardwareConcurrency', {hc});
+                define(Navigator.prototype, 'deviceMemory', {dm});
+                define(Navigator.prototype, 'language', 'en-US');
+                define(Navigator.prototype, 'languages', ['en-US', 'en']);
+                define(Navigator.prototype, 'platform', 'Win32');
+                define(Navigator.prototype, 'maxTouchPoints', 0);
+                define(Navigator.prototype, 'plugins', [1,2,3,4,5]);
+                const glGetParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(param) {{
+                    if (param === 37445) return 'Intel Inc.';
+                    if (param === 37446) return 'Intel Iris OpenGL Engine';
+                    return glGetParameter.call(this, param);
+                }};
+                const gl2GetParameter = WebGL2RenderingContext && WebGL2RenderingContext.prototype.getParameter;
+                if (gl2GetParameter) {{
+                    WebGL2RenderingContext.prototype.getParameter = function(param) {{
+                        if (param === 37445) return 'Intel Inc.';
+                        if (param === 37446) return 'Intel Iris OpenGL Engine';
+                        return gl2GetParameter.call(this, param);
+                    }};
+                }}
+                const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                HTMLCanvasElement.prototype.toDataURL = function(...args) {{
+                    try {{
+                        const ctx = this.getContext('2d');
+                        if (ctx) {{
+                            const shift = ({seed} % 3) + 1;
+                            const w = Math.min(8, this.width || 0);
+                            const h = Math.min(8, this.height || 0);
+                            if (w > 0 && h > 0) {{
+                                const img = ctx.getImageData(0, 0, w, h);
+                                for (let i = 0; i < img.data.length; i += 4) {{
+                                    img.data[i] = (img.data[i] + shift) % 255;
+                                }}
+                                ctx.putImageData(img, 0, 0);
+                            }}
+                        }}
+                    }} catch (_e) {{}}
+                    return origToDataURL.apply(this, args);
+                }};
+                try {{
+                    const ro = Intl.DateTimeFormat.prototype.resolvedOptions;
+                    Intl.DateTimeFormat.prototype.resolvedOptions = function(...args) {{
+                        const out = ro.apply(this, args);
+                        out.timeZone = '{tz}';
+                        return out;
+                    }};
+                }} catch (_e) {{}}
+                return 'SNIPER_STEALTH_APPLIED';
+            }})()"#,
+            hc = hc,
+            dm = dm,
+            seed = seed,
+            tz = tz
+        )
+    }
+
+    pub async fn apply_stealth_on_tab(port: u16, tab_id: String) -> AppResult<()> {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let script = Self::stealth_script(seed);
+        let _ = Self::execute_script(port, tab_id, script).await?;
+        Ok(())
+    }
+
     /// KOD NOTU: Rastgele UA seçimi için hafif sabit havuz kullanılır.
     fn pick_user_agent(opts: &BrowserLaunchOptions) -> Option<String> {
         let custom = opts.user_agent.as_deref().map(str::trim).filter(|v| !v.is_empty());

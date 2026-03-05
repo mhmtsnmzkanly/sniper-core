@@ -304,6 +304,7 @@ It does **not**:
 - `Break Condition` lets you jump to matching step in debugger preview.
 - During `Execute`, break condition stops further action execution when matched.
 - Optional timing telemetry emits per-step and flush durations as `TIMING` lines.
+- If Browser Control has `Random Fingerprint` enabled, scripting applies stealth patch on bound/new tabs before actions.
 
 ---
 

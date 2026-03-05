@@ -599,6 +599,9 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
         match action {
             ScriptAction::NewTab { token, url } => {
                 let created = crate::core::browser::BrowserManager::create_tab(req.port, url.as_deref()).await?;
+                if req.apply_stealth {
+                    let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(req.port, created.id.clone()).await;
+                }
                 token_to_tab.insert(token, created.id.clone());
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
                     "Tab[{}] created: {}",
@@ -610,6 +613,9 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                     .selected_tab_id
                     .clone()
                     .ok_or_else(|| AppError::Internal("TabCatch failed: no selected tab in UI".to_string()))?;
+                if req.apply_stealth {
+                    let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(req.port, selected.clone()).await;
+                }
                 token_to_tab.insert(token, selected);
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
                     "Tab[{}] attached to selected target",

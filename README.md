@@ -49,6 +49,7 @@ cargo run -- --port 9222
 - `Chrome Tabs` (right, ~70%): active tab targets.
 - Command Center: capture/network/media/cookie/console/automation actions.
 - Browser Control now includes per-launch `Proxy`, `User-Agent`, `Random UA`, and `Random Fingerprint` options.
+- While browser is active, `RELAUNCH APPLY NETWORK PROFILE` applies updated proxy/identity settings via controlled restart.
 - Command Center includes `Selector Inspector` actions (`YAKALA`, `FETCH`, `CLEAR`) for visual selector capture.
 
 ### Scripting
@@ -75,6 +76,7 @@ Central log stream for:
 - scripting output
 - chrome console mirrored events
 - selector inspector capture hints/notifications
+- timing/stealth related runtime lines during scripting/automation sessions
 
 ## Script Package Format (`.json`)
 ```json

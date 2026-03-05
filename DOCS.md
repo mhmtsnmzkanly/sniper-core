@@ -84,6 +84,7 @@ Launch options:
 - `User-Agent` override
 - `Random UA`
 - `Random Fingerprint` (window size/lang/automation flag randomization)
+- `RELAUNCH APPLY NETWORK PROFILE` for active-session proxy/identity update.
 
 Outputs:
 - Browser process lifecycle events.
@@ -93,6 +94,7 @@ Errors:
 - Launch failures due to bad binary path.
 - Permission errors for profile/output folders.
 - Invalid or unreachable proxy target.
+- Relaunch race when previous process is still exiting.
 
 ## 4.2 Chrome Tabs
 What it does:
@@ -245,6 +247,7 @@ Important behavior:
 - Known error patterns emit KB hints into telemetry (`KB` log level).
 - `Break Condition` can halt execution when a planned action text matches.
 - `TIMING` telemetry can be enabled to emit step/flush execution durations (ms).
+- Stealth fingerprint script can be applied during automation/scripting target binding.
 
 Known limitations:
 - query APIs return `ElementRef` handles, but execution is still selector-mapped (no DOM snapshot cache)

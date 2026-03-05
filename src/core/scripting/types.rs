@@ -40,6 +40,7 @@ pub struct ScriptExecutionRequest {
     pub selected_tab_cookies: HashMap<String, String>,
     pub break_condition: Option<String>,
     pub emit_step_timing: bool,
+    pub apply_stealth: bool,
     pub port: u16,
     pub output_dir: std::path::PathBuf,
     pub cancel_token: Arc<AtomicBool>,

@@ -484,7 +484,11 @@ impl eframe::App for CrawlerApp {
                         dsl_version: 1, metadata: None, functions: dsl_funcs, steps: map_ui_steps_to_dsl(&steps),
                     };
                     let output_dir = self.state.config.output_dir.clone();
+                    let apply_stealth = self.state.config.randomize_fingerprint;
                     tokio::spawn(async move {
+                        if apply_stealth {
+                            let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(port, tid_clone.clone()).await;
+                        }
                         let config = crate::core::automation::engine::ExecutionConfig {
                             step_timeout: std::time::Duration::from_millis(auto_config.step_timeout_ms),
                             retry_attempts: auto_config.retry_attempts,
@@ -533,6 +537,7 @@ impl eframe::App for CrawlerApp {
                             Some(self.state.scripting_break_condition.trim().to_string())
                         },
                         emit_step_timing: self.state.scripting_emit_step_timing,
+                        apply_stealth: self.state.config.randomize_fingerprint,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: token,
@@ -569,6 +574,7 @@ impl eframe::App for CrawlerApp {
                         selected_tab_cookies,
                         break_condition: None,
                         emit_step_timing: false,
+                        apply_stealth: false,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),
@@ -597,6 +603,7 @@ impl eframe::App for CrawlerApp {
                         selected_tab_cookies,
                         break_condition: None,
                         emit_step_timing: false,
+                        apply_stealth: false,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),

@@ -48,9 +48,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        // KOD NOTU: Browser Control paneli daha da daraltıldı (0.18), Tab listesi genişletildi (0.82).
-        cols[0].set_width(total * 0.18);
-        cols[1].set_width(total * 0.82);
+        cols[0].set_width(total * 0.30);
+        cols[1].set_width(total * 0.70);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
@@ -61,22 +60,21 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             );
             ui.add_space(4.0);
 
-            // KOD NOTU: Ayarlar kısmı ScrollArea içine alınarak dikeyde %50 daraltıldı.
-            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(120.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(220.0).show(ui, |ui| {
                 egui::Grid::new("browser_config_grid")
-                    .spacing([4.0, 4.0])
+                    .spacing([8.0, 8.0])
                     .show(ui, |ui| {
                         ui.label("Chrome Path:");
                         ui.add(
                             egui::TextEdit::singleline(&mut state.config.chrome_binary_path)
-                                .desired_width(ui.available_width() * 0.9),
+                                .desired_width(ui.available_width() * 0.95),
                         );
                         ui.end_row();
 
                         ui.label("Profile Path:");
                         ui.add(
                             egui::TextEdit::singleline(&mut state.config.chrome_profile_path)
-                                .desired_width(ui.available_width() * 0.9),
+                                .desired_width(ui.available_width() * 0.95),
                         );
                         ui.end_row();
 
@@ -88,7 +86,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ui.add(
                             egui::TextEdit::singleline(&mut state.config.proxy_server)
                                 .hint_text("http://host:port")
-                                .desired_width(ui.available_width() * 0.9),
+                                .desired_width(ui.available_width() * 0.95),
                         );
                         ui.end_row();
 
@@ -96,7 +94,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ui.add(
                             egui::TextEdit::singleline(&mut state.config.user_agent)
                                 .hint_text("Default")
-                                .desired_width(ui.available_width() * 0.9),
+                                .desired_width(ui.available_width() * 0.95),
                         );
                         ui.end_row();
 
@@ -162,6 +160,43 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 {
                     tracing::info!("[UI] Click: TERMINATE BROWSER");
                     emit(AppEvent::TerminateBrowser);
+                }
+                ui.add_space(4.0);
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("RELAUNCH APPLY NETWORK PROFILE").strong())
+                            .min_size([ui.available_width(), design::BUTTON_HEIGHT].into())
+                            .fill(Color32::from_rgb(80, 126, 190)),
+                    )
+                    .on_hover_text("Apply updated Proxy / UA / Fingerprint settings by restarting browser automatically.")
+                    .clicked()
+                {
+                    let url = state.config.default_launch_url.clone();
+                    let binary = state.config.chrome_binary_path.clone();
+                    let port = state.config.remote_debug_port;
+                    let output_dir = state.config.output_dir.clone();
+                    let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
+                    let launch_opts = crate::core::browser::BrowserLaunchOptions {
+                        proxy_server: Some(state.config.proxy_server.clone()),
+                        user_agent: Some(state.config.user_agent.clone()),
+                        randomize_user_agent: state.config.randomize_user_agent,
+                        randomize_fingerprint: state.config.randomize_fingerprint,
+                    };
+                    let profile = if state.use_custom_profile {
+                        let isolated_path = state.config.output_dir.join("profiles").join("isolated");
+                        let _ = std::fs::create_dir_all(&isolated_path);
+                        isolated_path.to_string_lossy().to_string()
+                    } else {
+                        state.config.chrome_profile_path.clone()
+                    };
+                    emit(AppEvent::TerminateBrowser);
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
+                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx, output_dir, launch_opts).await {
+                            Ok(child) => emit(AppEvent::BrowserStarted(child)),
+                            Err(e) => emit(AppEvent::OperationError(format!("Relaunch failed: {}", e))),
+                        }
+                    });
                 }
                 ui.add_space(6.0);
                 ui.label(
