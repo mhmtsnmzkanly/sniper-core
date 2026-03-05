@@ -181,6 +181,8 @@ Executes DSL steps with retry/timeout semantics and emits progress events.
 - retry loop (`retry_attempts`)
 - timeout enforcement (`step_timeout`)
 - optional screenshot-on-error
+- selector fallback chain support (`selector_a || selector_b`)
+- recovery retry path for `Click` / `Type` (page refresh + re-attempt)
 
 ## 7.3 DSL Features (current)
 Includes actions such as:

@@ -46,6 +46,20 @@ pub struct AutomationEngine {
 }
 
 impl AutomationEngine {
+    /// KOD NOTU: `a || b || c` biçimindeki selector zincirini fallback adayı listesine çevirir.
+    fn selector_candidates(selector: &str) -> Vec<String> {
+        let mut out: Vec<String> = selector
+            .split("||")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        if out.is_empty() {
+            out.push(selector.trim().to_string());
+        }
+        out
+    }
+
     pub fn new(port: u16, tab_id: String, output_dir: std::path::PathBuf) -> Self {
         Self {
             context: Arc::new(Mutex::new(AutomationContext::new(port, tab_id, output_dir))),
@@ -292,7 +306,41 @@ impl AutomationEngine {
                 Step::Click { selector } => { 
                     let s = self.interpolate(selector);
                     tracing::info!("[ENGINE] Clicking selector: {}", s);
-                    driver.click(&s).await?; 
+                    let candidates = Self::selector_candidates(&s);
+                    let mut success = false;
+                    let mut last_err: Option<AppError> = None;
+                    for candidate in &candidates {
+                        match driver.click(candidate).await {
+                            Ok(_) => {
+                                success = true;
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::warn!("[ENGINE] Click failed on selector '{}': {}", candidate, e);
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                    if !success {
+                        tracing::warn!("[ENGINE] Click recovery: refreshing page and retrying selector chain.");
+                        let _: String = driver.eval("window.location.reload()").await?;
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        for candidate in &candidates {
+                            match driver.click(candidate).await {
+                                Ok(_) => {
+                                    success = true;
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("[ENGINE] Click retry failed on selector '{}': {}", candidate, e);
+                                    last_err = Some(e);
+                                }
+                            }
+                        }
+                    }
+                    if !success {
+                        return Err(last_err.unwrap_or_else(|| AppError::Internal("Click failed for all selector candidates".to_string())));
+                    }
                 }
                 Step::RightClick { selector } => {
                     let s = self.interpolate(selector);
@@ -305,13 +353,64 @@ impl AutomationEngine {
                 Step::Hover { selector } => { 
                     let s = self.interpolate(selector);
                     tracing::info!("[ENGINE] Hovering over: {}", s);
-                    driver.hover(&s).await?; 
+                    let candidates = Self::selector_candidates(&s);
+                    let mut success = false;
+                    let mut last_err: Option<AppError> = None;
+                    for candidate in &candidates {
+                        match driver.hover(candidate).await {
+                            Ok(_) => {
+                                success = true;
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::warn!("[ENGINE] Hover failed on selector '{}': {}", candidate, e);
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                    if !success {
+                        return Err(last_err.unwrap_or_else(|| AppError::Internal("Hover failed for all selector candidates".to_string())));
+                    }
                 }
                 Step::Type { selector, value, .. } => { 
                     let s = self.interpolate(selector);
                     let v = self.interpolate(value);
                     tracing::info!("[ENGINE] Typing '{}' into {}", v, s);
-                    driver.type_text(&s, &v).await?; 
+                    let candidates = Self::selector_candidates(&s);
+                    let mut success = false;
+                    let mut last_err: Option<AppError> = None;
+                    for candidate in &candidates {
+                        match driver.type_text(candidate, &v).await {
+                            Ok(_) => {
+                                success = true;
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::warn!("[ENGINE] Type failed on selector '{}': {}", candidate, e);
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                    if !success {
+                        tracing::warn!("[ENGINE] Type recovery: refreshing page and retrying selector chain.");
+                        let _: String = driver.eval("window.location.reload()").await?;
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        for candidate in &candidates {
+                            match driver.type_text(candidate, &v).await {
+                                Ok(_) => {
+                                    success = true;
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("[ENGINE] Type retry failed on selector '{}': {}", candidate, e);
+                                    last_err = Some(e);
+                                }
+                            }
+                        }
+                    }
+                    if !success {
+                        return Err(last_err.unwrap_or_else(|| AppError::Internal("Type failed for all selector candidates".to_string())));
+                    }
                 }
                 Step::Wait { seconds } => { 
                     tracing::info!("[ENGINE] Waiting for {} seconds...", seconds);
