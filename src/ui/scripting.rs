@@ -269,5 +269,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ui.colored_label(Color32::LIGHT_RED, format!("ERROR: {}", err));
     } else {
         ui.colored_label(Color32::LIGHT_GREEN, "Script outputlari System Telemetry panelinde listelenir.");
+        ui.small(format!("Buffered script lines: {}", state.script_output.len()));
+        if let Some(last) = state.script_output.last() {
+            ui.monospace(format!("Last: {}", last));
+        }
     }
 }

@@ -281,7 +281,7 @@ impl TabWorkspace {
             selector_inspector_armed: false,
             sniffer_active: false,
             auto_reload_triggered: false,
-            open_time: 0.0,
+            open_time: chrono::Local::now().timestamp_millis() as f64 / 1000.0,
             active_request_id: None,
             active_media_url: None,
             selector_search: String::new(),

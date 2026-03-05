@@ -566,6 +566,29 @@ impl AutomationEngine {
                         tracing::info!("[ENGINE] Condition NOT met. Skipping nested steps.");
                     }
                 }
+                Step::IfCondition { condition, then_steps } => {
+                    let ok = match condition {
+                        crate::core::automation::dsl::Condition::ElementExists { selector } => {
+                            let s = self.interpolate(selector);
+                            let res: String = driver.eval(&format!("!!queryRecursive('{}')", s.replace("'", "\\'"))).await?;
+                            res == "true"
+                        }
+                        crate::core::automation::dsl::Condition::TextContains { selector, text } => {
+                            let s = self.interpolate(selector);
+                            let t = self.interpolate(text);
+                            let js = format!(
+                                "(() => {{ const el = queryRecursive('{}'); if(!el) return false; const v = (el.innerText || el.value || '').toString(); return v.includes('{}'); }})()",
+                                s.replace("'", "\\'"),
+                                t.replace("'", "\\'")
+                            );
+                            let res: String = driver.eval(&js).await?;
+                            res == "true"
+                        }
+                    };
+                    if ok {
+                        self.execute_steps_recursive(Arc::from(then_steps.as_slice()), driver).await?;
+                    }
+                }
                 Step::ForEach { selector, body } => {
                     let s = self.interpolate(selector);
                     let sel_esc = s.replace("'", "\\'");

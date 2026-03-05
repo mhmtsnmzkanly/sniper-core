@@ -14,7 +14,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     // Extract state for local use
-    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size, show_export, sort_col, sort_asc, gallery_mode, min_size_kb) = {
+    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size, show_export, sort_col, sort_asc, gallery_mode, min_size_kb, mut active_media_url) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.media_assets.clone(), 
@@ -28,6 +28,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ws.media_sort_asc,
             ws.media_gallery_mode,
             ws.media_min_size_kb,
+            ws.active_media_url.clone(),
         )
     };
 
@@ -113,6 +114,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.label(RichText::new(format!("TOTAL: {}", media_count)).color(design::ACCENT_GREEN).monospace());
                 });
             });
+            if let Some(url) = &active_media_url {
+                ui.small(format!("Active Media: {}", url));
+            }
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("QUICK FILTER").strong().color(design::ACCENT_ORANGE));
@@ -315,6 +319,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             ui.label(RichText::new(&asset.name).strong());
                             ui.label(RichText::new(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0)).small().color(design::TEXT_MUTED));
                             if ui.button("SAVE").clicked() {
+                                active_media_url = Some(asset.url.clone());
                                 if let Some(data) = &asset.data {
                                     if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
                                         let _ = std::fs::write(path, data);
@@ -329,6 +334,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
                                 .clicked()
                             {
+                                active_media_url = Some(asset.url.clone());
                                 crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
                                     tid.clone(),
                                     asset.url.clone(),
@@ -383,6 +389,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.label(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0));
                     
                     if ui.button("SAVE").clicked() {
+                        active_media_url = Some(asset.url.clone());
                         if let Some(data) = &asset.data {
                             if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
                                 tracing::info!("[UI] Manual save for item {} to {:?}", asset.name, path);
@@ -398,6 +405,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
                         .clicked()
                     {
+                        active_media_url = Some(asset.url.clone());
                         crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
                             tid.clone(),
                             asset.url.clone(),
@@ -409,5 +417,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 });
             }
         });
+
+        if let Some(ws) = state.workspaces.get_mut(&tid) {
+            ws.active_media_url = active_media_url;
+        }
     });
 }

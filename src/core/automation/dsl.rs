@@ -58,6 +58,8 @@ pub enum Step {
     CallFunction { name: String },
     /// Import a dataset (CSV/JSON) and run subsequent steps for each row
     ImportDataset { filename: String },
+    /// Conditional block using typed condition enum.
+    IfCondition { condition: Condition, then_steps: Vec<Step> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -283,6 +283,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         response.clone().on_hover_ui(|ui| {
                             ui.label(RichText::new(&tab.title).strong());
                             ui.label(&tab.url);
+                            if let Some(ws) = state.workspaces.get(&tab.id) {
+                                let age = (ui.input(|i| i.time) - ws.open_time).max(0.0);
+                                ui.small(format!("Workspace age: {:.0}s", age));
+                            }
                         });
 
                         if ui
@@ -316,6 +320,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             {
                 tracing::info!("[UI] Click: RELOAD TAB {}", tid);
                 emit(AppEvent::RequestPageReload(tid.clone()));
+            }
+            if let Some(ws) = state.selected_tab_id.as_ref().and_then(|id| state.workspaces.get(id)) {
+                if ws.auto_reload_triggered {
+                    ui.colored_label(design::ACCENT_ORANGE, "Reload requested...");
+                }
             }
         });
         ui.add_space(10.0);

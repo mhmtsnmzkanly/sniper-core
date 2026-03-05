@@ -1,5 +1,5 @@
 use crate::core::error::{AppError, AppResult};
-use crate::state::{ChromeTabInfo, ChromeCookie, MediaAsset, NetworkRequest};
+use crate::state::{ChromeTabInfo, ChromeCookie, NetworkRequest};
 use chromiumoxide::browser::{Browser};
 use chromiumoxide::cdp::browser_protocol::network::{GetResponseBodyParams, SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
 use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventConsoleApiCalled};
@@ -133,6 +133,15 @@ impl BrowserManager {
         launch_opts: BrowserLaunchOptions,
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
+        if chrome_path.trim().is_empty() {
+            return Err(AppError::Config("Chrome binary path is empty".to_string()));
+        }
+        if !std::path::Path::new(chrome_path).exists() {
+            return Err(AppError::Config(format!("Chrome binary not found: {}", chrome_path)));
+        }
+        if profile_path.trim().is_empty() {
+            return Err(AppError::Config("Chrome profile path is empty".to_string()));
+        }
 
         // KOD NOTU: Chrome log dosyası formatı chrome_YYMMDD_HHMMSS.log olarak güncellendi.
         let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();

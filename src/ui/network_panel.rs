@@ -9,13 +9,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => { ui.label("No active tab selected."); return; }
     };
 
-    let (requests, mut search, mut type_filter, mut status_filter) = {
+    let (requests, mut search, mut type_filter, mut status_filter, mut active_request_id, blocked_urls) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.network_requests.clone(),
             ws.network_search.clone(),
             ws.network_type_filter.clone(),
             ws.network_status_filter.clone(),
+            ws.active_request_id.clone(),
+            ws.blocked_urls.clone(),
         )
     };
 
@@ -40,6 +42,18 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 ui.label("SEARCH:");
                 ui.add(egui::TextEdit::singleline(&mut search).desired_width(150.0));
+                if ui.button("Block Search").clicked() && !search.trim().is_empty() {
+                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(
+                        tid.clone(),
+                        search.trim().to_string(),
+                    ));
+                }
+                if ui.button("Unblock Search").clicked() && !search.trim().is_empty() {
+                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(
+                        tid.clone(),
+                        search.trim().to_string(),
+                    ));
+                }
 
                 ui.separator();
                 ui.label(RichText::new("QUICK").strong().color(design::ACCENT_ORANGE));
@@ -71,9 +85,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     if ui.button("🗑 CLEAR LOGS").clicked() {
                         if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
                     }
+                    ui.label(format!("Blocked: {}", blocked_urls.len()));
                 });
             });
         });
+        if let Some(active) = &active_request_id {
+            ui.small(format!("Active Request: {}", active));
+        }
 
         ui.add_space(5.0);
 
@@ -134,7 +152,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         };
                         ui.label(RichText::new(req.status.map(|s| s.to_string()).unwrap_or("...".into())).color(color));
                     });
-                    r.col(|ui| { ui.label(&req.url); });
+                    r.col(|ui| {
+                        if ui.selectable_label(active_request_id.as_deref() == Some(&req.request_id), &req.url).clicked() {
+                            active_request_id = Some(req.request_id.clone());
+                        }
+                    });
                     r.col(|ui| { ui.label(&req.resource_type); });
                 });
             });
@@ -144,5 +166,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ws.network_search = search;
         ws.network_type_filter = type_filter;
         ws.network_status_filter = status_filter;
+        ws.active_request_id = active_request_id;
     }
 }

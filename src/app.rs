@@ -166,6 +166,9 @@ impl eframe::App for CrawlerApp {
                 AppEvent::TabsUpdated(tabs) => {
                     tracing::debug!("[BROWSER -> CORE] Received {} active tab targets.", tabs.len());
                     self.state.available_tabs = tabs;
+                    for ws in self.state.workspaces.values_mut() {
+                        ws.auto_reload_triggered = false;
+                    }
                 }
                 AppEvent::ConsoleLogAdded(tid, msg) => {
                     let ws = self.ensure_workspace(&tid);
@@ -277,6 +280,7 @@ impl eframe::App for CrawlerApp {
                         req.status = Some(status);
                         req.response_body = body;
                     }
+                    ws.active_request_id = Some(rid);
                 }
                 AppEvent::OperationSuccess(msg) => {
                     self.state.notify(NotificationLevel::Ok, "Success", &msg);
@@ -290,8 +294,12 @@ impl eframe::App for CrawlerApp {
                     self.state.logs.push(LogEntry {
                         timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
                         level: "SCRIPT".to_string(),
-                        message: msg,
+                        message: msg.clone(),
                     });
+                    self.state.script_output.push(msg);
+                    if self.state.script_output.len() > 200 {
+                        self.state.script_output.remove(0);
+                    }
                     if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
                 }
                 AppEvent::ScriptingCheckResult(report) => {
@@ -316,7 +324,7 @@ impl eframe::App for CrawlerApp {
                             message: line,
                         });
                     }
-                    self.state.notify(NotificationLevel::Ok, "Scripting Dry-Run", "Dry-run plan generated.");
+                    self.state.notify(NotificationLevel::Info, "Scripting Dry-Run", "Dry-run plan generated.");
                 }
                 AppEvent::ScriptingDebugPlanResult(lines) => {
                     // KOD NOTU: Debug plan Scripting sekmesinde step-by-step gezinti için state'e kaydedilir.
@@ -398,9 +406,40 @@ impl eframe::App for CrawlerApp {
                 AppEvent::RequestPageReload(tid) => {
                     tracing::info!("[UI -> CORE] User requested page reload for {}", tid);
                     let port = self.state.config.remote_debug_port;
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.auto_reload_triggered = true;
+                    }
                     tokio::spawn(async move {
                         if let Err(e) = crate::core::browser::BrowserManager::reload_page(port, tid).await {
                             crate::ui::scrape::emit(AppEvent::OperationError(format!("Reload failed: {}", e)));
+                        }
+                    });
+                }
+                AppEvent::RequestUrlBlock(tid, pattern) => {
+                    let port = self.state.config.remote_debug_port;
+                    let mut blocked = Vec::new();
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.blocked_urls.insert(pattern.clone());
+                        blocked = ws.blocked_urls.iter().cloned().collect();
+                    }
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::set_url_blocking(port, tid.clone(), blocked).await {
+                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("URL block added: {}", pattern))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("URL block failed: {}", e))),
+                        }
+                    });
+                }
+                AppEvent::RequestUrlUnblock(tid, pattern) => {
+                    let port = self.state.config.remote_debug_port;
+                    let mut blocked = Vec::new();
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.blocked_urls.remove(&pattern);
+                        blocked = ws.blocked_urls.iter().cloned().collect();
+                    }
+                    tokio::spawn(async move {
+                        match crate::core::browser::BrowserManager::set_url_blocking(port, tid.clone(), blocked).await {
+                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("URL unblock applied: {}", pattern))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("URL unblock failed: {}", e))),
                         }
                     });
                 }
@@ -816,7 +855,6 @@ impl eframe::App for CrawlerApp {
                         Err(e) => self.state.script_error = Some(format!("Export serialize error: {}", e)),
                     }
                 }
-                _ => {}
             }
         }
 
@@ -832,6 +870,7 @@ impl eframe::App for CrawlerApp {
                 ui.add_space(14.0);
                 ui.selectable_value(&mut self.state.active_tab, Tab::Scrape, "Ops");
                 ui.selectable_value(&mut self.state.active_tab, Tab::Scripting, "Scripting");
+                ui.selectable_value(&mut self.state.active_tab, Tab::Translate, "Translate");
                 ui.selectable_value(&mut self.state.active_tab, Tab::Settings, "Config");
                 ui.selectable_value(&mut self.state.active_tab, Tab::Logs, "Logs");
 
@@ -889,6 +928,7 @@ impl eframe::App for CrawlerApp {
                 .show(ui, |ui| match self.state.active_tab {
                     Tab::Scrape => ui::scrape::render(ui, &mut self.state),
                     Tab::Scripting => ui::scripting::render(ui, &mut self.state),
+                    Tab::Translate => ui::translate::render(ui, &mut self.state),
                     Tab::Settings => ui::config_panel::render(ui, &mut self.state),
                     Tab::Logs => ui::log_panel::render(ui, &mut self.state),
                     _ => { ui.label("Panel not implemented."); }
@@ -968,9 +1008,9 @@ impl eframe::App for CrawlerApp {
             .state
             .notifications
             .iter()
-            .map(|n| (n.id, n.level, n.title.clone(), n.message.clone()))
+            .map(|n| (n.id, n.level, n.title.clone(), n.message.clone(), n.created_at))
             .collect::<Vec<_>>();
-        for (idx, (id, level, title, message)) in notifications.into_iter().enumerate() {
+        for (idx, (id, level, title, message, created_at)) in notifications.into_iter().enumerate() {
             let mut open = true;
             let bg = match level {
                 NotificationLevel::Ok => Color32::from_rgb(23, 56, 34),
@@ -978,6 +1018,7 @@ impl eframe::App for CrawlerApp {
                 NotificationLevel::Warn => Color32::from_rgb(61, 48, 24),
                 NotificationLevel::Info => Color32::from_rgb(27, 44, 61),
             };
+            let age_secs = (chrono::Local::now().timestamp_millis() as f64 / 1000.0 - created_at).max(0.0);
             egui::Window::new(title)
                 .open(&mut open)
                 .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0 - (idx as f32 * 100.0)])
@@ -986,6 +1027,7 @@ impl eframe::App for CrawlerApp {
                 .frame(egui::Frame::window(&ctx.style()).fill(bg))
                 .show(ctx, |ui| {
                     ui.label(message);
+                    ui.small(format!("{:.0}s ago", age_secs));
                 });
             if !open {
                 self.state.dismiss_notification(id);
