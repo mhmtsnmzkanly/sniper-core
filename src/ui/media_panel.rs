@@ -211,8 +211,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
                                     .max_size(egui::vec2(preview_size, preview_size)));
                             }
+                        } else if let Some(thumb_data) = &asset.thumbnail {
+                            // KOD NOTU: Eğer video için bir thumbnail üretilmişse, ikon yerine bu resim gösterilir.
+                            ui.add(egui::Image::from_bytes(format!("bytes://thumb_{}", asset.url), thumb_data.clone())
+                                .max_size(egui::vec2(preview_size, preview_size)));
                         } else {
-                            let icon = if asset.mime_type.contains("video") { "🎬" }
+                            let icon = if asset.mime_type.contains("video") || asset.url.contains(".m3u8") { "🎬" }
                                       else if asset.mime_type.contains("audio") { "🎵" }
                                       else if asset.mime_type.contains("font") { "🅰" }
                                       else if asset.mime_type.contains("style") || asset.url.ends_with(".css") { "🎨" }

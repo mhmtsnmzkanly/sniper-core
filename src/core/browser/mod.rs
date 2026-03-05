@@ -326,13 +326,32 @@ impl BrowserManager {
                             
                             if lm.contains("image") || is_video || lm.contains("audio") || lm.contains("font") || lm.contains("style") || lm.contains("script") || url.ends_with(".svg") || url.ends_with(".css") || url.ends_with(".js") {
                                 let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
+                                let port_clone = port;
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_millis(600)).await;
                                     if let Ok(res) = page_clone.execute(GetResponseBodyParams::new(rid.clone())).await {
                                         let binary_data = if res.result.base64_encoded { BASE64_STANDARD.decode(&res.result.body).ok() } else { Some(res.result.body.into_bytes()) };
                                         if let Some(data) = binary_data {
                                             let name = url.split('/').last().unwrap_or("unknown").to_string();
-                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media, crate::state::MediaAsset { name, url, mime_type: mime, size_bytes: data.len(), data: Some(data) }));
+                                            
+                                            // KOD NOTU: İlk yakalamada thumbnail boş gönderilir.
+                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media.clone(), crate::state::MediaAsset { 
+                                                name: name.clone(), 
+                                                url: url.clone(), 
+                                                mime_type: mime.clone(), 
+                                                size_bytes: data.len(), 
+                                                data: Some(data),
+                                                thumbnail: None 
+                                            }));
+
+                                            // KOD NOTU: Eğer bir video ise arka planda thumbnail üretimi başlatılır.
+                                            if is_video && !url.contains(".ts") && !url.contains(".m4s") {
+                                                if let Ok(Some(thumb)) = Self::capture_video_thumbnail(port_clone, tid_media.clone(), url.clone()).await {
+                                                    crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media, crate::state::MediaAsset { 
+                                                        name, url, mime_type: mime, size_bytes: 0, data: None, thumbnail: Some(thumb) 
+                                                    }));
+                                                }
+                                            }
                                         }
                                     }
                                 });
@@ -448,6 +467,48 @@ impl BrowserManager {
         
         std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
         Ok(path)
+    }
+
+    /// KOD NOTU: Video URL'sini tarayıcıda bir canvas'a çizip 1. saniyesinden bir frame (thumbnail) alır.
+    /// Bu işlem, harici bir kütüphane gerektirmeden tarayıcının kendi decoder'ını kullanır.
+    pub async fn capture_video_thumbnail(port: u16, tab_id: String, video_url: String) -> AppResult<Option<Vec<u8>>> {
+        let (browser, _handler) = Self::connect_robust(port).await?;
+        let page = Self::find_tab(&browser, &tab_id).await?;
+        
+        let script = format!(r#"
+            (async () => {{
+                return new Promise((resolve) => {{
+                    const v = document.createElement('video');
+                    v.src = '{}';
+                    v.crossOrigin = 'anonymous';
+                    v.muted = true;
+                    v.currentTime = 1; 
+
+                    v.onloadeddata = () => {{
+                        const c = document.createElement('canvas');
+                        c.width = v.videoWidth;
+                        c.height = v.videoHeight;
+                        const ctx = c.getContext('2d');
+                        ctx.drawImage(v, 0, 0);
+                        resolve(c.toDataURL('image/png').split(',')[1]);
+                        v.remove();
+                    }};
+                    
+                    v.onerror = () => resolve(null);
+                    setTimeout(() => resolve(null), 5000);
+                }});
+            }})()
+        "#, video_url);
+
+        match page.evaluate(script).await {
+            Ok(res) => {
+                if let Some(b64) = res.value().and_then(|v| v.as_str()) {
+                    return Ok(BASE64_STANDARD.decode(b64).ok());
+                }
+            }
+            Err(e) => tracing::error!("[BROWSER -> CORE] Thumbnail generation failed: {}", e),
+        }
+        Ok(None)
     }
 
     pub async fn execute_script(port: u16, tab_id: String, script: String) -> AppResult<String> {

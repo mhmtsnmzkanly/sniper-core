@@ -165,6 +165,7 @@ pub struct MediaAsset {
     pub mime_type: String,
     pub size_bytes: usize,
     pub data: Option<Vec<u8>>,
+    pub thumbnail: Option<Vec<u8>>,
 }
 
 /// NetworkRequest: Represents an intercepted HTTP request/response.

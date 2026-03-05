@@ -180,7 +180,12 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::MediaCaptured(tid, asset) => {
                     let ws = self.ensure_workspace(&tid);
-                    if !ws.media_assets.iter().any(|a| a.url == asset.url) {
+                    if let Some(existing) = ws.media_assets.iter_mut().find(|a| a.url == asset.url) {
+                        // KOD NOTU: Eğer asset zaten varsa ve yeni gelen asset bir thumbnail içeriyorsa güncelle.
+                        if asset.thumbnail.is_some() {
+                            existing.thumbnail = asset.thumbnail;
+                        }
+                    } else {
                         tracing::debug!("[BROWSER -> CORE] Media sniffed: {} ({})", asset.name, asset.mime_type);
                         ws.media_assets.push(asset);
                     }
