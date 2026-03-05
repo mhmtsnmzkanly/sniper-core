@@ -140,13 +140,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .corner_radius(8.0)
             .inner_margin(8.0)
             .show(ui, |ui| {
-                ui.set_width(w);
+                ui.set_max_width(w);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("Chrome Tabs").strong().color(design::ACCENT_ORANGE));
                     ui.add_space(8.0);
                     ui.add(egui::Slider::new(&mut state.tabs_per_row, 1..=6).text("#").trailing_fill(true));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("REFRESH").clicked() { emit(AppEvent::RequestTabRefresh); }
+                        if ui.button("⟳ FORCE RLD").clicked() { emit(AppEvent::RequestPageReload(state.selected_tab_id.clone().unwrap_or_default())); }
+                        if ui.button("GET TABS").clicked() { emit(AppEvent::RequestTabRefresh); }
                     });
                 });
                 ui.add_space(6.0);
@@ -162,10 +163,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         } else {
                             let per_row = state.tabs_per_row.clamp(1, 6);
                             let spacing = 6.0;
-                            let col_w = ((ui.available_width() - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
+                            let col_w = ((ui.available_width() - (per_row as f32) * spacing) / per_row as f32).max(110.0).min(300.0);
                             
-                            egui::Grid::new("tabs_grid_adaptive").num_columns(per_row).spacing([spacing, spacing]).show(ui, |ui| {
-                                for (count, tab) in state.available_tabs.iter().enumerate() {
+                            ui.horizontal_wrapped(|ui| {
+                                for tab in state.available_tabs.iter() {
                                     let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
                                     let (border_col, bg_col) = if is_selected { (design::ACCENT_GREEN, Color32::from_rgb(22, 38, 48)) } else { (Color32::from_gray(60), design::BG_PRIMARY) };
                                     
@@ -184,7 +185,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                         }
                                         res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
                                     });
-                                    if (count + 1) % per_row == 0 { ui.end_row(); }
                                 }
                             });
                         }
