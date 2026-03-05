@@ -318,7 +318,13 @@ impl BrowserManager {
                         let rid = e.request_id.as_ref().to_string();
                         if let Some((url, mime)) = pending_responses.remove(&rid) {
                             let lm = mime.to_lowercase();
-                            if lm.contains("image") || lm.contains("video") || lm.contains("audio") || lm.contains("font") || lm.contains("style") || lm.contains("script") || url.ends_with(".svg") || url.ends_with(".css") || url.ends_with(".js") {
+                            let lu = url.to_lowercase();
+                            
+                            // KOD NOTU: Video yakalama kapsamı m3u8, ts, mpd ve m4s gibi modern streaming formatlarını içerecek şekilde genişletildi.
+                            let is_video = lm.contains("video") || lm.contains("mpegurl") || lm.contains("dash+xml") || 
+                                           lu.ends_with(".m3u8") || lu.ends_with(".ts") || lu.ends_with(".mpd") || lu.ends_with(".m4s");
+                            
+                            if lm.contains("image") || is_video || lm.contains("audio") || lm.contains("font") || lm.contains("style") || lm.contains("script") || url.ends_with(".svg") || url.ends_with(".css") || url.ends_with(".js") {
                                 let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_millis(600)).await;

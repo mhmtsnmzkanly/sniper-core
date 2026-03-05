@@ -138,9 +138,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 let mut results = Vec::new();
                                 for asset in assets {
                                     let mt = asset.mime_type.to_lowercase();
+                                    let lu = asset.url.to_lowercase();
                                     let mut matches = false;
                                     if export_types.contains("IMAGE") && (mt.contains("image") || asset.url.ends_with(".svg")) { matches = true; }
-                                    if export_types.contains("VIDEO") && mt.contains("video") { matches = true; }
+                                    if export_types.contains("VIDEO") && (mt.contains("video") || mt.contains("mpegurl") || mt.contains("dash+xml") || lu.ends_with(".m3u8") || lu.ends_with(".ts") || lu.ends_with(".mpd") || lu.ends_with(".m4s")) { matches = true; }
                                     if export_types.contains("AUDIO") && (mt.contains("audio") || asset.url.ends_with(".mp3")) { matches = true; }
                                     if export_types.contains("STYLES") && (mt.contains("style") || asset.url.ends_with(".css")) { matches = true; }
                                     if export_types.contains("SCRIPTS") && (mt.contains("script") || asset.url.ends_with(".js")) { matches = true; }
@@ -178,9 +179,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             
             if !type_filter.is_empty() {
                 let mt = asset.mime_type.to_lowercase();
+                let lu = asset.url.to_lowercase();
                 let mut match_type = false;
                 if type_filter.contains("IMAGE") && (mt.contains("image") || asset.url.ends_with(".svg")) { match_type = true; }
-                if type_filter.contains("VIDEO") && mt.contains("video") { match_type = true; }
+                if type_filter.contains("VIDEO") && (mt.contains("video") || mt.contains("mpegurl") || mt.contains("dash+xml") || lu.ends_with(".m3u8") || lu.ends_with(".ts") || lu.ends_with(".mpd") || lu.ends_with(".m4s")) { match_type = true; }
                 if type_filter.contains("AUDIO") && (mt.contains("audio") || asset.url.ends_with(".mp3")) { match_type = true; }
                 if type_filter.contains("STYLES") && (mt.contains("style") || asset.url.ends_with(".css")) { match_type = true; }
                 if type_filter.contains("SCRIPTS") && (mt.contains("script") || asset.url.ends_with(".js")) { match_type = true; }
