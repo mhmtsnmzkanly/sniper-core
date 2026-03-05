@@ -9,7 +9,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     // Extract state for local use
-    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size, show_export, gallery_mode, sort_col, sort_asc, min_size_kb) = {
+    let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, preview_size, show_export, gallery_mode, sort_col, sort_asc, min_size_kb) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.media_assets.clone(), 
@@ -45,19 +45,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 
                 // TYPE FILTER
                 ui.label(RichText::new("TYPE:").color(design::ACCENT_ORANGE).strong());
-                if let Some(ws) = state.workspaces.get_mut(&tid) {
-                    let types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"];
-                    ui.menu_button(format!("TYPES ({})", ws.media_type_filter.len()), |ui| {
-                        for t in types {
-                            let mut is_selected = ws.media_type_filter.contains(t);
-                            if ui.checkbox(&mut is_selected, t).changed() {
-                                if is_selected { ws.media_type_filter.insert(t.to_string()); }
-                                else { ws.media_type_filter.remove(t); }
-                            }
+                let types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"];
+                ui.menu_button(format!("TYPES ({})", type_filter.len()), |ui| {
+                    for t in types {
+                        let mut is_selected = type_filter.contains(t);
+                        if ui.checkbox(&mut is_selected, t).changed() {
+                            if is_selected { type_filter.insert(t.to_string()); }
+                            else { type_filter.remove(t); }
                         }
-                        if ui.button("CLEAR ALL").clicked() { ws.media_type_filter.clear(); }
-                    });
-                }
+                    }
+                    if ui.button("CLEAR ALL").clicked() { type_filter.clear(); }
+                });
 
                 ui.separator();
                 ui.label("SIZE:");

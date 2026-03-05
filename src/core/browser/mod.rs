@@ -168,6 +168,8 @@ impl BrowserManager {
             .arg("--disable-domain-reliability")
             .arg("--disable-client-side-phishing-detection")
             .arg("--disable-breakpad") 
+            .arg("--disable-gcm") // Disable Google Cloud Messaging noise
+            .arg("--no-pings") // Disable reporting pings
             // LOGGING REDIRECTION:
             .arg("--enable-logging")
             .arg("--v=1")
