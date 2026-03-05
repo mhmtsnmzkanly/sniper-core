@@ -113,6 +113,8 @@ pub enum AutomationStep {
     SwitchFrame(String),
     If { selector: String, then_steps: Vec<AutomationStep> },
     ForEach { selector: String, body: Vec<AutomationStep> },
+    /// KOD NOTU: Gelişmiş mantıksal koşullar için IfCondition eklendi.
+    IfCondition { condition: crate::core::automation::dsl::Condition, then_steps: Vec<AutomationStep> },
     CallFunction(String),
     ImportDataset(String),
 }
@@ -230,8 +232,6 @@ pub struct TabWorkspace {
     pub sniffer_active: bool,
     pub auto_reload_triggered: bool,
     pub open_time: f64,
-    pub active_request_id: Option<String>,
-    pub active_media_url: Option<String>,
     pub selector_search: String,
     pub blocked_urls: HashSet<String>,
     pub sniffer_token: Option<Arc<AtomicBool>>,
@@ -282,8 +282,6 @@ impl TabWorkspace {
             sniffer_active: false,
             auto_reload_triggered: false,
             open_time: chrono::Local::now().timestamp_millis() as f64 / 1000.0,
-            active_request_id: None,
-            active_media_url: None,
             selector_search: String::new(),
             blocked_urls: HashSet::new(),
             sniffer_token: None,

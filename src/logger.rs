@@ -31,7 +31,7 @@ pub fn set_log_path(path: PathBuf, session_ts: &str) {
     *lock = Some(final_path);
 
     let mut chrome_lock = CHROME_LOG_PATH.lock().unwrap();
-    *chrome_lock = Some(path.join(format!("chrome_session_{}.log", session_ts)));
+    *chrome_lock = Some(path.join(format!("chrome_console_{}.log", session_ts)));
 }
 
 pub fn write_chrome_log_line(line: &str) {

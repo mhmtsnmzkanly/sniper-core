@@ -2,11 +2,6 @@ use crate::state::AppState;
 use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
 
-fn is_hls_asset(asset: &crate::state::MediaAsset) -> bool {
-    let mt = asset.mime_type.to_ascii_lowercase();
-    mt.contains("mpegurl") || mt.contains("application/vnd.apple.mpegurl") || asset.url.to_ascii_lowercase().contains(".m3u8")
-}
-
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
         Some(id) => id.clone(),
@@ -14,7 +9,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     };
 
     // Extract state for local use
-    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size, show_export, sort_col, sort_asc, gallery_mode, min_size_kb, mut active_media_url) = {
+    let (media_assets, media_count, selected_media_urls, media_search, type_filter, preview_size, show_export, gallery_mode, sort_col, sort_asc, min_size_kb) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.media_assets.clone(), 
@@ -24,11 +19,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ws.media_type_filter.clone(), 
             ws.media_preview_size,
             ws.show_media_export,
+            ws.media_gallery_mode,
             ws.media_sort_col.clone(),
             ws.media_sort_asc,
-            ws.media_gallery_mode,
-            ws.media_min_size_kb,
-            ws.active_media_url.clone(),
+            ws.media_min_size_kb
         )
     };
 
@@ -45,13 +39,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ws.media_assets.clear(); 
                         ws.selected_media_urls.clear(); 
                     }
-                }
-                if ui
-                    .button(RichText::new("🕵 DE-MASK BLOB").color(Color32::from_rgb(255, 214, 120)))
-                    .on_hover_text("Resolve blob:http URLs to probable media source URLs (best effort, non-DRM).")
-                    .clicked()
-                {
-                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestBlobDemask(tid.clone()));
                 }
                 
                 ui.separator();
@@ -79,11 +66,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
 
                 ui.separator();
-                if let Some(ws) = state.workspaces.get_mut(&tid) {
-                    ui.toggle_value(&mut ws.media_gallery_mode, "Gallery");
-                }
-
-                ui.separator();
                 // BATCH DOWNLOAD
                 let can_download = !selected_media_urls.is_empty();
                 if ui.add_enabled(can_download, egui::Button::new(RichText::new(format!("📥 DOWNLOAD ({})", selected_media_urls.len())).strong().color(Color32::GREEN))).clicked() {
@@ -100,11 +82,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
 
                 ui.separator();
-                // EXPORT JSON BUTTON (RESTORED)
+                // EXPORT JSON BUTTON
                 if ui.button(RichText::new("📄 EXPORT JSON").strong().color(Color32::from_rgb(0, 150, 255))).clicked() {
                     if let Some(ws) = state.workspaces.get_mut(&tid) {
                         ws.show_media_export = true;
-                        // Default selections if empty
                         if ws.media_export_types.is_empty() { ws.media_export_types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"].iter().map(|s| s.to_string()).collect(); }
                         if ws.media_export_cols.is_empty() { ws.media_export_cols = ["url", "name", "type"].iter().map(|s| s.to_string()).collect(); }
                     }
@@ -114,76 +95,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.label(RichText::new(format!("TOTAL: {}", media_count)).color(design::ACCENT_GREEN).monospace());
                 });
             });
-            if let Some(url) = &active_media_url {
-                ui.small(format!("Active Media: {}", url));
-            }
-            ui.add_space(6.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("QUICK FILTER").strong().color(design::ACCENT_ORANGE));
-                if ui.button("Images").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_type_filter.clear();
-                        ws.media_type_filter.insert("IMAGE".to_string());
-                    }
-                }
-                if ui.button(".png").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_type_filter.clear();
-                        ws.media_type_filter.insert("IMAGE".to_string());
-                        ws.media_search = ".png".to_string();
-                    }
-                }
-                if ui.button("Videos").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_type_filter.clear();
-                        ws.media_type_filter.insert("VIDEO".to_string());
-                    }
-                }
-                if ui.button(">1MB").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_min_size_kb = 1024;
-                    }
-                }
-                if ui.button("Reset").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_search.clear();
-                        ws.media_type_filter.clear();
-                        ws.media_min_size_kb = 0;
-                    }
-                }
-                ui.separator();
-                ui.label("Min KB:");
-                if let Some(ws) = state.workspaces.get_mut(&tid) {
-                    ui.add(egui::DragValue::new(&mut ws.media_min_size_kb).range(0..=50000));
-                }
-                ui.separator();
-                ui.label("Sort:");
-                if ui.button("Name").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_sort_col = "name".to_string();
-                    }
-                }
-                if ui.button("Size").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_sort_col = "size".to_string();
-                    }
-                }
-                if ui.button("Type").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
-                        ws.media_sort_col = "type".to_string();
-                    }
-                }
-                if let Some(ws) = state.workspaces.get_mut(&tid) {
-                    if ui.button(if ws.media_sort_asc { "Asc" } else { "Desc" }).clicked() {
-                        ws.media_sort_asc = !ws.media_sort_asc;
-                    }
-                }
-            });
         });
 
         ui.add_space(5.0);
 
-        // --- EXPORT MODAL (RESTORED) ---
+        // --- EXPORT MODAL ---
         if show_export {
             let mut open = true;
             egui::Window::new("JSON EXPORT SETTINGS")
@@ -260,10 +176,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         }
 
         // --- FILTERING LOGIC ---
-        let mut filtered_assets: Vec<_> = media_assets.into_iter().filter(|asset| {
+        let mut filtered_assets: Vec<crate::state::MediaAsset> = media_assets.into_iter().filter(|asset| {
             let search = media_search.to_lowercase();
             if !search.is_empty() && !asset.url.to_lowercase().contains(&search) && !asset.name.to_lowercase().contains(&search) { return false; }
-            if min_size_kb > 0 && asset.size_bytes < min_size_kb * 1024 { return false; }
+            if min_size_kb > 0 && asset.size_bytes < (min_size_kb as usize * 1024) { return false; }
             
             if !type_filter.is_empty() {
                 let mt = asset.mime_type.to_lowercase();
@@ -280,6 +196,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             true
         }).collect();
 
+        // --- SORTING LOGIC ---
         filtered_assets.sort_by(|a, b| {
             let ord = match sort_col.as_str() {
                 "size" => a.size_bytes.cmp(&b.size_bytes),
@@ -295,7 +212,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.horizontal_wrapped(|ui| {
                     for asset in filtered_assets {
                         Frame::group(ui.style()).fill(design::BG_SURFACE).show(ui, |ui| {
-                            ui.set_width((preview_size * 1.4).max(160.0));
+                            ui.set_width((preview_size as f32 * 1.4).max(160.0));
                             let mut is_selected = selected_media_urls.contains(&asset.url);
                             if ui.checkbox(&mut is_selected, "select").changed() {
                                 if let Some(ws) = state.workspaces.get_mut(&tid) {
@@ -303,123 +220,88 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     else { ws.selected_media_urls.remove(&asset.url); }
                                 }
                             }
-                            ui.allocate_ui(egui::vec2(preview_size, preview_size * 0.8), |ui| {
+
+                            // Preview
+                            ui.allocate_ui(egui::vec2(preview_size as f32, preview_size as f32 * 0.8), |ui| {
                                 if asset.mime_type.starts_with("image/") {
                                     if let Some(data) = &asset.data {
                                         ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
-                                            .max_size(egui::vec2(preview_size, preview_size)));
+                                            .max_size(egui::vec2(preview_size as f32, preview_size as f32)));
                                     }
                                 } else if let Some(thumb_data) = &asset.thumbnail {
                                     ui.add(egui::Image::from_bytes(format!("bytes://thumb_{}", asset.url), thumb_data.clone())
-                                        .max_size(egui::vec2(preview_size, preview_size)));
+                                        .max_size(egui::vec2(preview_size as f32, preview_size as f32)));
                                 } else {
-                                    ui.centered_and_justified(|ui| { ui.label(RichText::new("📦").size(24.0)); });
+                                    let icon = if asset.mime_type.contains("video") || asset.url.contains(".m3u8") { "🎬" }
+                                              else if asset.mime_type.contains("audio") { "🎵" }
+                                              else if asset.mime_type.contains("font") { "🅰" }
+                                              else if asset.mime_type.contains("style") || asset.url.ends_with(".css") { "🎨" }
+                                              else if asset.mime_type.contains("script") || asset.url.ends_with(".js") { "📜" }
+                                              else { "📄" };
+                                    ui.centered_and_justified(|ui| { ui.label(RichText::new(icon).size(24.0)); });
                                 }
                             });
-                            ui.label(RichText::new(&asset.name).strong());
-                            ui.label(RichText::new(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0)).small().color(design::TEXT_MUTED));
-                            if ui.button("SAVE").clicked() {
-                                active_media_url = Some(asset.url.clone());
-                                if let Some(data) = &asset.data {
-                                    if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
-                                        let _ = std::fs::write(path, data);
-                                    }
-                                }
-                            }
-                            if ui
-                                .add_enabled(
-                                    is_hls_asset(&asset),
-                                    egui::Button::new(RichText::new("VIDEO DL").color(Color32::LIGHT_GREEN)),
-                                )
-                                .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
-                                .clicked()
-                            {
-                                active_media_url = Some(asset.url.clone());
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
-                                    tid.clone(),
-                                    asset.url.clone(),
-                                    asset.name.clone(),
-                                ));
-                            }
                         });
-                        ui.add_space(6.0);
                     }
                 });
             } else {
                 egui::Grid::new("media_grid_v4").striped(true).num_columns(6).spacing([15.0, 10.0]).show(ui, |ui| {
                     for asset in filtered_assets {
-                    let mut is_selected = selected_media_urls.contains(&asset.url);
-                    if ui.checkbox(&mut is_selected, "").changed() {
-                        if let Some(ws) = state.workspaces.get_mut(&tid) {
-                            if is_selected { ws.selected_media_urls.insert(asset.url.clone()); }
-                            else { ws.selected_media_urls.remove(&asset.url); }
+                        let mut is_selected = selected_media_urls.contains(&asset.url);
+                        if ui.checkbox(&mut is_selected, "").changed() {
+                            if let Some(ws) = state.workspaces.get_mut(&tid) {
+                                if is_selected { ws.selected_media_urls.insert(asset.url.clone()); }
+                                else { ws.selected_media_urls.remove(&asset.url); }
+                            }
                         }
-                    }
 
-                    // Preview
-                    ui.allocate_ui(egui::vec2(preview_size, preview_size * 0.8), |ui| {
-                        if asset.mime_type.starts_with("image/") {
+                        // Preview
+                        ui.allocate_ui(egui::vec2(preview_size as f32, preview_size as f32 * 0.8), |ui| {
+                            if asset.mime_type.starts_with("image/") {
+                                if let Some(data) = &asset.data {
+                                    ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
+                                        .max_size(egui::vec2(preview_size as f32, preview_size as f32)));
+                                }
+                            } else if let Some(thumb_data) = &asset.thumbnail {
+                                ui.add(egui::Image::from_bytes(format!("bytes://thumb_{}", asset.url), thumb_data.clone())
+                                    .max_size(egui::vec2(preview_size as f32, preview_size as f32)));
+                            } else {
+                                let icon = if asset.mime_type.contains("video") || asset.url.contains(".m3u8") { "🎬" }
+                                          else if asset.mime_type.contains("audio") { "🎵" }
+                                          else if asset.mime_type.contains("font") { "🅰" }
+                                          else if asset.mime_type.contains("style") || asset.url.ends_with(".css") { "🎨" }
+                                          else if asset.mime_type.contains("script") || asset.url.ends_with(".js") { "📜" }
+                                          else { "📄" };
+                                ui.centered_and_justified(|ui| { ui.label(RichText::new(icon).size(24.0)); });
+                            }
+                        });
+
+                        // Info
+                        ui.vertical(|ui| {
+                            ui.set_width(300.0);
+                            ui.label(RichText::new(&asset.name).strong());
+                            ui.add(egui::Label::new(RichText::new(&asset.url).size(9.0).color(Color32::GRAY)).wrap());
+                        });
+
+                        ui.label(RichText::new(&asset.mime_type).small().color(Color32::LIGHT_BLUE));
+                        ui.label(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0));
+                        
+                        if ui.button("SAVE").clicked() {
                             if let Some(data) = &asset.data {
-                                ui.add(egui::Image::from_bytes(format!("bytes://{}", asset.url), data.clone())
-                                    .max_size(egui::vec2(preview_size, preview_size)));
-                            }
-                        } else if let Some(thumb_data) = &asset.thumbnail {
-                            // KOD NOTU: Eğer video için bir thumbnail üretilmişse, ikon yerine bu resim gösterilir.
-                            ui.add(egui::Image::from_bytes(format!("bytes://thumb_{}", asset.url), thumb_data.clone())
-                                .max_size(egui::vec2(preview_size, preview_size)));
-                        } else {
-                            let icon = if asset.mime_type.contains("video") || asset.url.contains(".m3u8") { "🎬" }
-                                      else if asset.mime_type.contains("audio") { "🎵" }
-                                      else if asset.mime_type.contains("font") { "🅰" }
-                                      else if asset.mime_type.contains("style") || asset.url.ends_with(".css") { "🎨" }
-                                      else if asset.mime_type.contains("script") || asset.url.ends_with(".js") { "📜" }
-                                      else { "📄" };
-                            ui.centered_and_justified(|ui| { ui.label(RichText::new(icon).size(24.0)); });
-                        }
-                    });
-
-                    // Info
-                    ui.vertical(|ui| {
-                        ui.set_width(300.0);
-                        ui.label(RichText::new(&asset.name).strong());
-                        ui.add(egui::Label::new(RichText::new(&asset.url).size(9.0).color(Color32::GRAY)).wrap());
-                    });
-
-                    ui.label(RichText::new(&asset.mime_type).small().color(Color32::LIGHT_BLUE));
-                    ui.label(format!("{:.1} KB", asset.size_bytes as f64 / 1024.0));
-                    
-                    if ui.button("SAVE").clicked() {
-                        active_media_url = Some(asset.url.clone());
-                        if let Some(data) = &asset.data {
-                            if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
-                                tracing::info!("[UI] Manual save for item {} to {:?}", asset.name, path);
-                                let _ = std::fs::write(path, data);
+                                if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
+                                    let _ = std::fs::write(path, data);
+                                }
                             }
                         }
+                        ui.end_row();
                     }
-                    if ui
-                        .add_enabled(
-                            is_hls_asset(&asset),
-                            egui::Button::new(RichText::new("VIDEO DL").color(Color32::LIGHT_GREEN)),
-                        )
-                        .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
-                        .clicked()
-                    {
-                        active_media_url = Some(asset.url.clone());
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
-                            tid.clone(),
-                            asset.url.clone(),
-                            asset.name.clone(),
-                        ));
-                    }
-                    ui.end_row();
-                }
                 });
             }
         });
-
-        if let Some(ws) = state.workspaces.get_mut(&tid) {
-            ws.active_media_url = active_media_url;
-        }
     });
+
+    if let Some(ws) = state.workspaces.get_mut(&tid) {
+        ws.media_search = media_search;
+        ws.media_type_filter = type_filter;
+    }
 }

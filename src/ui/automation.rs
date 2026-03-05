@@ -48,6 +48,13 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                         if ui.button("🧪 Ext").clicked() { target_steps.push(AutomationStep::Extract { selector: "".into(), as_key: "data".into(), add_to_dataset: true }); ui.close_menu(); }
                         if ui.button("🔁 Loop").clicked() { target_steps.push(AutomationStep::ForEach { selector: "".into(), body: vec![] }); ui.close_menu(); }
                         if ui.button("❓ If").clicked() { target_steps.push(AutomationStep::If { selector: "".into(), then_steps: vec![] }); ui.close_menu(); }
+                        if ui.button("⚖ If Cond").clicked() { 
+                            target_steps.push(AutomationStep::IfCondition { 
+                                condition: crate::core::automation::dsl::Condition::ElementExists { selector: "".into() }, 
+                                then_steps: vec![] 
+                            }); 
+                            ui.close_menu(); 
+                        }
                         ui.separator();
                         if ui.button("📞 CALL").clicked() { target_steps.push(AutomationStep::CallFunction("".into())); ui.close_menu(); }
                         if ui.button("📊 DATASET").clicked() { target_steps.push(AutomationStep::ImportDataset("data.csv".into())); ui.close_menu(); }
@@ -241,6 +248,35 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                 AutomationStep::WaitSelector { selector, .. } => { selector_input(ui, selector, discovered, search); }
                 AutomationStep::Extract { selector, as_key, add_to_dataset } => { selector_input(ui, selector, discovered, search); ui.add(egui::TextEdit::singleline(as_key).desired_width(60.0)); ui.checkbox(add_to_dataset, "DB"); }
                 AutomationStep::SetVariable { key, value } => { ui.add(egui::TextEdit::singleline(key).desired_width(60.0)); ui.label("="); ui.add(egui::TextEdit::singleline(value).desired_width(80.0)); }
+                AutomationStep::IfCondition { condition, then_steps } => {
+                    let mut cond_type = match condition {
+                        crate::core::automation::dsl::Condition::ElementExists { .. } => 0,
+                        crate::core::automation::dsl::Condition::TextContains { .. } => 1,
+                    };
+                    if egui::ComboBox::from_id_salt(format!("cond_type_{}", idx)).show_index(ui, &mut cond_type, 2, |i| match i { 0 => "Exists", 1 => "Text", _ => "" }).changed() {
+                        *condition = match cond_type {
+                            0 => crate::core::automation::dsl::Condition::ElementExists { selector: "".into() },
+                            _ => crate::core::automation::dsl::Condition::TextContains { selector: "".into(), text: "".into() },
+                        };
+                    }
+                    match condition {
+                        crate::core::automation::dsl::Condition::ElementExists { selector } => { selector_input(ui, selector, discovered, search); }
+                        crate::core::automation::dsl::Condition::TextContains { selector, text } => {
+                            selector_input(ui, selector, discovered, search);
+                            ui.add(egui::TextEdit::singleline(text).hint_text("contains...").desired_width(60.0));
+                        }
+                    }
+                    ui.label(format!("({} steps)", then_steps.len()));
+                    if ui.button("✏").clicked() { /* In a real impl, we'd swap to a sub-editor for nested steps */ }
+                }
+                AutomationStep::If { selector, then_steps } => {
+                    selector_input(ui, selector, discovered, search);
+                    ui.label(format!("({} steps)", then_steps.len()));
+                }
+                AutomationStep::ForEach { selector, body } => {
+                    selector_input(ui, selector, discovered, search);
+                    ui.label(format!("({} steps)", body.len()));
+                }
                 AutomationStep::ScrollBottom => { ui.label("BOTTOM"); }
                 AutomationStep::NewRow => { ui.label("NEW ROW"); }
                 _ => { ui.label("Step Placeholder"); }
@@ -285,6 +321,10 @@ fn map_single_step(s: &AutomationStep) -> crate::core::automation::dsl::Step {
         AutomationStep::SetVariable { key, value } => crate::core::automation::dsl::Step::SetVariable { key: key.clone(), value: value.clone() },
         AutomationStep::CallFunction(name) => crate::core::automation::dsl::Step::CallFunction { name: name.clone() },
         AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset { filename: f.clone() },
+        AutomationStep::IfCondition { condition, then_steps } => crate::core::automation::dsl::Step::IfCondition { 
+            condition: condition.clone(), 
+            then_steps: then_steps.iter().map(|s| map_single_step(s)).collect() 
+        },
         AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
         AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
         _ => crate::core::automation::dsl::Step::Wait { seconds: 0 },
@@ -298,6 +338,10 @@ fn map_dsl_to_steps(steps: Vec<crate::core::automation::dsl::Step>) -> Vec<Autom
         crate::core::automation::dsl::Step::Type { selector, value, is_variable } => AutomationStep::Type { selector, value, is_variable },
         crate::core::automation::dsl::Step::CallFunction { name } => AutomationStep::CallFunction(name),
         crate::core::automation::dsl::Step::ImportDataset { filename } => AutomationStep::ImportDataset(filename),
+        crate::core::automation::dsl::Step::IfCondition { condition, then_steps } => AutomationStep::IfCondition { 
+            condition, 
+            then_steps: map_dsl_to_steps(then_steps) 
+        },
         crate::core::automation::dsl::Step::Wait { seconds } => AutomationStep::Wait(seconds),
         crate::core::automation::dsl::Step::WaitSelector { selector, timeout_ms } => AutomationStep::WaitSelector { selector, timeout_ms },
         crate::core::automation::dsl::Step::Extract { selector, as_key, add_to_row } => AutomationStep::Extract { selector, as_key, add_to_dataset: add_to_row },

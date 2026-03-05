@@ -9,14 +9,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         None => { ui.label("No active tab selected."); return; }
     };
 
-    let (requests, mut search, mut type_filter, mut status_filter, mut active_request_id, blocked_urls) = {
+    let (requests, mut search, mut type_filter, mut status_filter, blocked_urls) = {
         let ws = state.workspaces.get(&tid).unwrap();
         (
             ws.network_requests.clone(),
             ws.network_search.clone(),
             ws.network_type_filter.clone(),
             ws.network_status_filter.clone(),
-            ws.active_request_id.clone(),
             ws.blocked_urls.clone(),
         )
     };
@@ -28,12 +27,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("FILTER").strong().color(design::ACCENT_ORANGE));
                 let types = ["XHR", "JS", "CSS", "IMG", "DOC", "OTHER"];
-                ui.menu_button(format!("TYPES ({})", type_filter.len()), |ui| {
+                ui.menu_button(format!("TYPES ({})", type_filter.len() as usize), |ui| {
                     for t in types {
                         let mut is_selected = type_filter.contains(t);
                         if ui.checkbox(&mut is_selected, t).changed() {
                             if is_selected { type_filter.insert(t.to_string()); }
-                            else { type_filter.insert(t.to_string()); type_filter.remove(t); }
+                            else { type_filter.remove(t); }
                         }
                     }
                     if ui.button("CLEAR ALL").clicked() { type_filter.clear(); }
@@ -85,17 +84,30 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     if ui.button("🗑 CLEAR LOGS").clicked() {
                         if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
                     }
-                    ui.label(format!("Blocked: {}", blocked_urls.len()));
+                    
+                    // KOD NOTU: Engellenen URL'lerin listesini gösteren ve yönetmeyi sağlayan menü.
+                    ui.menu_button(RichText::new(format!("🛡 BLOCKED ({})", blocked_urls.len() as usize)).color(design::ACCENT_ORANGE), |ui| {
+                        ui.set_width(250.0);
+                        if blocked_urls.is_empty() {
+                            ui.label("No active blocks.");
+                        } else {
+                            for url in blocked_urls.clone().into_iter() {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(&url).small());
+                                    if ui.button("x").clicked() {
+                                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), url));
+                                    }
+                                });
+                            }
+                        }
+                    });
                 });
             });
         });
-        if let Some(active) = &active_request_id {
-            ui.small(format!("Active Request: {}", active));
-        }
 
         ui.add_space(5.0);
 
-        let filtered_requests: Vec<_> = requests.into_iter().filter(|r| {
+        let filtered_requests: Vec<crate::state::NetworkRequest> = requests.into_iter().filter(|r| {
             let s = search.to_lowercase();
             if !s.is_empty() && !r.url.to_lowercase().contains(&s) { return false; }
 
@@ -153,9 +165,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ui.label(RichText::new(req.status.map(|s| s.to_string()).unwrap_or("...".into())).color(color));
                     });
                     r.col(|ui| {
-                        if ui.selectable_label(active_request_id.as_deref() == Some(&req.request_id), &req.url).clicked() {
-                            active_request_id = Some(req.request_id.clone());
-                        }
+                        ui.label(&req.url);
                     });
                     r.col(|ui| { ui.label(&req.resource_type); });
                 });
@@ -166,6 +176,5 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         ws.network_search = search;
         ws.network_type_filter = type_filter;
         ws.network_status_filter = status_filter;
-        ws.active_request_id = active_request_id;
     }
 }

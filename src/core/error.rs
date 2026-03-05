@@ -8,10 +8,6 @@ pub enum AppError {
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Errors in application configuration or .env file.
-    #[error("Configuration Error: {0}")]
-    Config(String),
-
     /// Failures in spawning or controlling the browser process.
     #[error("Browser Process Error: {0}")]
     Browser(String),

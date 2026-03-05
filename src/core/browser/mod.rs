@@ -134,18 +134,18 @@ impl BrowserManager {
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
         if chrome_path.trim().is_empty() {
-            return Err(AppError::Config("Chrome binary path is empty".to_string()));
+            return Err(AppError::Internal("Chrome binary path is empty".to_string()));
         }
         if !std::path::Path::new(chrome_path).exists() {
-            return Err(AppError::Config(format!("Chrome binary not found: {}", chrome_path)));
+            return Err(AppError::Internal(format!("Chrome binary not found: {}", chrome_path)));
         }
         if profile_path.trim().is_empty() {
-            return Err(AppError::Config("Chrome profile path is empty".to_string()));
+            return Err(AppError::Internal("Chrome profile path is empty".to_string()));
         }
 
-        // KOD NOTU: Chrome log dosyası formatı chrome_YYMMDD_HHMMSS.log olarak güncellendi.
+        // KOD NOTU: Chrome sistem hataları için chrome_system_... log dosyası kullanılır.
         let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let log_path = output_dir.join(format!("chrome_{}.log", ts));
+        let log_path = output_dir.join(format!("chrome_system_{}.log", ts));
         let log_file = std::fs::File::create(&log_path).map_err(AppError::Io)?;
         let log_file_err = log_file.try_clone().map_err(AppError::Io)?;
 

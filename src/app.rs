@@ -61,7 +61,9 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
         AutomationStep::SwitchFrame(sel) => crate::core::automation::dsl::Step::SwitchFrame { selector: sel.clone() },
         AutomationStep::If { selector, then_steps } => crate::core::automation::dsl::Step::If { selector: selector.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
         AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_ui_steps_to_dsl(body) },
+        AutomationStep::IfCondition { condition, then_steps } => crate::core::automation::dsl::Step::IfCondition { condition: condition.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
         AutomationStep::CallFunction(name) => crate::core::automation::dsl::Step::CallFunction { name: name.clone() },
+
         AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset { filename: f.clone() },
     }).collect()
 }
@@ -280,7 +282,6 @@ impl eframe::App for CrawlerApp {
                         req.status = Some(status);
                         req.response_body = body;
                     }
-                    ws.active_request_id = Some(rid);
                 }
                 AppEvent::OperationSuccess(msg) => {
                     self.state.notify(NotificationLevel::Ok, "Success", &msg);
