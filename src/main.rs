@@ -33,8 +33,12 @@ fn find_chrome_binary() -> String {
     } else {
         let fallbacks = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
         for bin in fallbacks {
-            if std::process::Command::new("which").arg(bin).output().map(|o| o.status.success()).unwrap_or(false) {
-                return bin.to_string();
+            // KOD NOTU: 'which' komutunun çıktısını alarak komutun tam yolunu (absolute path) döndürürüz.
+            if let Ok(output) = std::process::Command::new("which").arg(bin).output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() { return path; }
+                }
             }
         }
     }

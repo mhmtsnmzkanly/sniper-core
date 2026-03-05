@@ -136,8 +136,12 @@ impl BrowserManager {
         if chrome_path.trim().is_empty() {
             return Err(AppError::Internal("Chrome binary path is empty".to_string()));
         }
-        if !std::path::Path::new(chrome_path).exists() {
-            return Err(AppError::Internal(format!("Chrome binary not found: {}", chrome_path)));
+        
+        // KOD NOTU: Eğer chrome_path bir dosya yolu içeriyorsa (içinde / veya \ varsa) varlığını kontrol et.
+        // Eğer sadece bir komut adıysa (örn: "chromium"), PATH aramasına izin vermek için kontrolü atla.
+        let is_path = chrome_path.contains('/') || chrome_path.contains('\\');
+        if is_path && !std::path::Path::new(chrome_path).exists() {
+            return Err(AppError::Internal(format!("Chrome binary not found at path: {}", chrome_path)));
         }
         if profile_path.trim().is_empty() {
             return Err(AppError::Internal("Chrome profile path is empty".to_string()));
