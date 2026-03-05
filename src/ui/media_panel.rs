@@ -3,21 +3,10 @@ use crate::state::AppState;
 use crate::ui::{design, scrape::emit};
 use egui::{Color32, Frame, RichText, Ui, Stroke};
 
-pub fn render(ui: &mut Ui, state: &mut AppState) {
-    let tid = match &state.selected_tab_id {
-        Some(id) => id.clone(),
-        None => {
-            ui.vertical_centered(|ui| {
-                ui.add_space(50.0);
-                ui.label(RichText::new("⚠ SELECT A TAB IN THE OPS PANEL TO VIEW MEDIA ASSETS").strong().color(Color32::YELLOW));
-            });
-            return;
-        }
-    };
-
+pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
     // Extract state for local use
     let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, mut preview_size, _show_export, _gallery_mode) = {
-        let ws = state.workspaces.get(&tid).unwrap();
+        let ws = state.workspaces.get(tid).unwrap();
         (
             ws.media_assets.clone(), 
             ws.media_assets.len(), 
@@ -40,7 +29,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.horizontal_wrapped(|ui| {
                 // Actions
                 if ui.button(RichText::new("🗑 CLEAR ALL").color(Color32::from_rgb(255, 100, 100))).clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) { 
+                    if let Some(ws) = state.workspaces.get_mut(tid) { 
                         ws.media_assets.clear(); 
                         ws.selected_media_urls.clear(); 
                     }
@@ -85,7 +74,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.separator();
                 // EXPORT JSON
                 if ui.button(RichText::new("📄 EXPORT JSON").color(Color32::from_rgb(100, 180, 255))).clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) {
+                    if let Some(ws) = state.workspaces.get_mut(tid) {
                         ws.show_media_export = true;
                         if ws.media_export_types.is_empty() { ws.media_export_types = ["IMAGE", "VIDEO", "AUDIO", "STYLES", "SCRIPTS", "FONTS"].iter().map(|s| s.to_string()).collect(); }
                         if ws.media_export_cols.is_empty() { ws.media_export_cols = ["url", "name", "type"].iter().map(|s| s.to_string()).collect(); }
@@ -125,7 +114,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let scroll_h = ui.available_height();
         egui::ScrollArea::vertical()
             .max_height(scroll_h)
-            .id_salt("media_scroll")
+            .id_salt(format!("{}_media_scroll", tid))
             .show(ui, |ui| {
                 if filtered_assets.is_empty() {
                     ui.centered_and_justified(|ui| {
@@ -136,7 +125,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let card_w = (preview_size * 1.5).clamp(140.0, 320.0);
                     let cols = (ui.available_width() / (card_w + spacing)).floor().max(1.0) as usize;
                     
-                    egui::Grid::new("media_responsive_grid")
+                    egui::Grid::new(format!("{}_media_grid", tid))
                         .num_columns(cols)
                         .spacing([spacing, spacing])
                         .show(ui, |ui| {
@@ -157,7 +146,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                             // 1. Selector + Type
                                             ui.horizontal(|ui| {
                                                 if ui.checkbox(&mut is_selected, "").changed() {
-                                                    if let Some(ws) = state.workspaces.get_mut(&tid) {
+                                                    if let Some(ws) = state.workspaces.get_mut(tid) {
                                                         if is_selected { ws.selected_media_urls.insert(asset.url.clone()); }
                                                         else { ws.selected_media_urls.remove(&asset.url); }
                                                     }
@@ -213,7 +202,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                                     // HLS DL
                                                     if crate::core::video_downloader::is_hls_url(&asset.url) {
                                                         if ui.add(egui::Button::new(RichText::new("HLS").small().color(design::ACCENT_GREEN))).clicked() {
-                                                            emit(AppEvent::RequestVideoDownload(tid.clone(), asset.url.clone(), asset.name.clone()));
+                                                            emit(AppEvent::RequestVideoDownload(tid.to_string(), asset.url.clone(), asset.name.clone()));
                                                         }
                                                     }
                                                 });
@@ -230,7 +219,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     });
 
     // Update state back
-    if let Some(ws) = state.workspaces.get_mut(&tid) {
+    if let Some(ws) = state.workspaces.get_mut(tid) {
         ws.media_search = media_search;
         ws.media_type_filter = type_filter;
         ws.media_preview_size = preview_size;

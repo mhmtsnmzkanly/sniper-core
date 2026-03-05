@@ -6,19 +6,8 @@ use crate::core::events::AppEvent;
 use crate::ui::scrape::emit;
 use url::Url;
 
-pub fn render(ui: &mut Ui, state: &mut AppState) {
-    let tid = match &state.selected_tab_id {
-        Some(id) => id.clone(),
-        None => {
-            ui.vertical_centered(|ui| {
-                ui.add_space(50.0);
-                ui.label(RichText::new("⚠ SELECT A TAB IN THE OPS PANEL TO VIEW STORAGE").strong().color(Color32::YELLOW));
-            });
-            return;
-        }
-    };
-
-    if !state.workspaces.contains_key(&tid) { return; }
+pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
+    if !state.workspaces.contains_key(tid) { return; }
     
     // Get current tab domain for filtering
     let current_tab_url = state.available_tabs.iter()
@@ -32,7 +21,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         .unwrap_or_default();
 
     let (mut cookies, title, mut show_modal, mut edit_buffer) = {
-        let ws = state.workspaces.get(&tid).unwrap();
+        let ws = state.workspaces.get(tid).unwrap();
         (ws.cookies.clone(), ws.title.clone(), ws.show_cookie_modal, ws.cookie_edit_buffer.clone())
     };
 
@@ -56,7 +45,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("🔄 REFRESH").clicked() {
-                    emit(AppEvent::RequestCookies(tid.clone()));
+                    emit(AppEvent::RequestCookies(tid.to_string()));
                 }
                 if ui.button("📤 EXPORT").on_hover_text("Export filtered cookies to JSON").clicked() {
                     let export_data: Vec<crate::state::ChromeCookie> = filtered_cookies.iter().map(|(_, c)| c.clone()).collect();
@@ -71,7 +60,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         if let Ok(content) = std::fs::read_to_string(path) {
                             if let Ok(imported_cookies) = serde_json::from_str::<Vec<crate::state::ChromeCookie>>(&content) {
                                 for cookie in imported_cookies {
-                                    emit(AppEvent::RequestCookieAdd(tid.clone(), cookie));
+                                    emit(AppEvent::RequestCookieAdd(tid.to_string(), cookie));
                                 }
                             }
                         }
@@ -88,7 +77,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     // RESPONSIVE TABLE
     let _table_h = ui.available_height() - 80.0;
-    ui.push_id("cookie_table_area", |ui| {
+    ui.push_id(format!("{}_cookie_table", tid), |ui| {
         let table = TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -134,11 +123,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     if let Some(idx) = cookie_to_delete {
         let c = &cookies[idx];
-        emit(AppEvent::RequestCookieDelete(tid.clone(), c.name.clone(), c.domain.clone()));
+        emit(AppEvent::RequestCookieDelete(tid.to_string(), c.name.clone(), c.domain.clone()));
     }
 
     if let Some(idx) = cookie_to_update {
-        emit(AppEvent::RequestCookieAdd(tid.clone(), cookies[idx].clone()));
+        emit(AppEvent::RequestCookieAdd(tid.to_string(), cookies[idx].clone()));
     }
 
     ui.add_space(10.0);
@@ -162,14 +151,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // MODAL FOR NEW COOKIE
     if show_modal {
         let mut open = true;
-        egui::Window::new("ADD NEW COOKIE")
+        egui::Window::new(format!("Add Cookie - {}", title))
             .open(&mut open)
+            .id(egui::Id::new(format!("{}_new_cookie_win", tid)))
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .resizable(false)
             .collapsible(false)
             .show(ui.ctx(), |ui| {
                 ui.set_width(400.0);
-                egui::Grid::new("new_cookie_grid").num_columns(2).spacing([10.0, 10.0]).show(ui, |ui| {
+                egui::Grid::new(format!("{}_new_cookie_grid", tid)).num_columns(2).spacing([10.0, 10.0]).show(ui, |ui| {
                     ui.label("Domain:"); ui.text_edit_singleline(&mut edit_buffer.domain); ui.end_row();
                     ui.label("Key (Name):"); ui.text_edit_singleline(&mut edit_buffer.name); ui.end_row();
                     ui.label("Value:"); ui.add(egui::TextEdit::multiline(&mut edit_buffer.value).desired_rows(3).desired_width(280.0)); ui.end_row();
@@ -177,7 +167,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("CREATE").strong()).clicked() {
-                        emit(AppEvent::RequestCookieAdd(tid.clone(), edit_buffer.clone()));
+                        emit(AppEvent::RequestCookieAdd(tid.to_string(), edit_buffer.clone()));
                         show_modal = false;
                     }
                     if ui.button("CANCEL").clicked() { show_modal = false; }
@@ -187,7 +177,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     }
 
     // Sync back state
-    if let Some(ws) = state.workspaces.get_mut(&tid) {
+    if let Some(ws) = state.workspaces.get_mut(tid) {
         ws.show_cookie_modal = show_modal;
         ws.cookie_edit_buffer = edit_buffer;
         ws.cookies = cookies;

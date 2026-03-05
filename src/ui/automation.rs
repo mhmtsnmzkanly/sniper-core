@@ -57,9 +57,9 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             let funcs_for_render = auto_functions.clone();
             let target_steps = if let Some(name) = &active_fn_editor { auto_functions.get_mut(name).unwrap() } else { &mut *auto_steps };
 
-            egui::ScrollArea::vertical().id_salt("auto_steps_scroll").auto_shrink([false, true]).max_height(280.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(format!("{}_auto_steps_scroll", tid)).auto_shrink([false, true]).max_height(280.0).show(ui, |ui| {
                 for (idx, step) in target_steps.iter_mut().enumerate() {
-                    render_step_block(ui, step, idx, &mut delete_idx, discovered_selectors, selector_search, variables, &funcs_for_render);
+                    render_step_block(ui, tid, step, idx, &mut delete_idx, discovered_selectors, selector_search, variables, &funcs_for_render);
                 }
             });
             if let Some(idx) = delete_idx { target_steps.remove(idx); }
@@ -75,7 +75,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 });
 
                 let mut fn_to_remove = None;
-                egui::ScrollArea::vertical().id_salt("auto_funcs_scroll").max_height(120.0).auto_shrink([false, true]).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt(format!("{}_auto_funcs_scroll", tid)).max_height(120.0).auto_shrink([false, true]).show(ui, |ui| {
                     for (name, steps) in auto_functions.iter_mut() {
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
@@ -210,7 +210,7 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     }
 }
 
-fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String], search: &mut String, vars: &HashMap<String, String>, funcs: &HashMap<String, Vec<AutomationStep>>) {
+fn render_step_block(ui: &mut Ui, tid: &str, step: &mut AutomationStep, idx: usize, delete_idx: &mut Option<usize>, discovered: &[String], search: &mut String, vars: &HashMap<String, String>, funcs: &HashMap<String, Vec<AutomationStep>>) {
     let (color, title) = match step {
         AutomationStep::Navigate(_) | AutomationStep::Click(_) | AutomationStep::RightClick(_) | AutomationStep::Hover(_) | AutomationStep::Type { .. } => (Color32::from_rgb(80, 130, 255), "ACT"),
         AutomationStep::Wait(_) | AutomationStep::WaitSelector { .. } | AutomationStep::WaitUntilIdle { .. } | AutomationStep::WaitNetworkIdle { .. } => (Color32::from_rgb(255, 200, 50), "W8"),
@@ -224,41 +224,41 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
             ui.label(RichText::new(title).small().strong().color(color));
             match step {
                 AutomationStep::Navigate(url) => { ui.add(egui::TextEdit::singleline(url).desired_width(ui.available_width() * 0.7)); }
-                AutomationStep::Click(sel) => { selector_input(ui, sel, discovered, search); }
+                AutomationStep::Click(sel) => { selector_input(ui, tid, sel, discovered, search); }
                 AutomationStep::Type { selector, value, is_variable } => {
                     if *is_variable {
-                        egui::ComboBox::from_id_salt(format!("v_{}", idx)).selected_text(value.as_str()).show_ui(ui, |ui| {
+                        egui::ComboBox::from_id_salt(format!("{}_v_{}", tid, idx)).selected_text(value.as_str()).show_ui(ui, |ui| {
                             for k in vars.keys() { ui.selectable_value(value, k.clone(), k); }
                         });
                     } else { ui.add(egui::TextEdit::singleline(value).desired_width(80.0)); }
                     if ui.button(if *is_variable { "V" } else { "T" }).clicked() { *is_variable = !*is_variable; }
-                    selector_input(ui, selector, discovered, search);
+                    selector_input(ui, tid, selector, discovered, search);
                 }
                 AutomationStep::CallFunction(name) => {
-                    egui::ComboBox::from_id_salt(format!("f_{}", idx)).selected_text(name.as_str()).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt(format!("{}_f_{}", tid, idx)).selected_text(name.as_str()).show_ui(ui, |ui| {
                         for k in funcs.keys() { ui.selectable_value(name, k.clone(), k); }
                     });
                 }
                 AutomationStep::ImportDataset(f) => { ui.add(egui::TextEdit::singleline(f).desired_width(120.0)); if ui.button("📂").clicked() { if let Some(path) = rfd::FileDialog::new().add_filter("CSV/JSON", &["csv", "json"]).pick_file() { *f = path.to_string_lossy().to_string(); } } }
                 AutomationStep::Wait(secs) => { ui.add(egui::DragValue::new(secs)); ui.label("s"); }
-                AutomationStep::WaitSelector { selector, .. } => { selector_input(ui, selector, discovered, search); }
-                AutomationStep::Extract { selector, as_key, add_to_dataset } => { selector_input(ui, selector, discovered, search); ui.add(egui::TextEdit::singleline(as_key).desired_width(60.0)); ui.checkbox(add_to_dataset, "DB"); }
+                AutomationStep::WaitSelector { selector, .. } => { selector_input(ui, tid, selector, discovered, search); }
+                AutomationStep::Extract { selector, as_key, add_to_dataset } => { selector_input(ui, tid, selector, discovered, search); ui.add(egui::TextEdit::singleline(as_key).desired_width(60.0)); ui.checkbox(add_to_dataset, "DB"); }
                 AutomationStep::SetVariable { key, value } => { ui.add(egui::TextEdit::singleline(key).desired_width(60.0)); ui.label("="); ui.add(egui::TextEdit::singleline(value).desired_width(80.0)); }
                 AutomationStep::IfCondition { condition, then_steps } => {
                     let mut cond_type = match condition {
                         crate::core::automation::dsl::Condition::ElementExists { .. } => 0,
                         crate::core::automation::dsl::Condition::TextContains { .. } => 1,
                     };
-                    if egui::ComboBox::from_id_salt(format!("cond_type_{}", idx)).show_index(ui, &mut cond_type, 2, |i| match i { 0 => "Exists", 1 => "Text", _ => "" }).changed() {
+                    if egui::ComboBox::from_id_salt(format!("{}_cond_type_{}", tid, idx)).show_index(ui, &mut cond_type, 2, |i| match i { 0 => "Exists", 1 => "Text", _ => "" }).changed() {
                         *condition = match cond_type {
                             0 => crate::core::automation::dsl::Condition::ElementExists { selector: "".into() },
                             _ => crate::core::automation::dsl::Condition::TextContains { selector: "".into(), text: "".into() },
                         };
                     }
                     match condition {
-                        crate::core::automation::dsl::Condition::ElementExists { selector } => { selector_input(ui, selector, discovered, search); }
+                        crate::core::automation::dsl::Condition::ElementExists { selector } => { selector_input(ui, tid, selector, discovered, search); }
                         crate::core::automation::dsl::Condition::TextContains { selector, text } => {
-                            selector_input(ui, selector, discovered, search);
+                            selector_input(ui, tid, selector, discovered, search);
                             ui.add(egui::TextEdit::singleline(text).hint_text("contains...").desired_width(60.0));
                         }
                     }
@@ -266,11 +266,11 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
                     if ui.button("✏").clicked() { /* In a real impl, we'd swap to a sub-editor for nested steps */ }
                 }
                 AutomationStep::If { selector, then_steps } => {
-                    selector_input(ui, selector, discovered, search);
+                    selector_input(ui, tid, selector, discovered, search);
                     ui.label(format!("({} steps)", then_steps.len()));
                 }
                 AutomationStep::ForEach { selector, body } => {
-                    selector_input(ui, selector, discovered, search);
+                    selector_input(ui, tid, selector, discovered, search);
                     ui.label(format!("({} steps)", body.len()));
                 }
                 AutomationStep::ScrollBottom => { ui.label("BOTTOM"); }
@@ -282,13 +282,13 @@ fn render_step_block(ui: &mut Ui, step: &mut AutomationStep, idx: usize, delete_
     });
 }
 
-fn selector_input(ui: &mut Ui, value: &mut String, discovered: &[String], search: &mut String) {
+fn selector_input(ui: &mut Ui, tid: &str, value: &mut String, discovered: &[String], search: &mut String) {
     ui.horizontal(|ui| {
         ui.add(egui::TextEdit::singleline(value).desired_width(ui.available_width() * 0.4));
         ui.menu_button("Q", |ui| {
             ui.add(egui::TextEdit::singleline(search));
             let filter = search.to_lowercase();
-            egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(format!("{}_sel_scroll", tid)).max_height(200.0).show(ui, |ui| {
                 for s in discovered { if filter.is_empty() || s.to_lowercase().contains(&filter) { if ui.button(RichText::new(s).small()).clicked() { *value = s.clone(); ui.close_menu(); } } }
             });
         });

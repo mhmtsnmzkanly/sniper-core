@@ -971,7 +971,7 @@ impl eframe::App for CrawlerApp {
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::network_panel::render(ui, &mut self.state);
+                    ui::network_panel::render(ui, &mut self.state, &tid);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = false; } }
             }
@@ -982,7 +982,7 @@ impl eframe::App for CrawlerApp {
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::media_panel::render(ui, &mut self.state);
+                    ui::media_panel::render(ui, &mut self.state, &tid);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = false; } }
             }
@@ -993,7 +993,7 @@ impl eframe::App for CrawlerApp {
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::storage_panel::render(ui, &mut self.state);
+                    ui::storage_panel::render(ui, &mut self.state, &tid);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = false; } }
             }

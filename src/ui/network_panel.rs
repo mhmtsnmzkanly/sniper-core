@@ -2,14 +2,9 @@ use crate::state::AppState;
 use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
 
-pub fn render(ui: &mut Ui, state: &mut AppState) {
-    let tid = match &state.selected_tab_id {
-        Some(id) => id.clone(),
-        None => { ui.label("No active tab selected."); return; }
-    };
-
+pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
     let (requests, mut search, mut type_filter, mut status_filter, blocked_urls) = {
-        let ws = state.workspaces.get(&tid).unwrap();
+        let ws = state.workspaces.get(tid).unwrap();
         (
             ws.network_requests.clone(),
             ws.network_search.clone(),
@@ -61,17 +56,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 
                 ui.horizontal(|ui| {
                     if ui.button("Block").clicked() && !search.trim().is_empty() {
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(tid.clone(), search.trim().to_string()));
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlBlock(tid.to_string(), search.trim().to_string()));
                     }
                     if ui.button("Unblock").clicked() && !search.trim().is_empty() {
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), search.trim().to_string()));
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.to_string(), search.trim().to_string()));
                     }
                 });
 
                 ui.separator();
                 // Actions (Right aligned in wrapped layout usually stays at far right or next row)
                 if ui.button("🗑 CLEAR").clicked() {
-                    if let Some(ws) = state.workspaces.get_mut(&tid) { ws.network_requests.clear(); }
+                    if let Some(ws) = state.workspaces.get_mut(tid) { ws.network_requests.clear(); }
                 }
 
                 ui.menu_button(RichText::new(format!("🛡 BLOCKED ({})", blocked_urls.len())).color(design::ACCENT_ORANGE), |ui| {
@@ -83,7 +78,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(&url).small());
                                 if ui.button("x").clicked() {
-                                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.clone(), url));
+                                    crate::ui::scrape::emit(crate::core::events::AppEvent::RequestUrlUnblock(tid.to_string(), url));
                                 }
                             });
                         }
@@ -122,7 +117,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         let list_height = ui.available_height();
         egui::ScrollArea::vertical()
             .max_height(list_height)
-            .id_salt("net_list_scroll")
+            .id_salt(format!("{}_net_list", tid))
             .auto_shrink([false, false])
             .show(ui, |ui| {
             for req in filtered_requests {
@@ -162,7 +157,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         });
     });
 
-    if let Some(ws) = state.workspaces.get_mut(&tid) {
+    if let Some(ws) = state.workspaces.get_mut(tid) {
         ws.network_search = search;
         ws.network_type_filter = type_filter;
         ws.network_status_filter = status_filter;
