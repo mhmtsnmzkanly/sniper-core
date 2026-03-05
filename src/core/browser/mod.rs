@@ -23,9 +23,15 @@ impl BrowserManager {
         chrome_path: &str,
         profile_path: &str, 
         port: u16, 
-        tx: mpsc::UnboundedSender<AppEvent>
+        tx: mpsc::UnboundedSender<AppEvent>,
+        output_dir: std::path::PathBuf
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
+
+        // KOD NOTU: Tarayıcı hatalarını ve loglarını yakalamak için log dosyası oluşturulur.
+        let log_path = output_dir.join("chrome.log");
+        let log_file = std::fs::File::create(&log_path).map_err(AppError::Io)?;
+        let log_file_err = log_file.try_clone().map_err(AppError::Io)?;
 
         let mut command = std::process::Command::new(chrome_path);
         command.arg(format!("--remote-debugging-port={}", port))
@@ -34,34 +40,36 @@ impl BrowserManager {
             .arg("--no-default-browser-check")
             .arg("--remote-allow-origins=*")
             // STABILITY & NOISE REDUCTION FLAGS:
-            // Prevents Linux keyring prompts from blocking the launch
             .arg("--password-store=basic") 
-            // Disables background services that cause 'QUOTA_EXCEEDED' and crashes
             .arg("--disable-sync")
             .arg("--disable-background-networking")
             .arg("--disable-default-apps")
             .arg("--disable-component-update")
             .arg("--disable-domain-reliability")
             .arg("--disable-client-side-phishing-detection")
-            .arg("--disable-breakpad") // Disable crash reporting
-            .arg("--disable-logging") // Silence internal Chrome logs
-            .arg("--log-level=3") // Only fatal errors
-            .arg("--disable-extensions") // No extensions noise
+            .arg("--disable-breakpad") 
+            // LOGGING REDIRECTION:
+            .arg("--enable-logging")
+            .arg("--v=1")
+            .arg("--disable-extensions")
             .arg("--disable-component-extensions-with-background-pages")
             .arg("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
             .arg("--metrics-recording-only");
 
         #[cfg(target_os = "linux")]
         {
-            // Extra safety for Linux environments
             command.arg("--no-sandbox")
                    .arg("--disable-setuid-sandbox")
                    .arg("--disable-dev-shm-usage")
-                   .arg("--no-zygote") // Prevents some GLib/threading issues
-                   .arg("--disable-gpu"); // Helps prevent GLib/GPU related errors in logs
+                   .arg("--no-zygote") 
+                   .arg("--disable-gpu"); 
         }
 
-        let child = command.arg(url).spawn().map_err(|e| {
+        // KOD NOTU: stdout ve stderr belirtilen log dosyasına yönlendirilir.
+        let child = command.arg(url)
+            .stdout(std::process::Stdio::from(log_file))
+            .stderr(std::process::Stdio::from(log_file_err))
+            .spawn().map_err(|e| {
             tracing::error!("[CORE -> BROWSER] Process spawn failed: {}", e);
             AppError::Io(e)
         })?;

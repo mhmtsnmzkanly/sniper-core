@@ -96,6 +96,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let url = state.config.default_launch_url.clone();
                     let binary = state.config.chrome_binary_path.clone();
                     let port = state.config.remote_debug_port;
+                    let output_dir = state.config.output_dir.clone();
                     let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
 
                     let profile = if state.use_custom_profile {
@@ -107,7 +108,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     };
 
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx).await {
+                        match crate::core::browser::BrowserManager::launch(&url, &binary, &profile, port, tx, output_dir).await {
                             Ok(child) => emit(AppEvent::BrowserStarted(child)),
                             Err(e) => {
                                 tracing::error!("[CORE] Launch failed: {}", e);
@@ -115,6 +116,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             }
                         }
                     });
+
                 }
             } else {
                 if ui
