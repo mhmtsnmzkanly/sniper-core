@@ -18,6 +18,14 @@ pub struct AppConfig {
     pub remote_debug_port: u16,
     /// The URL the browser opens when launched.
     pub default_launch_url: String,
+    /// Optional proxy server, e.g. http://host:port or socks5://host:port.
+    pub proxy_server: String,
+    /// Optional custom user-agent string.
+    pub user_agent: String,
+    /// Randomizes user-agent on every launch when enabled.
+    pub randomize_user_agent: bool,
+    /// Applies lightweight anti-fingerprint launch randomization when enabled.
+    pub randomize_fingerprint: bool,
     /// Optional API key for AI-powered features (e.g., Translate).
     pub gemini_api_key: String,
 }
@@ -34,6 +42,10 @@ impl Default for AppConfig {
             chrome_profile_path: String::new(),
             remote_debug_port: 9222,
             default_launch_url: "https://www.google.com".to_string(),
+            proxy_server: String::new(),
+            user_agent: String::new(),
+            randomize_user_agent: false,
+            randomize_fingerprint: false,
             gemini_api_key: String::new(),
         }
     }

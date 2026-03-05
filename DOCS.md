@@ -77,6 +77,13 @@ Potential startup errors:
 What it does:
 - Launches/terminates browser instance.
 - Uses configured Chrome path/profile/path/port.
+- Supports launch-time proxy and identity options.
+
+Launch options:
+- `Proxy` (e.g. `http://host:port`, `socks5://host:port`)
+- `User-Agent` override
+- `Random UA`
+- `Random Fingerprint` (window size/lang/automation flag randomization)
 
 Outputs:
 - Browser process lifecycle events.
@@ -85,6 +92,7 @@ Outputs:
 Errors:
 - Launch failures due to bad binary path.
 - Permission errors for profile/output folders.
+- Invalid or unreachable proxy target.
 
 ## 4.2 Chrome Tabs
 What it does:

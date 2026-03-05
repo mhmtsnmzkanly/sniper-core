@@ -16,7 +16,34 @@ use std::sync::Arc;
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
 pub struct BrowserManager;
 
+#[derive(Debug, Clone, Default)]
+pub struct BrowserLaunchOptions {
+    pub proxy_server: Option<String>,
+    pub user_agent: Option<String>,
+    pub randomize_user_agent: bool,
+    pub randomize_fingerprint: bool,
+}
+
 impl BrowserManager {
+    /// KOD NOTU: Rastgele UA seçimi için hafif sabit havuz kullanılır.
+    fn pick_user_agent(opts: &BrowserLaunchOptions) -> Option<String> {
+        let custom = opts.user_agent.as_deref().map(str::trim).filter(|v| !v.is_empty());
+        if !opts.randomize_user_agent {
+            return custom.map(ToOwned::to_owned);
+        }
+        let pool = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0",
+        ];
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as usize)
+            .unwrap_or(0);
+        Some(pool[seed % pool.len()].to_string())
+    }
+
     /// Launches the browser and waits for the API to become ready.
     pub async fn launch(
         url: &str, 
@@ -24,7 +51,8 @@ impl BrowserManager {
         profile_path: &str, 
         port: u16, 
         tx: mpsc::UnboundedSender<AppEvent>,
-        output_dir: std::path::PathBuf
+        output_dir: std::path::PathBuf,
+        launch_opts: BrowserLaunchOptions,
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
 
@@ -56,6 +84,27 @@ impl BrowserManager {
             .arg("--disable-component-extensions-with-background-pages")
             .arg("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
             .arg("--metrics-recording-only");
+
+        if let Some(proxy) = launch_opts.proxy_server.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            command.arg(format!("--proxy-server={}", proxy));
+        }
+        if let Some(ua) = Self::pick_user_agent(&launch_opts) {
+            command.arg(format!("--user-agent={}", ua));
+        }
+        if launch_opts.randomize_fingerprint {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() as u32)
+                .unwrap_or(0);
+            let width = 1280 + (seed % 280);
+            let height = 720 + (seed % 180);
+            let langs = ["en-US", "en-GB", "tr-TR", "de-DE"];
+            let lang = langs[(seed as usize) % langs.len()];
+            command
+                .arg(format!("--window-size={},{}", width, height))
+                .arg(format!("--lang={}", lang))
+                .arg("--disable-blink-features=AutomationControlled");
+        }
 
         #[cfg(target_os = "linux")]
         {

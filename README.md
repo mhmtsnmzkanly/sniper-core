@@ -48,6 +48,7 @@ cargo run -- --port 9222
 - `Browser Control` (left, ~30%): launch/terminate + browser config.
 - `Chrome Tabs` (right, ~70%): active tab targets.
 - Command Center: capture/network/media/cookie/console/automation actions.
+- Browser Control now includes per-launch `Proxy`, `User-Agent`, `Random UA`, and `Random Fingerprint` options.
 
 ### Scripting
 - Import/Export JSON script package.
