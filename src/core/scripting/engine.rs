@@ -114,12 +114,19 @@ fn file_in_scope(root: &Path, rel: &str) -> AppResult<PathBuf> {
     Ok(joined)
 }
 
+/// KOD NOTU: Dot-style constructor kullanımlarını mevcut alias fonksiyonlarına dönüştürür.
+fn normalize_scripting_code(raw: &str) -> String {
+    raw.replace("Tab.new(", "TabNew(")
+        .replace("Tab.catch(", "TabCatch(")
+}
+
 pub fn check_script(package: &ScriptPackage) -> ScriptingCheckReport {
     let mut diagnostics = Vec::new();
     let mut ok = true;
 
     let engine = Engine::new();
-    match engine.compile(&package.code) {
+    let normalized_code = normalize_scripting_code(&package.code);
+    match engine.compile(&normalized_code) {
         Ok(_) => diagnostics.push("[OK] Rhai compile success".to_string()),
         Err(e) => {
             diagnostics.push(format!("[ERROR] Rhai compile error: {}", e));
@@ -470,8 +477,9 @@ fn collect_actions(package: &ScriptPackage, static_ctx: &ScriptStaticContext) ->
         });
     }
 
+    let normalized_code = normalize_scripting_code(&package.code);
     let ast = engine
-        .compile(&package.code)
+        .compile(&normalized_code)
         .map_err(|e| AppError::Internal(format!("Rhai compile error: {e}")))?;
 
     engine

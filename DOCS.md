@@ -213,7 +213,7 @@ Flow:
 4. Actions are executed via shared automation runtime and browser APIs
 
 Current helper families:
-- tab creation/binding (`Tab`, `TabNew`, `tab_new`, `TabCatch`, `TabCurrent`, `tab_catch`)
+- tab creation/binding (`Tab`, `TabNew`, `tab_new`, `Tab.new`, `TabCatch`, `TabCurrent`, `tab_catch`, `Tab.catch`)
 - element query/actions (`find_el`, `filter_id`, `filter_class`, `filter_attr`, `first_or_none`, `all`, `click`, `type`)
 - capture/network/console/cookies services
 - file helpers (`fs_write_text`, `fs_append_text`, `fs_mkdir_all`, `fs_exists`)
@@ -223,7 +223,6 @@ Important behavior:
 - `Stop` is cooperative (cancel token).
 
 Known limitations:
-- dot-style constructor names (`Tab.new`, `Tab.catch`) are not yet available
 - query APIs return `ElementRef` handles, but execution is still selector-mapped (no DOM snapshot cache)
 - compile-time check cannot guarantee runtime selector existence
 

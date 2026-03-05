@@ -170,6 +170,9 @@ Alias for blank tab creation.
 ### `tab_new()`
 Alias for blank tab creation.
 
+### `Tab.new()`
+Dot-style alias (normalized to `TabNew()` before compile).
+
 ### `TabCatch()`
 Binds to currently selected UI tab.
 
@@ -178,6 +181,9 @@ Alias for selected tab binding.
 
 ### `tab_catch()`
 Alias for selected tab binding.
+
+### `Tab.catch()`
+Dot-style alias (normalized to `TabCatch()` before compile).
 
 Common failures:
 - no selected tab in UI
@@ -306,7 +312,6 @@ Chrome console logs additionally appear in:
 
 ## 2.9 Current Known Gaps
 
-- Dot-style construction (`Tab.new`, `Tab.catch`) is still not available; function aliases are used.
 - Query execution still uses selector mapping; it does not yet fetch and cache concrete DOM node snapshots.
 - Runtime selector validation remains dynamic (compile-time check cannot validate DOM presence).
 
