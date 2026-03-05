@@ -291,17 +291,39 @@ impl BrowserManager {
         Ok(())
     }
 
+    /// KOD NOTU: Gelişmiş çıktı yapısı için hiyerarşik dosya yolu oluşturur.
+    /// Yapı: OUTPUT_DIR/TARIH/TIP/DOMAIN/SAYFA_BASLIGI.ext
+    async fn generate_capture_path(page: &chromiumoxide::Page, root: PathBuf, category: &str, ext: &str) -> AppResult<PathBuf> {
+        let url_str = page.url().await.map(|u| u.map(|inner| inner.as_str().to_string())).unwrap_or(None).unwrap_or_default();
+        let title = page.get_title().await.map_err(|e| AppError::Browser(e.to_string()))?.unwrap_or_default();
+        
+        let date_str = chrono::Local::now().format("%Y%m%d").to_string();
+        let domain = url::Url::parse(&url_str).ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .unwrap_or_else(|| "unknown_domain".to_string());
+
+        // Slugify title: replace non-alphanumeric with underscore
+        let safe_title = title.chars()
+            .map(|c: char| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>()
+            .trim_matches('_')
+            .to_string();
+        
+        let final_title = if safe_title.is_empty() { "index".to_string() } else { safe_title };
+        let timestamp = chrono::Local::now().format("%H%M%S").to_string();
+
+        let final_dir = root.join(date_str).join(category).join(domain);
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
+        
+        Ok(final_dir.join(format!("{}_{}.{}", final_title, timestamp, ext)))
+    }
+
     pub async fn capture_html(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let final_dir = root.join("html_captures");
-        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         
-        // KOD NOTU: Her capture için timestamp eklenerek önceki dosyaların üzerine yazılması engellenmiştir.
-        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let path = final_dir.join(format!("capture_{}.html", ts));
-        
+        let path = Self::generate_capture_path(&page, root, "html_captures", "html").await?;
         std::fs::write(&path, html).map_err(AppError::Io)?;
         Ok(path)
     }
@@ -311,9 +333,9 @@ impl BrowserManager {
         let page = Self::find_tab(&browser, &tab_id).await?;
         let html = page.content().await.map_err(|e| AppError::Browser(e.to_string()))?;
         
-        // KOD NOTU: Her capture için ayrı bir klasör (timestamp ile) oluşturulur.
-        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let final_dir = root.join("complete_captures").join(format!("complete_{}", ts));
+        // Complete capture is a folder containing index.html
+        let path_with_ext = Self::generate_capture_path(&page, root, "complete_captures", "dir").await?;
+        let final_dir = path_with_ext.with_extension(""); // Remove .dir
         
         std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
         std::fs::write(final_dir.join("index.html"), html).map_err(AppError::Io)?;
@@ -323,13 +345,9 @@ impl BrowserManager {
     pub async fn capture_mirror(port: u16, tab_id: String, root: PathBuf) -> AppResult<PathBuf> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        let final_dir = root.join("mirrors");
-        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
-        let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
         
-        // KOD NOTU: MHTML snapshot dosyasına timestamp eklenmiştir.
-        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let path = final_dir.join(format!("snapshot_{}.mhtml", ts));
+        let mhtml = page.execute(chromiumoxide::cdp::browser_protocol::page::CaptureSnapshotParams::default()).await.map_err(|e| AppError::Browser(e.to_string()))?;
+        let path = Self::generate_capture_path(&page, root, "mirrors", "mhtml").await?;
         
         std::fs::write(&path, mhtml.result.data).map_err(AppError::Io)?;
         Ok(path)

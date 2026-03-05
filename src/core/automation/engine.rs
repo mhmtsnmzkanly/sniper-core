@@ -103,7 +103,7 @@ impl AutomationEngine {
     /// Returns a Pinned Boxed Future to allow safe async recursion.
     fn execute_steps_recursive<'a>(&'a self, steps: Arc<[Step]>, driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let (tid, output_dir) = {
+            let (tid, _output_dir) = {
                 let ctx = self.context.lock().unwrap();
                 (ctx.tab_id.clone(), ctx.output_dir.clone())
             };
@@ -188,9 +188,11 @@ impl AutomationEngine {
                 if let Some(e) = last_error {
                     if self.config.screenshot_on_error {
                         if let Ok(data) = driver.screenshot().await {
-                            let path = output_dir.join(format!("FAIL_STEP_{}.png", idx + 1));
-                            let _ = std::fs::write(&path, data);
-                            tracing::error!("[ENGINE] Step failed. Screenshot saved to: {:?}", path);
+                            // KOD NOTU: Hata anındaki ekran görüntüsü de yeni hiyerarşik yapıda saklanır.
+                            if let Ok(path) = self.resolve_capture_path(driver, "failures", "png").await {
+                                let _ = std::fs::write(&path, data);
+                                tracing::error!("[ENGINE] Step failed. Screenshot saved to: {:?}", path);
+                            }
                         }
                     }
                     emit(AppEvent::AutomationError(tid.clone(), e.to_string()));
@@ -245,10 +247,38 @@ impl AutomationEngine {
         final_result
     }
 
+    /// KOD NOTU: Gelişmiş çıktı yapısı için hiyerarşik dosya yolu oluşturur.
+    /// Yapı: OUTPUT_DIR/TARIH/TIP/DOMAIN/SAYFA_BASLIGI.ext
+    async fn resolve_capture_path(&self, driver: &dyn AutomationDriver, category: &str, ext: &str) -> AppResult<std::path::PathBuf> {
+        let url_str = driver.eval("window.location.href").await?;
+        let title = driver.eval("document.title").await?;
+        
+        let date_str = chrono::Local::now().format("%Y%m%d").to_string();
+        let domain = url::Url::parse(&url_str).ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .unwrap_or_else(|| "unknown_domain".to_string());
+
+        // Slugify title
+        let safe_title = title.chars()
+            .map(|c: char| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>()
+            .trim_matches('_')
+            .to_string();
+        
+        let final_title = if safe_title.is_empty() { "index".to_string() } else { safe_title };
+        let timestamp = chrono::Local::now().format("%H%M%S").to_string();
+
+        let output_dir = self.context.lock().unwrap().output_dir.clone();
+        let final_dir = output_dir.join(date_str).join(category).join(domain);
+        std::fs::create_dir_all(&final_dir).map_err(AppError::Io)?;
+        
+        Ok(final_dir.join(format!("{}_{}.{}", final_title, timestamp, ext)))
+    }
+
     /// Executes a single atomic DSL step using the driver.
     fn execute_step_internal<'a>(&'a self, step: &'a Step, driver: &'a dyn AutomationDriver) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let (_tid, output_dir) = { 
+            let (_tid, _output_dir) = { 
                 let ctx = self.context.lock().unwrap();
                 (ctx.tab_id.clone(), ctx.output_dir.clone())
             };
@@ -330,9 +360,8 @@ impl AutomationEngine {
                     };
                     emit(AppEvent::AutomationDatasetUpdated(tid_clone, current_rows));
                 }
-                Step::Export { filename } => {
-                    let f = self.interpolate(filename);
-                    let path = output_dir.join(&f);
+                Step::Export { .. } => {
+                    let path = self.resolve_capture_path(driver, "datasets", "json").await?;
                     tracing::info!("[ENGINE] Exporting dataset to: {:?}", path);
                     let data = { let mut ctx = self.context.lock().unwrap(); ctx.push_current_row(); ctx.extracted_data.clone() };
                     if !data.is_empty() { 
@@ -341,9 +370,8 @@ impl AutomationEngine {
                         tracing::warn!("[ENGINE] Export skipped. Dataset is empty.");
                     }
                 }
-                Step::Screenshot { filename } => {
-                    let f = self.interpolate(filename);
-                    let path = output_dir.join(&f);
+                Step::Screenshot { .. } => {
+                    let path = self.resolve_capture_path(driver, "screenshots", "png").await?;
                     tracing::info!("[ENGINE] Taking screenshot: {:?}", path);
                     let data = driver.screenshot().await?;
                     let _ = std::fs::write(path, data);
