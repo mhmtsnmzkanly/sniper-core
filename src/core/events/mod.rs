@@ -18,6 +18,7 @@ pub enum AppEvent {
     RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),
     RequestScriptingRun(ScriptPackage, Option<String>),
     RequestScriptingCheck(ScriptPackage, Option<String>),
+    RequestScriptingDryRun(ScriptPackage, Option<String>),
     RequestScriptingStop,
     RequestScriptingImport(std::path::PathBuf),
     RequestScriptingExport(std::path::PathBuf, ScriptPackage),
@@ -49,6 +50,7 @@ pub enum AppEvent {
     ScriptFinished(String, String),
     ScriptingOutput(String),
     ScriptingCheckResult(ScriptingCheckReport),
+    ScriptingDryRunResult(Vec<String>),
     ScriptingFinished,
     ScriptingError(String),
     

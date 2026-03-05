@@ -52,6 +52,7 @@ cargo run -- --port 9222
 ### Scripting
 - Import/Export JSON script package.
 - `Check`: compile + basic lint without executing browser actions.
+- `Dry-Run`: build action plan without browser execution.
 - `Execute`: runs script through shared automation runtime.
 - `Stop`: cooperative cancel request.
 - Script output goes to `System Telemetry` (not local script output list).

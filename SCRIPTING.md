@@ -17,10 +17,11 @@ This is intentional: timeout/retry/execution behavior stays consistent.
 3. Open `Scripting` tab.
 4. Confirm `Execution Target`.
 5. Write or import script package (`.json`).
-6. Press `Check` first, then `Execute`.
+6. Press `Check` and/or `Dry-Run` first, then `Execute`.
 
 Notes:
 - `Check` validates script compile/entry/lint but does **not** execute actions.
+- `Dry-Run` prints planned action sequence to System Telemetry and does **not** execute browser actions.
 - Script output is sent to **System Telemetry**.
 
 ## 1.2 Script Package Format (`.json`)
@@ -283,6 +284,11 @@ Outputs:
 It does **not**:
 - execute browser actions
 - guarantee selector correctness at runtime
+
+### Dry-Run
+- Compiles script and builds internal action list.
+- Emits planned actions (`[001] ...`) to System Telemetry with `DRYRUN` level.
+- Does not call browser/CDP operations.
 
 ---
 

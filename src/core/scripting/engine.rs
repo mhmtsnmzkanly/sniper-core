@@ -509,6 +509,21 @@ pub async fn run_script(req: ScriptExecutionRequest) -> AppResult<()> {
     execute_actions(req, actions).await
 }
 
+/// KOD NOTU: Dry-Run gerçek browser çağrısı yapmadan üretilecek action sırasını çıkarır.
+pub fn dry_run_script(req: ScriptExecutionRequest) -> AppResult<Vec<String>> {
+    let static_ctx = ScriptStaticContext {
+        output_dir: req.output_dir.clone(),
+        selected_tab_console_logs: req.selected_tab_console_logs.clone(),
+        selected_tab_cookies: req.selected_tab_cookies.clone(),
+    };
+    let actions = collect_actions(&req.package, &static_ctx)?;
+    Ok(actions
+        .into_iter()
+        .enumerate()
+        .map(|(i, action)| format!("[{:03}] {:?}", i + 1, action))
+        .collect())
+}
+
 async fn flush_token_steps(
     req: &ScriptExecutionRequest,
     token: i64,

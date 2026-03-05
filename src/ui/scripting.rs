@@ -70,6 +70,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 selected,
             ));
         }
+        if ui
+            .add_enabled(!state.is_script_running, egui::Button::new("Dry-Run"))
+            .clicked()
+        {
+            let selected = state
+                .scripting_tab_binding
+                .clone()
+                .or_else(|| state.selected_tab_id.clone());
+            emit(AppEvent::RequestScriptingDryRun(
+                state.script_package.clone(),
+                selected,
+            ));
+        }
 
         if ui
             .add_enabled(state.is_script_running, egui::Button::new("Stop"))
