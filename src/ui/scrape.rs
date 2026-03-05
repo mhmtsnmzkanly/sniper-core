@@ -48,8 +48,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        cols[0].set_width(total * 0.30);
-        cols[1].set_width(total * 0.70);
+        // KOD NOTU: Browser Control paneli daraltıldı (0.25), Tab listesi genişletildi (0.75).
+        cols[0].set_width(total * 0.25);
+        cols[1].set_width(total * 0.75);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
@@ -216,30 +217,35 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             .show(ui, |ui| {
                                 ui.set_min_width(ui.available_width());
                                 ui.vertical(|ui| {
-                                    let title = if tab.title.chars().count() > 48 {
-                                        tab.title.chars().take(45).collect::<String>() + "..."
-                                    } else {
-                                        tab.title.clone()
-                                    };
-                                    ui.label(
-                                        RichText::new(title)
+                                    // KOD NOTU: Başlık ve URL artık otomatik olarak truncate edilir (kesilir).
+                                    // Tooltip ile tam içerik gösterilir.
+                                    ui.add(egui::Label::new(
+                                        RichText::new(&tab.title)
                                             .strong()
                                             .color(if is_selected {
                                                 Color32::WHITE
                                             } else {
                                                 Color32::GRAY
-                                            }),
-                                    );
+                                            })
+                                    ).truncate());
+                                    
                                     ui.add_space(2.0);
-                                    ui.label(
+                                    
+                                    ui.add(egui::Label::new(
                                         RichText::new(&tab.url)
                                             .size(design::FONT_SMALL)
                                             .monospace()
-                                            .color(Color32::from_gray(150)),
-                                    );
+                                            .color(Color32::from_gray(150))
+                                    ).truncate());
                                 });
                             })
                             .response;
+
+                        // Tooltip: Fare ile üzerine gelince tam adresi ve başlığı göster
+                        response.clone().on_hover_ui(|ui| {
+                            ui.label(RichText::new(&tab.title).strong());
+                            ui.label(&tab.url);
+                        });
 
                         if ui
                             .interact(response.rect, response.id, egui::Sense::click())
