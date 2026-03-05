@@ -57,6 +57,10 @@ cargo run -- --port 9222
 - Script output goes to `System Telemetry` (not local script output list).
 - Detailed scripting tutorial + API reference: see [`SCRIPTING.md`](./SCRIPTING.md).
 
+## Extended Documentation
+- Full system documentation (A-Z): [`DOCS.md`](./DOCS.md)
+- Scripting tutorial and API reference: [`SCRIPTING.md`](./SCRIPTING.md)
+
 ### Logs (System Telemetry)
 Central log stream for:
 - system/runtime events
