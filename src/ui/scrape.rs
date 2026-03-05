@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use crate::ui::design;
-use egui::{Color32, Frame, RichText, Stroke, Ui};
+use egui::{Color32, Frame, RichText, Stroke, Ui, Margin};
 use lazy_static::lazy_static;
 use std::sync::Mutex;
 use tokio::sync::mpsc;
@@ -311,8 +311,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(12.0);
 
-    // COMMAND CENTER
-    frame_style.show(ui, |ui| {
+    // COMMAND CENTER (with extra side padding so content doesn't hug window edges)
+    Frame::new().inner_margin(Margin::symmetric(40, 0)).show(ui, |ui| {
+        frame_style.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new("Command Center")
@@ -333,7 +334,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 }
             }
         });
-        ui.add_space(10.0);
+            ui.add_space(10.0);
 
         let can_action = state.selected_tab_id.is_some();
         let tid = state.selected_tab_id.clone().unwrap_or_default();
@@ -574,6 +575,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::RequestScriptExecution(tid.clone(), script.to_string()));
                 }
             });
+        });
         });
     });
 }
