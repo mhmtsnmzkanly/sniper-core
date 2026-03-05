@@ -501,6 +501,28 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
 
             ui.add_space(8.0);
+
+            // KOD NOTU: Blob De-Masker butonu — blob: URL'lerini gerçek medya URL'lerine dönüştürür.
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        can_action,
+                        egui::Button::new(
+                            RichText::new("🔍 BLOB DE-MASK")
+                                .strong()
+                                .color(Color32::from_rgb(255, 200, 50)),
+                        )
+                        .min_size([0.0, design::BUTTON_HEIGHT].into()),
+                    )
+                    .on_hover_text("Resolve blob: media URLs by scanning page network activity (requires Network listener active)")
+                    .clicked()
+                {
+                    tracing::info!("[UI] Click: BLOB DE-MASK for {}", tid);
+                    emit(AppEvent::RequestBlobDemask(tid.clone()));
+                }
+            });
+
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let inspector_armed = state
                     .selected_tab_id

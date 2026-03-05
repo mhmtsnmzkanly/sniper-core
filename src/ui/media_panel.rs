@@ -1,5 +1,6 @@
+use crate::core::events::AppEvent;
 use crate::state::AppState;
-use crate::ui::design;
+use crate::ui::{design, scrape::emit};
 use egui::{Ui, Color32, RichText, Frame};
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
@@ -292,6 +293,23 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 if let Some(path) = rfd::FileDialog::new().set_file_name(&asset.name).save_file() {
                                     let _ = std::fs::write(path, data);
                                 }
+                            }
+                        }
+
+                        // KOD NOTU: HLS (.m3u8) URL'leri için ffmpeg tabanlı HLS downloader tetiklenir.
+                        let is_hls = crate::core::video_downloader::is_hls_url(&asset.url);
+                        if is_hls {
+                            if ui.add(egui::Button::new(
+                                RichText::new("⬇ HLS DL")
+                                    .strong()
+                                    .color(Color32::from_rgb(0, 220, 150)))
+                            ).on_hover_text("Download HLS stream to output directory via ffmpeg").clicked() {
+                                tracing::info!("[UI] Click: HLS DOWNLOAD for {}", asset.url);
+                                emit(AppEvent::RequestVideoDownload(
+                                    tid.clone(),
+                                    asset.url.clone(),
+                                    asset.name.clone(),
+                                ));
                             }
                         }
                         ui.end_row();
