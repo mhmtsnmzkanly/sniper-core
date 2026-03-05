@@ -44,7 +44,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ui.add_space(20.0);
             if ui.add(egui::Button::new(RichText::new("Save Runtime Config").strong().color(Color32::BLACK)).fill(design::ACCENT_GREEN)).clicked() {
                 // Persistent saving logic could be added here (e.g., settings.json)
-                state.notify("Settings", "Configuration updated for current session.", false);
+                state.notify(crate::state::NotificationLevel::Ok, "Settings", "Configuration updated for current session.");
             }
         });
     });

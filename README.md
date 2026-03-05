@@ -1,8 +1,116 @@
-# 🎯 SNIPER STUDIO
-## Advanced Browser Forensics & Intelligent Automation Engine
+# SNIPER STUDIO
+## Browser Forensics + Unified Automation/Scripting Console
 
-Sniper Studio is a high-precision, Rust-powered tool designed for web forensics, asset extraction, and complex browser automation. It combines low-level CDP (Chrome DevTools Protocol) control with a modern, block-based automation interface.
+Sniper Studio is a Rust desktop app for browser inspection, capture, and automation.
+It combines:
+- CDP-based browser control
+- Block-based Automation DSL
+- Rhai Scripting (running on the same automation runtime)
 
-### 1. Requirements
-- **Chrome/Chromium:** Must be installed on the system.
-- **Isolated Profile:** Sniper uses a custom profile directory within your output folder to keep your main browser data clean.
+## What The Program Does
+- Launches and controls Chrome/Chromium via remote debugging.
+- Lists active tabs and lets you target one.
+- Captures page content (`html`, `complete`, `mirror`).
+- Collects network/media/cookie/console data per tab.
+- Runs automation pipelines from UI blocks.
+- Runs Rhai scripts that can call automation actions.
+
+## Architecture (Short Self-Review)
+- `ui/*`: egui panels and interaction flow.
+- `core/events`: event bus between UI and async tasks.
+- `core/browser`: CDP/browser operations.
+- `core/automation`: DSL + execution runtime.
+- `core/scripting`: Rhai parser/checker + action mapper to automation runtime.
+- `logger`: system log + chrome log file writing.
+
+Design choice:
+- Automation and Scripting are intentionally unified through the same runtime path.
+- This keeps step behavior (timeouts/retries/errors) consistent.
+
+## Requirements
+- Chrome/Chromium installed.
+- Rust toolchain (`cargo`) for build/run.
+- Linux/macOS/Windows compatible paths are handled in code; verify Chrome path in UI.
+
+## Build & Run
+```bash
+cargo check
+cargo run -- --port 9222
+```
+
+## First Run
+1. Choose output directory.
+2. Choose profile mode (isolated or system profile).
+3. Launch browser from `Ops` tab.
+
+## Main UI Flow
+### Ops
+- `Browser Control` (left, ~30%): launch/terminate + browser config.
+- `Chrome Tabs` (right, ~70%): active tab targets.
+- Command Center: capture/network/media/cookie/console/automation actions.
+
+### Scripting
+- Import/Export JSON script package.
+- `Check`: compile + basic lint without executing browser actions.
+- `Execute`: runs script through shared automation runtime.
+- `Stop`: cooperative cancel request.
+- Script output goes to `System Telemetry` (not local script output list).
+
+### Logs (System Telemetry)
+Central log stream for:
+- system/runtime events
+- scripting output
+- chrome console mirrored events
+
+## Script Package Format (`.json`)
+```json
+{
+  "version": 1,
+  "name": "example",
+  "description": "my script",
+  "created_at": 1741140000,
+  "updated_at": 1741143600,
+  "entry": "main",
+  "code": "fn main() { log(\"hello\"); }",
+  "tags": ["sample"]
+}
+```
+
+## Rhai Helpers (Current)
+Tab and action helpers include:
+- `Tab()`, `Tab("url")`, `TabNew()`, `TabCatch()`
+- `tab.navigate(url)`
+- `tab.find_el(selector).click()` / `.type(value)`
+- `tab.capture.html()/mirror()/complete()`
+- `tab.console.inject(js)`
+- `tab.network.start()/stop()`
+- `tab.cookies.set/delete(...)`
+- `tab.run_automation_json(dsl_json)`
+
+File helpers (write scope restricted to output directory tree):
+- `fs_write_text(rel_path, content)`
+- `fs_append_text(rel_path, content)`
+- `fs_mkdir_all(rel_dir)`
+
+## Log Files
+Inside selected output directory:
+- `session_<timestamp>.log` -> program/system logs
+- `chrome_session_<timestamp>.log` -> browser console logs
+
+## Notifications
+- Multiple toasts are queued and shown in stack.
+- Level prefixed and color-coded:
+- `[OK]`
+- `[ERROR]`
+- `[WARN]`
+- each toast can be closed independently.
+
+## Known Limitations
+- `Tab.catch()` alias currently exposed as `TabCatch()` in scripts.
+- Script stop is cooperative; long single external operations may finish current step before full stop.
+- Some legacy UI modules still contain unused state fields; cleanup can be done incrementally.
+
+## Development Notes
+- Run `cargo check` before commit.
+- Keep comments brief (`KOD NOTU`) only where behavior is non-obvious.
+- Prefer extending shared runtime over creating parallel execution paths.

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -59,6 +59,14 @@ pub struct LogEntry {
     pub timestamp: String,
     pub level: String,
     pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationLevel {
+    Ok,
+    Error,
+    Info,
+    Warn,
 }
 
 /// AutomationStatus: Tracks the execution state of the automation engine for a specific tab.
@@ -262,9 +270,12 @@ impl TabWorkspace {
     }
 }
 
-pub struct Notification {
+pub struct NotificationItem {
+    pub id: u64,
+    pub level: NotificationLevel,
     pub title: String,
     pub message: String,
+    pub created_at: f64,
 }
 
 /// AppState: The root state object for the entire application.
@@ -278,7 +289,8 @@ pub struct AppState {
     pub workspaces: HashMap<String, TabWorkspace>,
     pub logs: Vec<LogEntry>,
     pub session_timestamp: String,
-    pub notification: Option<Notification>,
+    pub notifications: VecDeque<NotificationItem>,
+    pub next_notification_id: u64,
     pub last_tab_refresh: f64,
     pub last_health_check: f64,
     pub is_translating: bool,
@@ -288,6 +300,7 @@ pub struct AppState {
     pub script_error: Option<String>,
     pub is_script_running: bool,
     pub scripting_tab_binding: Option<String>,
+    pub scripting_cancel_token: Option<Arc<AtomicBool>>,
     // Setup wizard flags
     pub output_confirmed: bool,
     pub profile_confirmed: bool,
@@ -305,7 +318,8 @@ impl AppState {
             workspaces: HashMap::new(),
             logs: Vec::new(),
             session_timestamp: session_ts,
-            notification: None,
+            notifications: VecDeque::new(),
+            next_notification_id: 1,
             last_tab_refresh: 0.0,
             last_health_check: 0.0,
             is_translating: false,
@@ -314,6 +328,7 @@ impl AppState {
             script_error: None,
             is_script_running: false,
             scripting_tab_binding: None,
+            scripting_cancel_token: None,
             output_confirmed: false,
             profile_confirmed: false,
             use_custom_profile: true,
@@ -321,10 +336,29 @@ impl AppState {
     }
 
     /// Triggers a toast-style notification in the UI.
-    pub fn notify(&mut self, title: &str, message: &str, _is_error: bool) {
-        self.notification = Some(Notification {
-            title: title.to_string(),
+    pub fn notify(&mut self, level: NotificationLevel, title: &str, message: &str) {
+        let prefix = match level {
+            NotificationLevel::Ok => "[OK]",
+            NotificationLevel::Error => "[ERROR]",
+            NotificationLevel::Info => "[INFO]",
+            NotificationLevel::Warn => "[WARN]",
+        };
+        self.notifications.push_back(NotificationItem {
+            id: self.next_notification_id,
+            level,
+            title: format!("{} {}", prefix, title),
             message: message.to_string(),
+            created_at: chrono::Local::now().timestamp_millis() as f64 / 1000.0,
         });
+        self.next_notification_id += 1;
+
+        // KOD NOTU: Ekranın sağ altını taşırmamak için kuyruk üst limiti tutulur.
+        while self.notifications.len() > 8 {
+            self.notifications.pop_front();
+        }
+    }
+
+    pub fn dismiss_notification(&mut self, id: u64) {
+        self.notifications.retain(|n| n.id != id);
     }
 }

@@ -1,6 +1,6 @@
 use crate::state::{ChromeTabInfo, AutomationStep, ChromeCookie, NetworkRequest, MediaAsset};
 use std::process::Child;
-use crate::core::scripting::types::ScriptPackage;
+use crate::core::scripting::types::{ScriptPackage, ScriptingCheckReport};
 
 /// Central event bus for the application.
 #[derive(Debug)]
@@ -17,6 +17,7 @@ pub enum AppEvent {
     RequestNetworkToggle(String, bool),
     RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),
     RequestScriptingRun(ScriptPackage, Option<String>),
+    RequestScriptingCheck(ScriptPackage, Option<String>),
     RequestScriptingStop,
     RequestScriptingImport(std::path::PathBuf),
     RequestScriptingExport(std::path::PathBuf, ScriptPackage),
@@ -47,6 +48,7 @@ pub enum AppEvent {
     NetworkResponseReceived(String, String, u16, Option<String>),
     ScriptFinished(String, String),
     ScriptingOutput(String),
+    ScriptingCheckResult(ScriptingCheckReport),
     ScriptingFinished,
     ScriptingError(String),
     

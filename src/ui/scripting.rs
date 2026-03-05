@@ -18,7 +18,6 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         if ui.button("New").clicked() {
             // KOD NOTU: New ile temiz package baslatilir, eski output listesi de sifirlanir.
             state.script_package = ScriptPackage::default();
-            state.script_output.clear();
             state.script_error = None;
         }
 
@@ -49,12 +48,24 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .clicked()
         {
             state.script_error = None;
-            state.script_output.clear();
             let selected = state
                 .scripting_tab_binding
                 .clone()
                 .or_else(|| state.selected_tab_id.clone());
             emit(AppEvent::RequestScriptingRun(
+                state.script_package.clone(),
+                selected,
+            ));
+        }
+        if ui
+            .add_enabled(!state.is_script_running, egui::Button::new("Check"))
+            .clicked()
+        {
+            let selected = state
+                .scripting_tab_binding
+                .clone()
+                .or_else(|| state.selected_tab_id.clone());
+            emit(AppEvent::RequestScriptingCheck(
                 state.script_package.clone(),
                 selected,
             ));
@@ -85,12 +96,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         }
     });
     ui.horizontal(|ui| {
-        ui.label("Bound Tab:");
+        ui.label("Execution Target:");
         let selected_text = state
             .scripting_tab_binding
             .as_ref()
             .and_then(|id| state.available_tabs.iter().find(|t| &t.id == id).map(|t| t.title.clone()))
             .unwrap_or_else(|| "Use current selection".to_string());
+        ui.small("(TabCatch() bu secimi kullanir)");
         egui::ComboBox::from_id_salt("script_bound_tab")
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
@@ -124,16 +136,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     );
 
     ui.separator();
-    ui.label(RichText::new("Output").strong());
+    ui.label(RichText::new("Runtime").strong());
     if let Some(err) = &state.script_error {
         ui.colored_label(Color32::LIGHT_RED, format!("ERROR: {}", err));
+    } else {
+        ui.colored_label(Color32::LIGHT_GREEN, "Script outputlari System Telemetry panelinde listelenir.");
     }
-    egui::ScrollArea::vertical()
-        .max_height(160.0)
-        .stick_to_bottom(true)
-        .show(ui, |ui| {
-            for line in &state.script_output {
-                ui.label(RichText::new(line).monospace().size(11.0));
-            }
-        });
 }

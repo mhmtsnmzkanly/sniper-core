@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 /// KOD NOTU: Script import/export için tek bir JSON paket sözleşmesi tutulur.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,4 +37,11 @@ pub struct ScriptExecutionRequest {
     pub selected_tab_id: Option<String>,
     pub port: u16,
     pub output_dir: std::path::PathBuf,
+    pub cancel_token: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScriptingCheckReport {
+    pub ok: bool,
+    pub diagnostics: Vec<String>,
 }

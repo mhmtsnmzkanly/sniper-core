@@ -1,5 +1,5 @@
 use crate::core::events::AppEvent;
-use crate::state::{AppState, AutomationStatus, Tab, AutomationStep, LogEntry};
+use crate::state::{AppState, AutomationStatus, Tab, AutomationStep, LogEntry, NotificationLevel};
 use crate::ui;
 use eframe::egui;
 use egui::{Color32, RichText};
@@ -106,7 +106,7 @@ impl eframe::App for CrawlerApp {
                     AppEvent::RequestScriptingRun(..) |
                     AppEvent::RequestTabRefresh => {
                         let msg = "Action Denied: Browser instance is not active.";
-                        self.state.notify("Denied", msg, true);
+                        self.state.notify(NotificationLevel::Warn, "Denied", msg);
                         tracing::warn!("[APP] {}", msg);
                         continue;
                     }
@@ -123,7 +123,7 @@ impl eframe::App for CrawlerApp {
                     // KOD NOTU: Launch edilen process handle'ını saklıyoruz; terminate komutu bunu kullanacak.
                     *self.browser_process.lock().unwrap() = Some(child);
                     self.state.is_browser_running = true;
-                    self.state.notify("System", "Browser connected.", false);
+                    self.state.notify(NotificationLevel::Ok, "System", "Browser connected.");
                     tracing::info!("[BROWSER -> APP] Remote instance handshake successful.");
                 }
                 AppEvent::BrowserTerminated => {
@@ -138,7 +138,7 @@ impl eframe::App for CrawlerApp {
                             token.store(false, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
-                    self.state.notify("System", "Browser disconnected.", true);
+                    self.state.notify(NotificationLevel::Error, "System", "Browser disconnected.");
                     tracing::warn!("[BROWSER -> APP] Remote instance heartbeat lost.");
                 }
                 AppEvent::TerminateBrowser => {
@@ -163,6 +163,13 @@ impl eframe::App for CrawlerApp {
                 AppEvent::ConsoleLogAdded(tid, msg) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.console_logs.push(msg.clone());
+                    self.state.logs.push(LogEntry {
+                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                        level: "CHROME".to_string(),
+                        message: format!("[{}] {}", tid, msg),
+                    });
+                    crate::logger::write_chrome_log_line(&format!("[{}] {}", tid, msg));
+                    if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
                     // AUDIT MIRROR: Copy browser console output to Sniper logs.
                     tracing::info!("[BROWSER-CONSOLE][{}] {}", tid, msg);
                 }
@@ -214,27 +221,49 @@ impl eframe::App for CrawlerApp {
                     }
                 }
                 AppEvent::OperationSuccess(msg) => {
-                    self.state.notify("Success", &msg, false);
+                    self.state.notify(NotificationLevel::Ok, "Success", &msg);
                     tracing::info!("[CORE -> APP] Success: {}", msg);
                 }
                 AppEvent::OperationError(msg) => {
-                    self.state.notify("Error", &msg, true);
+                    self.state.notify(NotificationLevel::Error, "Error", &msg);
                     tracing::error!("[CORE -> APP] Failure: {}", msg);
                 }
                 AppEvent::ScriptingOutput(msg) => {
-                    self.state.script_output.push(msg);
-                    if self.state.script_output.len() > 2000 {
-                        self.state.script_output.remove(0);
+                    self.state.logs.push(LogEntry {
+                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                        level: "SCRIPT".to_string(),
+                        message: msg,
+                    });
+                    if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
+                }
+                AppEvent::ScriptingCheckResult(report) => {
+                    for line in report.diagnostics {
+                        self.state.logs.push(LogEntry {
+                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                            level: if report.ok { "CHECK".to_string() } else { "CHECK-ERR".to_string() },
+                            message: line,
+                        });
                     }
+                    self.state.notify(
+                        if report.ok { NotificationLevel::Ok } else { NotificationLevel::Error },
+                        "Scripting Check",
+                        if report.ok { "Check completed successfully." } else { "Check failed. See System Telemetry." },
+                    );
                 }
                 AppEvent::ScriptingFinished => {
                     self.state.is_script_running = false;
-                    self.state.notify("Scripting", "Script execution completed.", false);
+                    if let Some(token) = self.state.scripting_cancel_token.take() {
+                        token.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    self.state.notify(NotificationLevel::Ok, "Scripting", "Script execution completed.");
                 }
                 AppEvent::ScriptingError(msg) => {
                     self.state.is_script_running = false;
+                    if let Some(token) = self.state.scripting_cancel_token.take() {
+                        token.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
                     self.state.script_error = Some(msg.clone());
-                    self.state.notify("Scripting", &msg, true);
+                    self.state.notify(NotificationLevel::Error, "Scripting", &msg);
                 }
                 
                 // --- COMMAND ROUTING WITH AUDIT LOGS ---
@@ -409,15 +438,18 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::RequestScriptingRun(package, selected_tab_id) => {
                     if self.state.is_script_running {
-                        self.state.notify("Scripting", "Another script is already running.", true);
+                        self.state.notify(NotificationLevel::Warn, "Scripting", "Another script is already running.");
                         continue;
                     }
                     self.state.is_script_running = true;
+                    let token = Arc::new(std::sync::atomic::AtomicBool::new(true));
+                    self.state.scripting_cancel_token = Some(token.clone());
                     let req = crate::core::scripting::types::ScriptExecutionRequest {
                         package,
                         selected_tab_id,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
+                        cancel_token: token,
                     };
                     tokio::spawn(async move {
                         let result = crate::core::scripting::engine::run_script(req).await;
@@ -427,10 +459,16 @@ impl eframe::App for CrawlerApp {
                         }
                     });
                 }
+                AppEvent::RequestScriptingCheck(package, selected_tab_id) => {
+                    let _selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());
+                    let report = crate::core::scripting::engine::check_script(&package);
+                    crate::ui::scrape::emit(AppEvent::ScriptingCheckResult(report));
+                }
                 AppEvent::RequestScriptingStop => {
-                    // KOD NOTU: İlk sürümde script durdurma cooperative değildir; flag'i resetleyip bilgi mesajı gösterir.
-                    self.state.is_script_running = false;
-                    self.state.notify("Scripting", "Stop requested (current script may finish current step).", false);
+                    if let Some(token) = &self.state.scripting_cancel_token {
+                        token.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    self.state.notify(NotificationLevel::Warn, "Scripting", "Stop requested.");
                 }
                 AppEvent::RequestScriptingImport(path) => {
                     match std::fs::read_to_string(path) {
@@ -438,7 +476,7 @@ impl eframe::App for CrawlerApp {
                             Ok(pkg) => {
                                 self.state.script_package = pkg;
                                 self.state.script_error = None;
-                                self.state.notify("Scripting", "Script imported.", false);
+                                self.state.notify(NotificationLevel::Ok, "Scripting", "Script imported.");
                             }
                             Err(e) => self.state.script_error = Some(format!("Import parse error: {}", e)),
                         },
@@ -449,7 +487,7 @@ impl eframe::App for CrawlerApp {
                     pkg.updated_at = chrono::Local::now().timestamp();
                     match serde_json::to_string_pretty(&pkg) {
                         Ok(json) => match std::fs::write(path, json) {
-                            Ok(_) => self.state.notify("Scripting", "Script exported.", false),
+                            Ok(_) => self.state.notify(NotificationLevel::Ok, "Scripting", "Script exported."),
                             Err(e) => self.state.script_error = Some(format!("Export write error: {}", e)),
                         },
                         Err(e) => self.state.script_error = Some(format!("Export serialize error: {}", e)),
@@ -603,11 +641,32 @@ impl eframe::App for CrawlerApp {
         }
 
         // Notification Overlay
-        if let Some(notif) = &self.state.notification {
+        let notifications = self
+            .state
+            .notifications
+            .iter()
+            .map(|n| (n.id, n.level, n.title.clone(), n.message.clone()))
+            .collect::<Vec<_>>();
+        for (idx, (id, level, title, message)) in notifications.into_iter().enumerate() {
             let mut open = true;
-            egui::Window::new(&notif.title).open(&mut open).anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0])
-                .collapsible(false).resizable(false).show(ctx, |ui| { ui.label(&notif.message); });
-            if !open { self.state.notification = None; }
+            let bg = match level {
+                NotificationLevel::Ok => Color32::from_rgb(23, 56, 34),
+                NotificationLevel::Error => Color32::from_rgb(62, 29, 29),
+                NotificationLevel::Warn => Color32::from_rgb(61, 48, 24),
+                NotificationLevel::Info => Color32::from_rgb(27, 44, 61),
+            };
+            egui::Window::new(title)
+                .open(&mut open)
+                .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0 - (idx as f32 * 100.0)])
+                .collapsible(false)
+                .resizable(false)
+                .frame(egui::Frame::window(&ctx.style()).fill(bg))
+                .show(ctx, |ui| {
+                    ui.label(message);
+                });
+            if !open {
+                self.state.dismiss_notification(id);
+            }
         }
         ctx.request_repaint();
     }

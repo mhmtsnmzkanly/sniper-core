@@ -8,6 +8,11 @@ pub const ACCENT_ORANGE: Color32 = Color32::from_rgb(255, 171, 74);
 pub const ACCENT_GREEN: Color32 = Color32::from_rgb(83, 221, 156);
 pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(233, 241, 247);
 pub const TEXT_MUTED: Color32 = Color32::from_rgb(154, 173, 188);
+pub const FONT_TITLE: f32 = 18.0;
+pub const FONT_BODY: f32 = 13.0;
+pub const FONT_SMALL: f32 = 11.0;
+pub const INPUT_HEIGHT: f32 = 30.0;
+pub const BUTTON_HEIGHT: f32 = 36.0;
 
 pub fn apply_theme(ctx: &Context) {
     let mut style = (*ctx.style()).clone();
@@ -23,6 +28,19 @@ pub fn apply_theme(ctx: &Context) {
     style.visuals.override_text_color = Some(TEXT_PRIMARY);
     style.spacing.item_spacing = egui::vec2(10.0, 8.0);
     style.spacing.button_padding = egui::vec2(10.0, 7.0);
+    style.spacing.interact_size = egui::vec2(64.0, INPUT_HEIGHT);
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::proportional(FONT_BODY),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Monospace,
+        egui::FontId::monospace(FONT_BODY),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Small,
+        egui::FontId::proportional(FONT_SMALL),
+    );
     style.visuals.window_corner_radius = CornerRadius::same(10);
     ctx.set_style(style);
 }
@@ -36,6 +54,5 @@ pub fn section_frame() -> Frame {
 }
 
 pub fn title(ui: &mut Ui, text: &str, accent: Color32) {
-    ui.label(RichText::new(text).strong().size(18.0).color(accent));
+    ui.label(RichText::new(text).strong().size(FONT_TITLE).color(accent));
 }
-

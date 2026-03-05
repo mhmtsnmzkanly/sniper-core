@@ -4,9 +4,11 @@ use crate::core::automation::engine::ExecutionConfig;
 use crate::core::automation::runtime::run_dsl_on_tab;
 use crate::core::error::{AppError, AppResult};
 use crate::core::events::AppEvent;
-use crate::core::scripting::types::{ScriptExecutionRequest, ScriptPackage};
+use crate::core::scripting::types::{ScriptExecutionRequest, ScriptPackage, ScriptingCheckReport};
 use rhai::{Engine, EvalAltResult, Scope};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -55,6 +57,9 @@ enum ScriptAction {
     CookieSet { token: i64, name: String, value: String, overwrite: bool },
     CookieDelete { token: i64, name: String, domain: String },
     RunDsl { token: i64, json: String },
+    FsWriteText { rel_path: String, content: String },
+    FsAppendText { rel_path: String, content: String },
+    FsMkdirAll { rel_dir: String },
     Log(String),
 }
 
@@ -73,6 +78,57 @@ fn new_token(state: &Arc<Mutex<ScriptBuildState>>) -> i64 {
 fn push_action(state: &Arc<Mutex<ScriptBuildState>>, action: ScriptAction) {
     let mut lock = state.lock().unwrap();
     lock.actions.push(action);
+}
+
+fn file_in_scope(root: &Path, rel: &str) -> AppResult<PathBuf> {
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return Err(AppError::Internal("Absolute paths are not allowed for script fs helpers".to_string()));
+    }
+    let joined = root.join(rel_path);
+    let root_canon = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let parent = joined.parent().unwrap_or(root);
+    let parent_canon = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+    if !parent_canon.starts_with(&root_canon) {
+        return Err(AppError::Internal(format!("Path escapes output_dir scope: {}", rel)));
+    }
+    Ok(joined)
+}
+
+pub fn check_script(package: &ScriptPackage) -> ScriptingCheckReport {
+    let mut diagnostics = Vec::new();
+    let mut ok = true;
+
+    let engine = Engine::new();
+    match engine.compile(&package.code) {
+        Ok(_) => diagnostics.push("[OK] Rhai compile success".to_string()),
+        Err(e) => {
+            diagnostics.push(format!("[ERROR] Rhai compile error: {}", e));
+            ok = false;
+        }
+    }
+
+    if package.entry.trim().is_empty() {
+        diagnostics.push("[ERROR] Entry function name is empty".to_string());
+        ok = false;
+    } else {
+        let pattern = format!("fn {}", package.entry.trim());
+        if !package.code.contains(&pattern) {
+            diagnostics.push(format!("[ERROR] Entry function '{}' not found in script text", package.entry));
+            ok = false;
+        } else {
+            diagnostics.push(format!("[OK] Entry function '{}' exists", package.entry));
+        }
+    }
+
+    if package.code.contains("r#\"") {
+        diagnostics.push("[WARN] Rust raw-string syntax (r#\"...\"#) detected; Rhai expects backtick strings (`...`)".to_string());
+    }
+    if package.code.contains("TabCatch(") {
+        diagnostics.push("[WARN] Deprecated API: use Tab.catch() style alias via TabCatch() migration path".to_string());
+    }
+
+    ScriptingCheckReport { ok, diagnostics }
 }
 
 /// KOD NOTU: Rhai script'i sync fazda sadece action listesine çevrilir; async browser işlemleri ikinci fazda çalıştırılır.
@@ -106,6 +162,14 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
     }
     {
         let build = build.clone();
+        engine.register_fn("TabNew", move || -> TabRef {
+            let token = new_token(&build);
+            push_action(&build, ScriptAction::NewTab { token, url: None });
+            TabRef { token }
+        });
+    }
+    {
+        let build = build.clone();
         engine.register_fn("TabCatch", move || -> TabRef {
             let token = new_token(&build);
             push_action(&build, ScriptAction::CatchTab { token });
@@ -119,6 +183,27 @@ fn collect_actions(package: &ScriptPackage) -> AppResult<Vec<ScriptAction>> {
         });
     }
     engine.register_fn("exit", |msg: &str| -> Result<(), Box<EvalAltResult>> { Err(msg.to_string().into()) });
+
+    // FS helpers
+    {
+        let build = build.clone();
+        engine.register_fn("fs_write_text", move |rel_path: &str, content: &str| {
+            push_action(&build, ScriptAction::FsWriteText { rel_path: rel_path.to_string(), content: content.to_string() });
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("fs_append_text", move |rel_path: &str, content: &str| {
+            push_action(&build, ScriptAction::FsAppendText { rel_path: rel_path.to_string(), content: content.to_string() });
+        });
+    }
+    {
+        let build = build.clone();
+        engine.register_fn("fs_mkdir_all", move |rel_dir: &str| {
+            push_action(&build, ScriptAction::FsMkdirAll { rel_dir: rel_dir.to_string() });
+        });
+    }
+    engine.register_fn("fs_exists", |_rel_path: &str| -> bool { false });
 
     {
         let build = build.clone();
@@ -276,13 +361,6 @@ async fn flush_token_steps(
         return Ok(());
     }
 
-    let dsl = AutomationDsl {
-        dsl_version: 1,
-        metadata: None,
-        functions: HashMap::new(),
-        steps,
-    };
-
     run_dsl_on_tab(
         req.port,
         tab_id,
@@ -292,7 +370,12 @@ async fn flush_token_steps(
             retry_attempts: 0,
             screenshot_on_error: true,
         },
-        dsl,
+        AutomationDsl {
+            dsl_version: 1,
+            metadata: None,
+            functions: HashMap::new(),
+            steps,
+        },
     )
     .await
 }
@@ -304,11 +387,19 @@ async fn resolve_cookie_domain(port: u16, tab_id: &str) -> Option<String> {
     parsed.host_str().map(|h| h.to_string())
 }
 
+fn ensure_not_cancelled(req: &ScriptExecutionRequest) -> AppResult<()> {
+    if !req.cancel_token.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Script cancelled by user".to_string()));
+    }
+    Ok(())
+}
+
 async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>) -> AppResult<()> {
     let mut token_to_tab: HashMap<i64, String> = HashMap::new();
     let mut step_batches: HashMap<i64, Vec<Step>> = HashMap::new();
 
     for action in actions {
+        ensure_not_cancelled(&req)?;
         match action {
             ScriptAction::NewTab { token, url } => {
                 let created = crate::core::browser::BrowserManager::create_tab(req.port, url.as_deref()).await?;
@@ -335,11 +426,7 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
             ScriptAction::Click { token, selector } => {
                 step_batches.entry(token).or_default().push(Step::Click { selector });
             }
-            ScriptAction::Type {
-                token,
-                selector,
-                value,
-            } => {
+            ScriptAction::Type { token, selector, value } => {
                 step_batches.entry(token).or_default().push(Step::Type {
                     selector,
                     value,
@@ -348,16 +435,10 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
             }
             ScriptAction::WaitMs { token, ms } => {
                 let secs = std::cmp::max(1, (ms + 999) / 1000);
-                step_batches
-                    .entry(token)
-                    .or_default()
-                    .push(Step::Wait { seconds: secs });
+                step_batches.entry(token).or_default().push(Step::Wait { seconds: secs });
             }
             ScriptAction::Screenshot { token, filename } => {
-                step_batches
-                    .entry(token)
-                    .or_default()
-                    .push(Step::Screenshot { filename });
+                step_batches.entry(token).or_default().push(Step::Screenshot { filename });
             }
             ScriptAction::Capture { token, mode } => {
                 flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
@@ -366,18 +447,9 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                     .cloned()
                     .ok_or_else(|| AppError::Internal(format!("Capture failed: token {} not bound", token)))?;
                 let path = match mode.as_str() {
-                    "html" => {
-                        crate::core::browser::BrowserManager::capture_html(req.port, tab_id, req.output_dir.clone())
-                            .await?
-                    }
-                    "mirror" => {
-                        crate::core::browser::BrowserManager::capture_mirror(req.port, tab_id, req.output_dir.clone())
-                            .await?
-                    }
-                    "complete" => {
-                        crate::core::browser::BrowserManager::capture_complete(req.port, tab_id, req.output_dir.clone())
-                            .await?
-                    }
+                    "html" => crate::core::browser::BrowserManager::capture_html(req.port, tab_id, req.output_dir.clone()).await?,
+                    "mirror" => crate::core::browser::BrowserManager::capture_mirror(req.port, tab_id, req.output_dir.clone()).await?,
+                    "complete" => crate::core::browser::BrowserManager::capture_complete(req.port, tab_id, req.output_dir.clone()).await?,
                     _ => return Err(AppError::Internal(format!("Unsupported capture mode: {}", mode))),
                 };
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!("Capture({mode}) -> {:?}", path)));
@@ -398,12 +470,7 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                     .ok_or_else(|| AppError::Internal(format!("Network toggle failed: token {} not bound", token)))?;
                 crate::ui::scrape::emit(AppEvent::RequestNetworkToggle(tab_id, active));
             }
-            ScriptAction::CookieSet {
-                token,
-                name,
-                value,
-                overwrite,
-            } => {
+            ScriptAction::CookieSet { token, name, value, overwrite } => {
                 flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
                 let tab_id = token_to_tab
                     .get(&token)
@@ -432,11 +499,7 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 };
                 crate::core::browser::BrowserManager::add_cookie(req.port, tab_id, cookie).await?;
             }
-            ScriptAction::CookieDelete {
-                token,
-                name,
-                domain,
-            } => {
+            ScriptAction::CookieDelete { token, name, domain } => {
                 flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
                 let tab_id = token_to_tab
                     .get(&token)
@@ -464,6 +527,33 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                     dsl,
                 )
                 .await?;
+            }
+            ScriptAction::FsWriteText { rel_path, content } => {
+                let out = file_in_scope(&req.output_dir, &rel_path)?;
+                if let Some(parent) = out.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::write(&out, content).map_err(|e| AppError::Internal(format!("fs_write_text failed: {}", e)))?;
+                crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!("fs_write_text -> {:?}", out)));
+            }
+            ScriptAction::FsAppendText { rel_path, content } => {
+                let out = file_in_scope(&req.output_dir, &rel_path)?;
+                if let Some(parent) = out.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let mut file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&out)
+                    .map_err(|e| AppError::Internal(format!("fs_append_text failed: {}", e)))?;
+                use std::io::Write;
+                writeln!(file, "{}", content).map_err(|e| AppError::Internal(format!("fs_append_text write failed: {}", e)))?;
+                crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!("fs_append_text -> {:?}", out)));
+            }
+            ScriptAction::FsMkdirAll { rel_dir } => {
+                let dir = file_in_scope(&req.output_dir, &rel_dir)?;
+                std::fs::create_dir_all(&dir).map_err(|e| AppError::Internal(format!("fs_mkdir_all failed: {}", e)))?;
+                crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!("fs_mkdir_all -> {:?}", dir)));
             }
             ScriptAction::Log(message) => {
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(message));
