@@ -2,6 +2,11 @@ use crate::state::AppState;
 use crate::ui::design;
 use egui::{Ui, Color32, RichText, Frame};
 
+fn is_hls_asset(asset: &crate::state::MediaAsset) -> bool {
+    let mt = asset.mime_type.to_ascii_lowercase();
+    mt.contains("mpegurl") || mt.contains("application/vnd.apple.mpegurl") || asset.url.to_ascii_lowercase().contains(".m3u8")
+}
+
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     let tid = match &state.selected_tab_id {
         Some(id) => id.clone(),
@@ -309,6 +314,20 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     }
                                 }
                             }
+                            if ui
+                                .add_enabled(
+                                    is_hls_asset(&asset),
+                                    egui::Button::new(RichText::new("VIDEO DL").color(Color32::LIGHT_GREEN)),
+                                )
+                                .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
+                                .clicked()
+                            {
+                                crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
+                                    tid.clone(),
+                                    asset.url.clone(),
+                                    asset.name.clone(),
+                                ));
+                            }
                         });
                         ui.add_space(6.0);
                     }
@@ -363,6 +382,20 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 let _ = std::fs::write(path, data);
                             }
                         }
+                    }
+                    if ui
+                        .add_enabled(
+                            is_hls_asset(&asset),
+                            egui::Button::new(RichText::new("VIDEO DL").color(Color32::LIGHT_GREEN)),
+                        )
+                        .on_hover_text("Download non-DRM HLS stream to output/video_downloads")
+                        .clicked()
+                    {
+                        crate::ui::scrape::emit(crate::core::events::AppEvent::RequestVideoDownload(
+                            tid.clone(),
+                            asset.url.clone(),
+                            asset.name.clone(),
+                        ));
                     }
                     ui.end_row();
                 }

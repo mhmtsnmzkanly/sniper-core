@@ -164,10 +164,13 @@ Potential errors:
 - Quick filters: `Images`, `.png`, `Videos`, `>1MB`, `Reset`.
 - Sort presets: `Name`, `Size`, `Type` with asc/desc.
 - Visual Gallery mode for card-based media browsing.
+- One-click HLS Video Downloader for non-DRM `.m3u8` sources (uses `ffmpeg`).
 
 Potential errors:
 - binary decode failures
 - very large payload memory pressure
+- `ffmpeg` not installed or inaccessible in PATH
+- HLS source blocked/expired or DRM-protected stream
 
 ## 6.3 Cookies
 - read/add/delete cookie APIs via browser manager.

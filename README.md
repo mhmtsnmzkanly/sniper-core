@@ -12,6 +12,7 @@ It combines:
 - Lists active tabs and lets you target one.
 - Captures page content (`html`, `complete`, `mirror`).
 - Collects network/media/cookie/console data per tab.
+- Downloads non-DRM HLS streams (`.m3u8`) from Media panel with one click.
 - Runs automation pipelines from UI blocks.
 - Runs Rhai scripts that can call automation actions.
 
@@ -30,6 +31,7 @@ Design choice:
 ## Requirements
 - Chrome/Chromium installed.
 - Rust toolchain (`cargo`) for build/run.
+- `ffmpeg` installed (required for HLS Video Downloader).
 - Linux/macOS/Windows compatible paths are handled in code; verify Chrome path in UI.
 
 ## Build & Run

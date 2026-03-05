@@ -108,6 +108,7 @@ impl eframe::App for CrawlerApp {
                     AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
                     AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
                     AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
+                    AppEvent::RequestVideoDownload(..) |
                     AppEvent::RequestScriptingRun(..) |
                     AppEvent::RequestTabRefresh => {
                         let msg = "Action Denied: Browser instance is not active.";
@@ -471,6 +472,28 @@ impl eframe::App for CrawlerApp {
                         match res {
                             Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured to: {:?}", path))),
                             Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture failed: {}", e))),
+                        }
+                    });
+                }
+                AppEvent::RequestVideoDownload(_tid, hls_url, suggested_name) => {
+                    tracing::info!("[UI -> CORE] Video downloader started for {}", hls_url);
+                    let output_dir = self.state.config.output_dir.clone();
+                    tokio::spawn(async move {
+                        match crate::core::video_downloader::download_hls_to_output(
+                            &output_dir,
+                            &hls_url,
+                            Some(&suggested_name),
+                        )
+                        .await
+                        {
+                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!(
+                                "Video downloaded: {:?}",
+                                path
+                            ))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Video download failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }

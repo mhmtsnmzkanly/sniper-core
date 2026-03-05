@@ -13,6 +13,7 @@ pub enum AppEvent {
     
     // --- COMMAND EVENTS ---
     RequestCapture(String, String), // tab_id, mode (html/complete/mirror)
+    RequestVideoDownload(String, String, String), // tab_id, hls_url, suggested_name
     RequestScriptExecution(String, String),
     RequestNetworkToggle(String, bool),
     RequestAutomationRun(String, Vec<AutomationStep>, std::collections::HashMap<String, Vec<AutomationStep>>, crate::state::AutomationConfig),
