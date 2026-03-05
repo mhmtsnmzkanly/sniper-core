@@ -1,5 +1,6 @@
 use crate::core::events::AppEvent;
 use crate::core::scripting::types::ScriptPackage;
+use crate::core::scripting::templates;
 use crate::state::AppState;
 use crate::ui::design;
 use crate::ui::scrape::emit;
@@ -13,6 +14,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .color(design::TEXT_MUTED),
     );
     ui.add_space(8.0);
+    let template_library = templates::library();
 
     ui.horizontal(|ui| {
         if ui.button("New").clicked() {
@@ -89,6 +91,37 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             .clicked()
         {
             emit(AppEvent::RequestScriptingStop);
+        }
+    });
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.label("Template:");
+        let selected_template = template_library
+            .iter()
+            .find(|t| t.id == state.scripting_template_id)
+            .map(|t| t.title.clone())
+            .unwrap_or_else(|| "Select template".to_string());
+        egui::ComboBox::from_id_salt("scripting_template_library")
+            .selected_text(selected_template)
+            .show_ui(ui, |ui| {
+                for template in &template_library {
+                    if ui
+                        .selectable_label(state.scripting_template_id == template.id, &template.title)
+                        .on_hover_text(&template.description)
+                        .clicked()
+                    {
+                        state.scripting_template_id = template.id.clone();
+                    }
+                }
+            });
+        if ui.button("Apply Template").clicked() {
+            if let Some(template) = template_library
+                .iter()
+                .find(|t| t.id == state.scripting_template_id)
+            {
+                state.script_package = template.package.clone();
+                state.script_error = None;
+            }
         }
     });
 

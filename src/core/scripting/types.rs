@@ -48,3 +48,11 @@ pub struct ScriptingCheckReport {
     pub ok: bool,
     pub diagnostics: Vec<String>,
 }
+
+#[derive(Debug, Clone)]
+pub struct ScriptTemplate {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub package: ScriptPackage,
+}

@@ -277,6 +277,13 @@ impl eframe::App for CrawlerApp {
                     if let Some(token) = self.state.scripting_cancel_token.take() {
                         token.store(false, std::sync::atomic::Ordering::Relaxed);
                     }
+                    for hint in crate::core::scripting::knowledge::hints_for_error(&msg) {
+                        self.state.logs.push(LogEntry {
+                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                            level: "KB".to_string(),
+                            message: format!("[Hint] {}", hint),
+                        });
+                    }
                     self.state.script_error = Some(msg.clone());
                     self.state.notify(NotificationLevel::Error, "Scripting", &msg);
                 }

@@ -38,6 +38,12 @@ Notes:
 }
 ```
 
+## 1.2.1 Template Library
+- Open `Scripting` tab.
+- Choose a template from `Template`.
+- Press `Apply Template`.
+- Adjust URL/selectors and run `Check`/`Dry-Run`.
+
 ## 1.3 First Script: Navigate + Capture
 ```rhai
 fn main() {
@@ -313,6 +319,9 @@ Script-related logs appear in:
 
 Chrome console logs additionally appear in:
 - `chrome_session_<timestamp>.log`
+
+Error Knowledge Base:
+- On runtime/check failures, known-pattern hints are emitted as `KB` lines in System Telemetry.
 
 ---
 

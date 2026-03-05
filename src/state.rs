@@ -312,6 +312,7 @@ pub struct AppState {
     pub script_output: Vec<String>,
     pub script_error: Option<String>,
     pub is_script_running: bool,
+    pub scripting_template_id: String,
     pub scripting_tab_binding: Option<String>,
     pub scripting_cancel_token: Option<Arc<AtomicBool>>,
     // Setup wizard flags
@@ -340,6 +341,7 @@ impl AppState {
             script_output: Vec::new(),
             script_error: None,
             is_script_running: false,
+            scripting_template_id: "quick_capture".to_string(),
             scripting_tab_binding: None,
             scripting_cancel_token: None,
             output_confirmed: false,

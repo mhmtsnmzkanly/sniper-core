@@ -52,11 +52,13 @@ cargo run -- --port 9222
 
 ### Scripting
 - Import/Export JSON script package.
+- Built-in Template Library (`Apply Template`) for quick script bootstrap.
 - `Check`: compile + basic lint without executing browser actions.
 - `Dry-Run`: build action plan without browser execution.
 - `Execute`: runs script through shared automation runtime.
 - `Stop`: cooperative cancel request.
 - Script output goes to `System Telemetry` (not local script output list).
+- Known scripting errors emit KB hints (`KB` lines) in System Telemetry.
 - Detailed scripting tutorial + API reference: see [`SCRIPTING.md`](./SCRIPTING.md).
 
 ## Extended Documentation

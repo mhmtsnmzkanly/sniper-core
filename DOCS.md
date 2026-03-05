@@ -229,10 +229,12 @@ Current helper families:
 - element query/actions (`find_el`, `filter_id`, `filter_class`, `filter_attr`, `first_or_none`, `all`, `click`, `type`)
 - capture/network/console/cookies services
 - file helpers (`fs_write_text`, `fs_append_text`, `fs_mkdir_all`, `fs_exists`)
+- template library presets (quick capture/search/automation bridge)
 
 Important behavior:
 - Script output is written to **System Telemetry**.
 - `Stop` is cooperative (cancel token).
+- Known error patterns emit KB hints into telemetry (`KB` log level).
 
 Known limitations:
 - query APIs return `ElementRef` handles, but execution is still selector-mapped (no DOM snapshot cache)
