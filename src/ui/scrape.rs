@@ -48,60 +48,50 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        cols[0].set_width(total * 0.30);
-        cols[1].set_width(total * 0.70);
+        // KOD NOTU: Browser Control paneli ultra daraltıldı (%15).
+        cols[0].set_width(total * 0.15);
+        cols[1].set_width(total * 0.85);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
             ui.label(
                 RichText::new("Browser Control")
                     .strong()
+                    .size(13.0)
                     .color(design::ACCENT_ORANGE),
             );
-            ui.add_space(4.0);
+            ui.add_space(2.0);
 
-            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(220.0).show(ui, |ui| {
+            // KOD NOTU: Ayarlar dikeyde de minimize edildi (100px) ve metinler kısaltıldı.
+            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(100.0).show(ui, |ui| {
+                ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
                 egui::Grid::new("browser_config_grid")
-                    .spacing([8.0, 8.0])
+                    .spacing([4.0, 4.0])
                     .show(ui, |ui| {
-                        ui.label("Chrome Path:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.config.chrome_binary_path)
-                                .desired_width(ui.available_width() * 0.95),
-                        );
+                        ui.label("Bin:");
+                        ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path));
                         ui.end_row();
 
-                        ui.label("Profile Path:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.config.chrome_profile_path)
-                                .desired_width(ui.available_width() * 0.95),
-                        );
+                        ui.label("Prof:");
+                        ui.add(egui::TextEdit::singleline(&mut state.config.chrome_profile_path));
                         ui.end_row();
 
-                        ui.label("Remote Port:");
+                        ui.label("Port:");
                         ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
                         ui.end_row();
 
                         ui.label("Proxy:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.config.proxy_server)
-                                .hint_text("http://host:port")
-                                .desired_width(ui.available_width() * 0.95),
-                        );
+                        ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).hint_text("host:port"));
                         ui.end_row();
 
-                        ui.label("User-Agent:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.config.user_agent)
-                                .hint_text("Default")
-                                .desired_width(ui.available_width() * 0.95),
-                        );
+                        ui.label("UA:");
+                        ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).hint_text("Default"));
                         ui.end_row();
 
-                        ui.label("Randomization:");
+                        ui.label("Rand:");
                         ui.vertical(|ui| {
                             ui.checkbox(&mut state.config.randomize_user_agent, "UA");
-                            ui.checkbox(&mut state.config.randomize_fingerprint, "Finger");
+                            ui.checkbox(&mut state.config.randomize_fingerprint, "FP");
                         });
                         ui.end_row();
                     });
