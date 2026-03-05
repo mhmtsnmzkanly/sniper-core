@@ -24,70 +24,42 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
             egui::Grid::new("settings_grid")
                 .num_columns(3)
-                .spacing([8.0, 6.0])
+                .spacing([10.0, 8.0])
                 .show(ui, |ui| {
-                    let input_w = (ui.available_width() * 0.6).clamp(200.0, 500.0);
+                    let avail = ui.available_width();
+                    let input_w = (avail * 0.55).clamp(120.0, 500.0);
 
                     // Output dir
                     ui.label(RichText::new("Output Dir:").color(design::TEXT_MUTED));
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(
-                                state.config.output_dir.to_string_lossy().as_ref(),
-                            )
-                            .small()
-                            .color(design::TEXT_MUTED),
-                        )
-                        .truncate(),
-                    );
-                    if ui.button("Browse…").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            state.config.output_dir = path;
-                        }
-                    }
+                    ui.add(egui::Label::new(RichText::new(state.config.output_dir.to_string_lossy().as_ref()).small().color(design::TEXT_MUTED)).truncate());
+                    if ui.button("Browse…").clicked() { if let Some(path) = rfd::FileDialog::new().pick_folder() { state.config.output_dir = path; } }
                     ui.end_row();
 
                     // Chrome Binary
                     ui.label(RichText::new("Chrome Binary:").color(design::TEXT_MUTED));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.chrome_binary_path)
-                            .desired_width(input_w),
-                    );
-                    ui.label(""); // placeholder
-                    ui.end_row();
+                    ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(input_w));
+                    ui.label(""); ui.end_row();
 
                     // Chrome Profile
                     ui.label(RichText::new("Chrome Profile:").color(design::TEXT_MUTED));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.chrome_profile_path)
-                            .desired_width(input_w),
-                    );
-                    ui.label("");
-                    ui.end_row();
+                    ui.add(egui::TextEdit::singleline(&mut state.config.chrome_profile_path).desired_width(input_w));
+                    ui.label(""); ui.end_row();
                 });
 
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(6.0);
 
-            ui.label(
-                RichText::new("AI Configuration")
-                    .strong()
-                    .color(design::ACCENT_ORANGE),
-            );
+            ui.label(RichText::new("AI Configuration").strong().color(design::ACCENT_ORANGE));
             ui.add_space(6.0);
 
             egui::Grid::new("ai_settings_grid")
                 .num_columns(2)
-                .spacing([8.0, 6.0])
+                .spacing([10.0, 8.0])
                 .show(ui, |ui| {
-                    let input_w = (ui.available_width() * 0.65).clamp(200.0, 450.0);
+                    let input_w = (ui.available_width() * 0.6).clamp(150.0, 450.0);
                     ui.label(RichText::new("Gemini API Key:").color(design::TEXT_MUTED));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.gemini_api_key)
-                            .password(true)
-                            .desired_width(input_w),
-                    );
+                    ui.add(egui::TextEdit::singleline(&mut state.config.gemini_api_key).password(true).desired_width(input_w));
                     ui.end_row();
                 });
 

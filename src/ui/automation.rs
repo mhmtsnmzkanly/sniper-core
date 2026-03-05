@@ -22,16 +22,21 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
     // KOD NOTU: columns() yerine hesaplanmış genişlikli horizontal layout kullanılır.
     // Bu sayede dar pencerede layout çökmez.
     let avail = ui.available_width();
-    let left_w = (avail * 0.52).clamp(280.0, 520.0);
-    let right_w = avail - left_w - ui.spacing().item_spacing.x;
+    let is_wide = avail > 700.0;
+    let (left_w, right_w) = if is_wide {
+        let lw = (avail * 0.55).clamp(300.0, 600.0);
+        (lw, avail - lw - ui.spacing().item_spacing.x - 2.0)
+    } else {
+        (avail, avail)
+    };
 
-    ui.horizontal(|ui| {
+    let render_left = |ui: &mut Ui, w: f32, auto_steps: &mut Vec<AutomationStep>, auto_functions: &mut HashMap<String, Vec<AutomationStep>>, active_fn_editor: &mut Option<String>, discovered_selectors: &Vec<String>, selector_search: &mut String, variables: &HashMap<String, String>| {
         ui.vertical(|ui| {
-        ui.set_width(left_w);
+            ui.set_width(w);
             ui.horizontal(|ui| {
                 if let Some(fn_name) = &active_fn_editor {
-                    ui.label(RichText::new(format!("Editing Function: {}", fn_name)).strong().color(design::ACCENT_ORANGE));
-                    if ui.button("⬅ BACK TO MAIN").clicked() { active_fn_editor = None; }
+                    ui.label(RichText::new(format!("Editing: {}", fn_name)).strong().color(design::ACCENT_ORANGE));
+                    if ui.button("⬅ BACK").clicked() { *active_fn_editor = None; }
                 } else {
                     ui.label(RichText::new("Main Pipeline").strong().color(design::ACCENT_ORANGE));
                 }
@@ -39,33 +44,10 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("SCAN").clicked() { emit(AppEvent::RequestPageSelectors(tid.to_string())); }
                     ui.menu_button("➕ ADD", |ui| {
-                        let target_steps = if let Some(name) = &active_fn_editor {
-                            auto_functions.get_mut(name).unwrap()
-                        } else {
-                            &mut auto_steps
-                        };
-
+                        let target_steps = if let Some(name) = &active_fn_editor { auto_functions.get_mut(name).unwrap() } else { &mut *auto_steps };
                         if ui.button("🌐 Nav").clicked() { target_steps.push(AutomationStep::Navigate("https://".into())); ui.close_menu(); }
                         if ui.button("🖱 Click").clicked() { target_steps.push(AutomationStep::Click("".into())); ui.close_menu(); }
                         if ui.button("⌨ Type").clicked() { target_steps.push(AutomationStep::Type { selector: "".into(), value: "".into(), is_variable: false }); ui.close_menu(); }
-                        ui.separator();
-                        if ui.button("⏳ Wait").clicked() { target_steps.push(AutomationStep::Wait(1)); ui.close_menu(); }
-                        if ui.button("🔍 Wait Sel").clicked() { target_steps.push(AutomationStep::WaitSelector { selector: "".into(), timeout_ms: 5000 }); ui.close_menu(); }
-                        ui.separator();
-                        if ui.button("🧪 Ext").clicked() { target_steps.push(AutomationStep::Extract { selector: "".into(), as_key: "data".into(), add_to_dataset: true }); ui.close_menu(); }
-                        if ui.button("🔁 Loop").clicked() { target_steps.push(AutomationStep::ForEach { selector: "".into(), body: vec![] }); ui.close_menu(); }
-                        if ui.button("❓ If").clicked() { target_steps.push(AutomationStep::If { selector: "".into(), then_steps: vec![] }); ui.close_menu(); }
-                        if ui.button("⚖ If Cond").clicked() { 
-                            target_steps.push(AutomationStep::IfCondition { 
-                                condition: crate::core::automation::dsl::Condition::ElementExists { selector: "".into() }, 
-                                then_steps: vec![] 
-                            }); 
-                            ui.close_menu(); 
-                        }
-                        ui.separator();
-                        if ui.button("📞 CALL").clicked() { target_steps.push(AutomationStep::CallFunction("".into())); ui.close_menu(); }
-                        if ui.button("📊 DATASET").clicked() { target_steps.push(AutomationStep::ImportDataset("data.csv".into())); ui.close_menu(); }
-                        if ui.button("📜 Scroll").clicked() { target_steps.push(AutomationStep::ScrollBottom); ui.close_menu(); }
                     });
                 });
             });
@@ -73,21 +55,14 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
             
             let mut delete_idx = None;
             let funcs_for_render = auto_functions.clone();
-            
-            {
-                let target_steps = if let Some(name) = &active_fn_editor {
-                    auto_functions.get_mut(name).unwrap()
-                } else {
-                    &mut auto_steps
-                };
+            let target_steps = if let Some(name) = &active_fn_editor { auto_functions.get_mut(name).unwrap() } else { &mut *auto_steps };
 
-                egui::ScrollArea::vertical().id_salt("auto_steps_scroll").auto_shrink([false, false]).max_height(ui.available_height() * 0.5).show(ui, |ui| {
-                    for (idx, step) in target_steps.iter_mut().enumerate() {
-                        render_step_block(ui, step, idx, &mut delete_idx, &discovered_selectors, &mut selector_search, &variables, &funcs_for_render);
-                    }
-                });
-                if let Some(idx) = delete_idx { target_steps.remove(idx); }
-            }
+            egui::ScrollArea::vertical().id_salt("auto_steps_scroll").auto_shrink([false, true]).max_height(280.0).show(ui, |ui| {
+                for (idx, step) in target_steps.iter_mut().enumerate() {
+                    render_step_block(ui, step, idx, &mut delete_idx, discovered_selectors, selector_search, variables, &funcs_for_render);
+                }
+            });
+            if let Some(idx) = delete_idx { target_steps.remove(idx); }
 
             if active_fn_editor.is_none() {
                 ui.separator();
@@ -100,15 +75,15 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 });
 
                 let mut fn_to_remove = None;
-                egui::ScrollArea::vertical().id_salt("auto_funcs_scroll").max_height(150.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("auto_funcs_scroll").max_height(120.0).auto_shrink([false, true]).show(ui, |ui| {
                     for (name, steps) in auto_functions.iter_mut() {
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(name).strong());
-                                ui.label(format!("({} steps)", steps.len()));
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if ui.button("x").clicked() { fn_to_remove = Some(name.clone()); }
-                                    if ui.button("✏ EDIT").clicked() { active_fn_editor = Some(name.clone()); }
+                                    if ui.button("✏").clicked() { *active_fn_editor = Some(name.clone()); }
+                                    ui.label(format!("{} steps", steps.len()));
                                 });
                             });
                         });
@@ -117,14 +92,16 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 if let Some(n) = fn_to_remove { auto_functions.remove(&n); }
             }
         });
+    };
 
+    let render_right = |ui: &mut Ui, w: f32, variables: &mut HashMap<String, String>, var_key: &mut String, var_val: &mut String, extracted_data: &Vec<HashMap<String, String>>| {
         ui.vertical(|ui| {
-            ui.set_width(right_w);
+            ui.set_width(w);
             ui.group(|ui| {
                 ui.label(RichText::new("Variables").strong().color(design::ACCENT_ORANGE));
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut var_key).hint_text("Key").desired_width(ui.available_width() * 0.4));
-                    ui.add(egui::TextEdit::singleline(&mut var_val).hint_text("Val").desired_width(ui.available_width() * 0.4));
+                    ui.add(egui::TextEdit::singleline(var_key).hint_text("Key").desired_width(w * 0.35));
+                    ui.add(egui::TextEdit::singleline(var_val).hint_text("Val").desired_width(w * 0.35));
                     if ui.button("+").clicked() && !var_key.is_empty() {
                         variables.insert(var_key.clone(), var_val.clone());
                         var_key.clear(); var_val.clear();
@@ -132,38 +109,49 @@ pub fn render_embedded(ui: &mut Ui, state: &mut AppState, tid: &str) {
                 });
                 egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
                     let mut to_remove = None;
-                    for (k, v) in &variables {
+                    for (k, v) in variables.iter() {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(k).small().color(Color32::GOLD));
                             ui.label(RichText::new(v).small());
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("x").clicked() { to_remove = Some(k.clone()); }
-                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { if ui.button("x").clicked() { to_remove = Some(k.clone()); } });
                         });
                     }
                     if let Some(k) = to_remove { variables.remove(&k); }
                 });
             });
 
-            ui.add_space(10.0);
-
+            ui.add_space(6.0);
             ui.group(|ui| {
                 ui.label(RichText::new("Dataset Preview").strong().color(design::ACCENT_GREEN));
-                ui.add_space(5.0);
-                if extracted_data.is_empty() { ui.label("No data captured yet."); } 
+                if extracted_data.is_empty() { ui.label("No data captured."); } 
                 else {
                     let keys: Vec<String> = extracted_data[0].keys().cloned().collect();
-                    TableBuilder::new(ui).striped(true).resizable(true).column(Column::auto()).columns(Column::remainder(), keys.len())
-                        .header(20.0, |mut h| { h.col(|ui| { ui.strong("#"); }); for k in &keys { h.col(|ui| { ui.strong(k); }); } })
-                        .body(|b| { b.rows(20.0, extracted_data.len(), |mut r| {
-                            let idx = r.index(); let row_data = &extracted_data[idx];
-                            r.col(|ui| { ui.label(format!("{}", idx+1)); });
-                            for k in &keys { r.col(|ui| { ui.label(RichText::new(row_data.get(k).cloned().unwrap_or_default()).small()); }); }
-                        }); });
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
+                        TableBuilder::new(ui).striped(true).resizable(true).column(Column::auto().at_least(30.0)).columns(Column::auto().at_least(80.0), keys.len())
+                            .header(20.0, |mut h| { h.col(|ui| { ui.strong("#"); }); for k in &keys { h.col(|ui| { ui.strong(k); }); } })
+                            .body(|b| { b.rows(20.0, extracted_data.len(), |mut r| {
+                                let idx = r.index(); let row_data = &extracted_data[idx];
+                                r.col(|ui| { ui.label(format!("{}", idx+1)); });
+                                for k in &keys { r.col(|ui| { ui.label(RichText::new(row_data.get(k).cloned().unwrap_or_default()).small()); }); }
+                            }); });
+                    });
                 }
             });
         });
-    }); // horizontal block end
+    };
+
+    if is_wide {
+        ui.horizontal_top(|ui| {
+            render_left(ui, left_w, &mut auto_steps, &mut auto_functions, &mut active_fn_editor, &discovered_selectors, &mut selector_search, &variables);
+            render_right(ui, right_w, &mut variables, &mut var_key, &mut var_val, &extracted_data);
+        });
+    } else {
+        ui.vertical(|ui| {
+            render_left(ui, left_w, &mut auto_steps, &mut auto_functions, &mut active_fn_editor, &discovered_selectors, &mut selector_search, &variables);
+            ui.add_space(8.0);
+            render_right(ui, right_w, &mut variables, &mut var_key, &mut var_val, &extracted_data);
+        });
+    }
 
     ui.add_space(10.0);
     ui.horizontal(|ui| {

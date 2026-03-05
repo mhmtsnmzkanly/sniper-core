@@ -41,104 +41,70 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
         emit(AppEvent::RequestTabRefresh);
     }
 
-    // ── Browser Control + Chrome Tabs ── responsive 20/80 split
+    // ── Browser Control + Chrome Tabs ── adaptive layout
     let available = ui.available_width();
-    // sütun genişliklerini kullanılabilir alana göre orantılı göster
-    let ctrl_w = (available * 0.22).clamp(180.0, 260.0);
-    let tabs_w = available - ctrl_w - ui.spacing().item_spacing.x;
+    let is_wide = available > 700.0;
+    
+    // Panel oranları: Geniş ekranda yan yana (22/78), dar ekranda alt alta
+    let (ctrl_w, tabs_w) = if is_wide {
+        let cw = (available * 0.22).clamp(200.0, 280.0);
+        (cw, available - cw - ui.spacing().item_spacing.x - 2.0)
+    } else {
+        (available, available)
+    };
 
-    ui.horizontal(|ui| {
-        // ── Browser Control ──────────────────────────────────────────
+    let render_control = |ui: &mut Ui, state: &mut AppState, w: f32| {
         Frame::group(ui.style())
             .fill(design::BG_SURFACE)
             .stroke(panel_stroke)
-            .corner_radius(10.0)
-            .inner_margin(10.0)
+            .corner_radius(8.0)
+            .inner_margin(8.0)
             .show(ui, |ui| {
-                ui.set_width(ctrl_w);
-                ui.label(
-                    RichText::new("Browser Control")
-                        .strong()
-                        .size(12.0)
-                        .color(design::ACCENT_ORANGE),
-                );
+                ui.set_width(w);
+                ui.label(RichText::new("Browser Control").strong().color(design::ACCENT_ORANGE));
                 ui.add_space(4.0);
 
                 egui::ScrollArea::vertical()
                     .id_salt("browser_settings_scroll")
                     .max_height(160.0)
+                    .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-                        egui::Grid::new("browser_config_grid")
-                            .spacing([4.0, 3.0])
-                            .show(ui, |ui| {
-                                ui.label("Bin:");
-                                ui.add(
-                                    egui::TextEdit::singleline(
-                                        &mut state.config.chrome_binary_path,
-                                    )
-                                    .desired_width(f32::INFINITY),
-                                );
-                                ui.end_row();
+                        egui::Grid::new("browser_config_grid").spacing([4.0, 4.0]).show(ui, |ui| {
+                            ui.label("Bin:"); 
+                            ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(f32::INFINITY));
+                            ui.end_row();
 
-                                ui.label("Prof:");
-                                ui.add(
-                                    egui::TextEdit::singleline(
-                                        &mut state.config.chrome_profile_path,
-                                    )
-                                    .desired_width(f32::INFINITY),
-                                );
-                                ui.end_row();
+                            ui.label("Prof:");
+                            ui.add(egui::TextEdit::singleline(&mut state.config.chrome_profile_path).desired_width(f32::INFINITY));
+                            ui.end_row();
 
-                                ui.label("Port:");
-                                ui.add(egui::DragValue::new(
-                                    &mut state.config.remote_debug_port,
-                                ));
-                                ui.end_row();
-
-                                ui.label("Proxy:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut state.config.proxy_server)
-                                        .hint_text("host:port")
-                                        .desired_width(f32::INFINITY),
-                                );
-                                ui.end_row();
-
-                                ui.label("UA:");
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut state.config.user_agent)
-                                        .hint_text("Default")
-                                        .desired_width(f32::INFINITY),
-                                );
-                                ui.end_row();
-
-                                ui.label("Rand:");
-                                ui.vertical(|ui| {
-                                    ui.checkbox(&mut state.config.randomize_user_agent, "UA");
-                                    ui.checkbox(&mut state.config.randomize_fingerprint, "FP");
-                                });
-                                ui.end_row();
+                            ui.label("Port:"); ui.add(egui::DragValue::new(&mut state.config.remote_debug_port)); ui.end_row();
+                            ui.label("Proxy:"); ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).desired_width(f32::INFINITY)); ui.end_row();
+                            ui.label("UA:"); ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).desired_width(f32::INFINITY)); ui.end_row();
+                            ui.label("Rand:");
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut state.config.randomize_user_agent, "UA");
+                                ui.checkbox(&mut state.config.randomize_fingerprint, "FP");
                             });
+                            ui.end_row();
+                        });
                     });
 
                 ui.add_space(6.0);
-                let btn_h = design::BUTTON_HEIGHT;
+                let btn_h = 32.0;
                 let btn_w = ui.available_width();
                 if !state.is_browser_running {
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("LAUNCH BROWSER").strong())
-                                .min_size([btn_w, btn_h].into())
-                                .fill(Color32::from_rgb(0, 128, 180)),
-                        )
-                        .clicked()
-                    {
-                        tracing::info!("[UI] Click: LAUNCH BROWSER");
+                    if ui.add(egui::Button::new(RichText::new("LAUNCH BROWSER").strong())
+                        .min_size([btn_w, btn_h].into())
+                        .fill(Color32::from_rgb(0, 110, 170))).clicked() {
+                        let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
                         let url = state.config.default_launch_url.clone();
                         let binary = state.config.chrome_binary_path.clone();
+                        let profile = if state.use_custom_profile { state.config.output_dir.join("profiles").join("isolated").to_string_lossy().to_string() } else { state.config.chrome_profile_path.clone() };
                         let port = state.config.remote_debug_port;
                         let output_dir = state.config.output_dir.clone();
-                        let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
+
                         let launch_opts = crate::core::browser::BrowserLaunchOptions {
                             proxy_server: Some(state.config.proxy_server.clone()),
                             user_agent: Some(state.config.user_agent.clone()),
@@ -146,275 +112,98 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             randomize_fingerprint: state.config.randomize_fingerprint,
                         };
 
-                        let profile = if state.use_custom_profile {
-                            let isolated_path = state
-                                .config
-                                .output_dir
-                                .join("profiles")
-                                .join("isolated");
-                            let _ = std::fs::create_dir_all(&isolated_path);
-                            isolated_path.to_string_lossy().to_string()
-                        } else {
-                            state.config.chrome_profile_path.clone()
-                        };
-
                         tokio::spawn(async move {
-                            match crate::core::browser::BrowserManager::launch(
-                                &url,
-                                &binary,
-                                &profile,
-                                port,
-                                tx,
-                                output_dir,
-                                launch_opts,
-                            )
-                            .await
-                            {
-                                Ok(child) => emit(AppEvent::BrowserStarted(child)),
-                                Err(e) => {
-                                    tracing::error!("[CORE] Launch failed: {}", e);
-                                    emit(AppEvent::OperationError(format!(
-                                        "Launch Failed: {}",
-                                        e
-                                    )));
-                                }
-                            }
+                             let r = crate::core::browser::BrowserManager::launch(
+                                &url, &binary, &profile, port, tx, output_dir, launch_opts
+                             ).await;
+                             match r {
+                                 Ok(child) => emit(AppEvent::BrowserStarted(child)),
+                                 Err(e) => emit(AppEvent::OperationError(e.to_string()))
+                             }
                         });
                     }
                 } else {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("TERMINATE").strong().color(Color32::BLACK),
-                            )
-                            .min_size([btn_w, btn_h].into())
-                            .fill(Color32::from_rgb(255, 80, 80)),
-                        )
-                        .clicked()
-                    {
-                        tracing::info!("[UI] Click: TERMINATE BROWSER");
+                    if ui.add(egui::Button::new(RichText::new("TERMINATE").strong().color(Color32::BLACK))
+                        .min_size([btn_w, btn_h].into()).fill(Color32::from_rgb(255, 80, 80))).clicked() {
                         emit(AppEvent::TerminateBrowser);
-                    }
-                    ui.add_space(3.0);
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("RELAUNCH + PROFILE").strong().size(11.0),
-                            )
-                            .min_size([btn_w, btn_h - 4.0].into())
-                            .fill(Color32::from_rgb(80, 126, 190)),
-                        )
-                        .on_hover_text(
-                            "Apply updated Proxy / UA / Fingerprint by restarting browser.",
-                        )
-                        .clicked()
-                    {
-                        let url = state.config.default_launch_url.clone();
-                        let binary = state.config.chrome_binary_path.clone();
-                        let port = state.config.remote_debug_port;
-                        let output_dir = state.config.output_dir.clone();
-                        let tx = EVENT_SENDER.lock().unwrap().clone().unwrap();
-                        let launch_opts = crate::core::browser::BrowserLaunchOptions {
-                            proxy_server: Some(state.config.proxy_server.clone()),
-                            user_agent: Some(state.config.user_agent.clone()),
-                            randomize_user_agent: state.config.randomize_user_agent,
-                            randomize_fingerprint: state.config.randomize_fingerprint,
-                        };
-                        let profile = if state.use_custom_profile {
-                            let isolated_path = state
-                                .config
-                                .output_dir
-                                .join("profiles")
-                                .join("isolated");
-                            let _ = std::fs::create_dir_all(&isolated_path);
-                            isolated_path.to_string_lossy().to_string()
-                        } else {
-                            state.config.chrome_profile_path.clone()
-                        };
-                        emit(AppEvent::TerminateBrowser);
-                        tokio::spawn(async move {
-                            tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
-                            match crate::core::browser::BrowserManager::launch(
-                                &url,
-                                &binary,
-                                &profile,
-                                port,
-                                tx,
-                                output_dir,
-                                launch_opts,
-                            )
-                            .await
-                            {
-                                Ok(child) => emit(AppEvent::BrowserStarted(child)),
-                                Err(e) => {
-                                    emit(AppEvent::OperationError(format!("Relaunch failed: {}", e)))
-                                }
-                            }
-                        });
                     }
                     ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("● BROWSER ACTIVE")
-                            .monospace()
-                            .size(11.0)
-                            .color(design::ACCENT_GREEN),
-                    );
+                    ui.label(RichText::new("● BROWSER ACTIVE").monospace().size(11.0).color(design::ACCENT_GREEN));
                 }
             });
+    };
 
-        // ── Chrome Tabs ───────────────────────────────────────────────
+    let render_tabs = |ui: &mut Ui, state: &mut AppState, w: f32| {
         Frame::group(ui.style())
             .fill(design::BG_SURFACE)
             .stroke(panel_stroke)
-            .corner_radius(10.0)
-            .inner_margin(10.0)
+            .corner_radius(8.0)
+            .inner_margin(8.0)
             .show(ui, |ui| {
-                ui.set_width(tabs_w);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Chrome Tabs")
-                            .strong()
-                            .color(design::ACCENT_ORANGE),
-                    );
-                    ui.add_space(6.0);
-                    ui.add(
-                        egui::Slider::new(&mut state.tabs_per_row, 1..=4)
-                            .text("cols")
-                            .trailing_fill(true),
-                    );
+                ui.set_width(w);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Chrome Tabs").strong().color(design::ACCENT_ORANGE));
+                    ui.add_space(8.0);
+                    ui.add(egui::Slider::new(&mut state.tabs_per_row, 1..=6).text("#").trailing_fill(true));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("REFRESH").clicked() {
-                            tracing::info!("[UI] Click: REFRESH TAB LIST");
-                            emit(AppEvent::RequestTabRefresh);
-                        }
+                        if ui.button("REFRESH").clicked() { emit(AppEvent::RequestTabRefresh); }
                     });
                 });
                 ui.add_space(6.0);
 
+                let scroll_h = if is_wide { 240.0 } else { 180.0 };
                 egui::ScrollArea::vertical()
-                    .max_height(200.0)
-                    .id_salt("tab_tiles_scroll")
+                    .max_height(scroll_h)
+                    .id_salt("tab_scroll_adaptive")
+                    .auto_shrink([false, true])
                     .show(ui, |ui| {
                         if state.available_tabs.is_empty() {
-                            ui.centered_and_justified(|ui| {
-                                ui.label(
-                                    RichText::new("NO ACTIVE TABS DETECTED")
-                                        .italics()
-                                        .color(Color32::GRAY),
-                                );
-                            });
+                            ui.centered_and_justified(|ui| { ui.label(RichText::new("NO OPEN TABS").italics().color(Color32::GRAY)); });
                         } else {
-                            let per_row = state.tabs_per_row.clamp(1, 4);
-                            let spacing = 5.0;
-                            let col_w = ((ui.available_width()
-                                - spacing * (per_row as f32 - 1.0))
-                                / per_row as f32)
-                                .max(120.0);
-                            let mut idx = 0;
-                            egui::Grid::new("tabs_grid")
-                                .num_columns(per_row)
-                                .spacing([spacing, spacing])
-                                .show(ui, |grid| {
-                                    for tab in state.available_tabs.clone() {
-                                        let is_selected =
-                                            Some(tab.id.clone()) == state.selected_tab_id;
-                                        let border_col = if is_selected {
-                                            Color32::from_rgb(0, 200, 120)
-                                        } else {
-                                            Color32::from_gray(55)
-                                        };
-                                        let bg_col = if is_selected {
-                                            Color32::from_rgb(22, 38, 48)
-                                        } else {
-                                            Color32::from_gray(22)
-                                        };
+                            let per_row = state.tabs_per_row.clamp(1, 6);
+                            let spacing = 6.0;
+                            let col_w = ((ui.available_width() - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
+                            
+                            egui::Grid::new("tabs_grid_adaptive").num_columns(per_row).spacing([spacing, spacing]).show(ui, |ui| {
+                                for (count, tab) in state.available_tabs.iter().enumerate() {
+                                    let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
+                                    let (border_col, bg_col) = if is_selected { (design::ACCENT_GREEN, Color32::from_rgb(22, 38, 48)) } else { (Color32::from_gray(60), design::BG_PRIMARY) };
+                                    
+                                    ui.vertical(|ui| {
+                                        let res = Frame::group(ui.style())
+                                            .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
+                                            .fill(bg_col).inner_margin(6.0).corner_radius(6.0).show(ui, |ui| {
+                                                ui.set_width(col_w);
+                                                ui.set_height(54.0);
+                                                ui.add(egui::Label::new(RichText::new(&tab.title).strong().size(10.5)).truncate());
+                                                ui.add(egui::Label::new(RichText::new(&tab.url).size(8.5).color(Color32::from_gray(120))).truncate());
+                                            }).response;
 
-                                        grid.vertical(|ui| {
-                                            let response = Frame::group(ui.style())
-                                                .stroke(Stroke::new(
-                                                    if is_selected { 2.0 } else { 1.0 },
-                                                    border_col,
-                                                ))
-                                                .fill(bg_col)
-                                                .inner_margin(6.0)
-                                                .corner_radius(6.0)
-                                                .show(ui, |ui| {
-                                                    ui.set_width(col_w);
-                                                    ui.set_height(64.0);
-                                                    ui.vertical(|ui| {
-                                                        ui.add(
-                                                            egui::Label::new(
-                                                                RichText::new(&tab.title)
-                                                                    .strong()
-                                                                    .size(11.0)
-                                                                    .color(if is_selected {
-                                                                        Color32::WHITE
-                                                                    } else {
-                                                                        Color32::from_gray(200)
-                                                                    }),
-                                                            )
-                                                            .truncate(),
-                                                        );
-                                                        ui.add_space(2.0);
-                                                        ui.add(
-                                                            egui::Label::new(
-                                                                RichText::new(&tab.url)
-                                                                    .size(9.0)
-                                                                    .monospace()
-                                                                    .color(Color32::from_gray(
-                                                                        120,
-                                                                    )),
-                                                            )
-                                                            .truncate(),
-                                                        );
-                                                    });
-                                                })
-                                                .response;
-
-                                            response.clone().on_hover_ui(|ui| {
-                                                ui.label(
-                                                    RichText::new(&tab.title).strong(),
-                                                );
-                                                ui.label(&tab.url);
-                                                if let Some(ws) =
-                                                    state.workspaces.get(&tab.id)
-                                                {
-                                                    let age = (ui.input(|i| i.time)
-                                                        - ws.open_time)
-                                                        .max(0.0);
-                                                    ui.small(format!(
-                                                        "Age: {:.0}s",
-                                                        age
-                                                    ));
-                                                }
-                                            });
-
-                                            if ui
-                                                .interact(
-                                                    response.rect,
-                                                    response.id,
-                                                    egui::Sense::click(),
-                                                )
-                                                .clicked()
-                                            {
-                                                tracing::info!(
-                                                    "[UI] User selected tab: {}",
-                                                    tab.title
-                                                );
-                                                state.selected_tab_id = Some(tab.id.clone());
-                                            }
-                                        });
-
-                                        idx += 1;
-                                        if idx % per_row == 0 {
-                                            grid.end_row();
+                                        if ui.interact(res.rect, res.id, egui::Sense::click()).clicked() {
+                                            state.selected_tab_id = Some(tab.id.clone());
                                         }
-                                    }
-                                });
+                                        res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
+                                    });
+                                    if (count + 1) % per_row == 0 { ui.end_row(); }
+                                }
+                            });
                         }
                     });
             });
-    });
+    };
+
+    if is_wide {
+        ui.horizontal_top(|ui| {
+            render_control(ui, state, ctrl_w);
+            render_tabs(ui, state, tabs_w);
+        });
+    } else {
+        ui.vertical(|ui| {
+            render_control(ui, state, ctrl_w);
+            ui.add_space(8.0);
+            render_tabs(ui, state, tabs_w);
+        });
+    }
 
     ui.add_space(10.0);
 

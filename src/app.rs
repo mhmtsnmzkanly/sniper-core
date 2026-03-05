@@ -966,35 +966,55 @@ impl eframe::App for CrawlerApp {
         for (tid, title, show_net, show_med, show_stor, show_auto, show_cons) in active_workspaces {
             if show_net {
                 let mut open = true;
-                egui::Window::new(format!("Network - {}", title)).open(&mut open).id(egui::Id::new(format!("net_{}", tid))).show(ctx, |ui| {
+                egui::Window::new(format!("Network - {}", title)).open(&mut open).id(egui::Id::new(format!("net_{}", tid)))
+                    .default_width(600.0)
+                    .resizable(true)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
                     ui::network_panel::render(ui, &mut self.state);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = false; } }
             }
             if show_med {
                 let mut open = true;
-                egui::Window::new(format!("Media - {}", title)).open(&mut open).id(egui::Id::new(format!("med_{}", tid))).show(ctx, |ui| {
+                egui::Window::new(format!("Media - {}", title)).open(&mut open).id(egui::Id::new(format!("med_{}", tid)))
+                    .default_width(700.0)
+                    .resizable(true)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
                     ui::media_panel::render(ui, &mut self.state);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = false; } }
             }
             if show_stor {
                 let mut open = true;
-                egui::Window::new(format!("Cookies - {}", title)).open(&mut open).id(egui::Id::new(format!("stor_{}", tid))).show(ctx, |ui| {
+                egui::Window::new(format!("Cookies - {}", title)).open(&mut open).id(egui::Id::new(format!("stor_{}", tid)))
+                    .default_width(600.0)
+                    .resizable(true)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
                     ui::storage_panel::render(ui, &mut self.state);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = false; } }
             }
             if show_auto {
                 let mut open = true;
-                egui::Window::new(format!("Automation - {}", title)).open(&mut open).id(egui::Id::new(format!("auto_{}", tid))).resizable(true).show(ctx, |ui| {
+                egui::Window::new(format!("Automation - {}", title)).open(&mut open).id(egui::Id::new(format!("auto_{}", tid)))
+                    .default_width(800.0)
+                    .resizable(true)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
                     ui::automation::render_embedded(ui, &mut self.state, &tid);
                 });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_automation = false; } }
             }
             if show_cons {
                 let mut open = true;
-                egui::Window::new(format!("Console - {}", title)).open(&mut open).id(egui::Id::new(format!("cons_{}", tid))).show(ctx, |ui| {
+                egui::Window::new(format!("Console - {}", title)).open(&mut open).id(egui::Id::new(format!("cons_{}", tid)))
+                    .default_width(500.0)
+                    .resizable(true)
+                    .vscroll(true)
+                    .show(ctx, |ui| {
                     let (mut script, res, logs) = {
                         let ws = self.state.workspaces.get(&tid).unwrap();
                         (ws.js_script.clone(), ws.js_result.clone(), ws.console_logs.clone())
