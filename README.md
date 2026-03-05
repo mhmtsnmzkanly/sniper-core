@@ -49,6 +49,7 @@ cargo run -- --port 9222
 - `Chrome Tabs` (right, ~70%): active tab targets.
 - Command Center: capture/network/media/cookie/console/automation actions.
 - Browser Control now includes per-launch `Proxy`, `User-Agent`, `Random UA`, and `Random Fingerprint` options.
+- Command Center includes `Selector Inspector` actions (`YAKALA`, `FETCH`, `CLEAR`) for visual selector capture.
 
 ### Scripting
 - Import/Export JSON script package.
@@ -73,6 +74,7 @@ Central log stream for:
 - system/runtime events
 - scripting output
 - chrome console mirrored events
+- selector inspector capture hints/notifications
 
 ## Script Package Format (`.json`)
 ```json

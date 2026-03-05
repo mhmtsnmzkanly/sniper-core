@@ -66,6 +66,11 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
     }).collect()
 }
 
+/// KOD NOTU: CDP evaluate sonucu JSON-string olarak gelebileceği için UI tarafında normalize edilir.
+fn decode_js_result(raw: &str) -> String {
+    serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string())
+}
+
 impl eframe::App for CrawlerApp {
     /// The GUI update loop. Called ~60 times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -373,8 +378,34 @@ impl eframe::App for CrawlerApp {
                     });
                 }
                 AppEvent::ScriptFinished(tid, res) => {
-                    let ws = self.ensure_workspace(&tid);
-                    ws.js_result = res.clone();
+                    let mut notify_msg: Option<(NotificationLevel, String)> = None;
+                    {
+                        let ws = self.ensure_workspace(&tid);
+                        ws.js_result = res.clone();
+                    let decoded = decode_js_result(&res);
+                    if decoded == "SNIPER_SELECTOR_ARMED" {
+                        ws.selector_inspector_armed = true;
+                        notify_msg = Some((NotificationLevel::Ok, "Inspector armed. Click any element on the page, then Fetch.".to_string()));
+                    } else if let Some(selector) = decoded.strip_prefix("SNIPER_SELECTOR_VALUE:") {
+                        let value = selector.trim().to_string();
+                        if value.is_empty() || value == "NONE" {
+                            notify_msg = Some((NotificationLevel::Warn, "No selector captured yet.".to_string()));
+                        } else {
+                            ws.selector_search = value.clone();
+                            if !ws.discovered_selectors.contains(&value) {
+                                ws.discovered_selectors.insert(0, value.clone());
+                            }
+                            notify_msg = Some((NotificationLevel::Ok, format!("Captured selector: {}", value)));
+                        }
+                        ws.selector_inspector_armed = false;
+                    } else if decoded == "SNIPER_SELECTOR_CLEARED" {
+                        ws.selector_inspector_armed = false;
+                        notify_msg = Some((NotificationLevel::Ok, "Inspector state cleared.".to_string()));
+                    }
+                    }
+                    if let Some((level, message)) = notify_msg {
+                        self.state.notify(level, "Selector Inspector", &message);
+                    }
                     tracing::info!("[BROWSER -> CORE] Script execution result: {}", res);
                 }
                 AppEvent::RequestPageSelectors(tid) => {

@@ -111,10 +111,12 @@ Actions:
 - Capture HTML / Complete / Mirror
 - Open Automation window
 - Open Network/Media/Cookies/Console windows
+- Selector Inspector (`YAKALA`, `FETCH`, `CLEAR`) via JS injection
 
 Outputs:
 - Capture files
 - Workspace records (network/media/cookies/logs)
+- Captured selector pushed to workspace selector search/suggestions
 
 Potential issues:
 - Command denied when browser offline.
@@ -147,6 +149,8 @@ Potential errors:
 - Starts per-tab listener.
 - Receives requests/responses and stores into workspace.
 - Can be toggled on/off with cancellation token.
+- Quick filters: `XHR`, `JS`, `IMG`, `Errors`, `2xx`, `Reset`.
+- Status modes: `all`, `ok`, `error`.
 
 Potential errors:
 - Listener setup failure
@@ -155,6 +159,9 @@ Potential errors:
 ## 6.2 Media Capture
 - Media assets are derived from network responses.
 - Binary payload may be decoded from base64 when needed.
+- Quick filters: `Images`, `.png`, `Videos`, `>1MB`, `Reset`.
+- Sort presets: `Name`, `Size`, `Type` with asc/desc.
+- Visual Gallery mode for card-based media browsing.
 
 Potential errors:
 - binary decode failures

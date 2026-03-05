@@ -448,6 +448,82 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     emit(AppEvent::RequestNetworkToggle(tid.clone(), true));
                 }
             });
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let inspector_armed = state
+                    .selected_tab_id
+                    .as_ref()
+                    .and_then(|id| state.workspaces.get(id))
+                    .map(|ws| ws.selector_inspector_armed)
+                    .unwrap_or(false);
+                ui.label(
+                    RichText::new(if inspector_armed { "Selector Inspector: ARMED" } else { "Selector Inspector: IDLE" })
+                        .color(if inspector_armed { design::ACCENT_GREEN } else { design::TEXT_MUTED })
+                        .strong(),
+                );
+                if ui
+                    .add_enabled(can_action, egui::Button::new("YAKALA (ARM)"))
+                    .clicked()
+                {
+                    let script = r#"(() => {
+                        const toSelector = (el) => {
+                            if (!el || !el.tagName) return '';
+                            const parts = [];
+                            while (el && el.nodeType === 1 && parts.length < 6) {
+                                let part = el.tagName.toLowerCase();
+                                if (el.id) { part += '#' + el.id; parts.unshift(part); break; }
+                                if (el.classList && el.classList.length > 0) {
+                                    part += '.' + Array.from(el.classList).slice(0, 2).join('.');
+                                }
+                                parts.unshift(part);
+                                el = el.parentElement;
+                            }
+                            return parts.join(' > ');
+                        };
+                        if (window.__sniperInspectorArmed) return 'SNIPER_SELECTOR_ARMED';
+                        window.__sniperInspectorListener = (ev) => {
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            window.__sniperPickedSelector = toSelector(ev.target);
+                            window.__sniperInspectorArmed = false;
+                            document.documentElement.style.cursor = '';
+                            document.removeEventListener('click', window.__sniperInspectorListener, true);
+                        };
+                        window.__sniperPickedSelector = '';
+                        window.__sniperInspectorArmed = true;
+                        document.documentElement.style.cursor = 'crosshair';
+                        document.addEventListener('click', window.__sniperInspectorListener, true);
+                        return 'SNIPER_SELECTOR_ARMED';
+                    })()"#;
+                    emit(AppEvent::RequestScriptExecution(tid.clone(), script.to_string()));
+                }
+                if ui
+                    .add_enabled(can_action, egui::Button::new("FETCH SELECTOR"))
+                    .clicked()
+                {
+                    let script = r#"(() => {
+                        const picked = window.__sniperPickedSelector || 'NONE';
+                        return 'SNIPER_SELECTOR_VALUE:' + picked;
+                    })()"#;
+                    emit(AppEvent::RequestScriptExecution(tid.clone(), script.to_string()));
+                }
+                if ui
+                    .add_enabled(can_action, egui::Button::new("CLEAR"))
+                    .clicked()
+                {
+                    let script = r#"(() => {
+                        if (window.__sniperInspectorListener) {
+                            document.removeEventListener('click', window.__sniperInspectorListener, true);
+                        }
+                        window.__sniperInspectorArmed = false;
+                        window.__sniperPickedSelector = '';
+                        document.documentElement.style.cursor = '';
+                        return 'SNIPER_SELECTOR_CLEARED';
+                    })()"#;
+                    emit(AppEvent::RequestScriptExecution(tid.clone(), script.to_string()));
+                }
+            });
         });
     });
 }
