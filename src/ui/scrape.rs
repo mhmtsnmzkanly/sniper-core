@@ -48,9 +48,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     // KOD NOTU: Browser Control ve Chrome Tabs paneli %30 / %70 oranında yan yana gösterilir.
     ui.columns(2, |cols| {
         let total = cols[0].available_width() + cols[1].available_width();
-        // KOD NOTU: Browser Control paneli ultra daraltıldı (%15).
-        cols[0].set_width(total * 0.15);
-        cols[1].set_width(total * 0.85);
+        // KOD NOTU: Browser Control paneli iyice daraltıldı (≈%8).
+        cols[0].set_width(total * 0.08);
+        cols[1].set_width(total * 0.92);
 
         // Browser Control
         frame_style.show(&mut cols[0], |ui| {
@@ -98,11 +98,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
 
             ui.add_space(4.0);
+            let compact_btn_h = design::BUTTON_HEIGHT - 10.0;
             if !state.is_browser_running {
                 if ui
                     .add(
                         egui::Button::new(RichText::new("LAUNCH BROWSER").strong())
-                            .min_size([ui.available_width(), design::BUTTON_HEIGHT].into())
+                            .min_size([ui.available_width(), compact_btn_h].into())
                             .fill(Color32::from_rgb(0, 128, 180)),
                     )
                     .clicked()
@@ -143,7 +144,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 if ui
                     .add(
                         egui::Button::new(RichText::new("TERMINATE INSTANCE").strong().color(Color32::BLACK))
-                            .min_size([ui.available_width(), design::BUTTON_HEIGHT].into())
+                            .min_size([ui.available_width(), compact_btn_h].into())
                             .fill(Color32::from_rgb(255, 80, 80)),
                     )
                     .clicked()
@@ -155,7 +156,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 if ui
                     .add(
                         egui::Button::new(RichText::new("RELAUNCH APPLY NETWORK PROFILE").strong())
-                            .min_size([ui.available_width(), design::BUTTON_HEIGHT].into())
+                            .min_size([ui.available_width(), compact_btn_h].into())
                             .fill(Color32::from_rgb(80, 126, 190)),
                     )
                     .on_hover_text("Apply updated Proxy / UA / Fingerprint settings by restarting browser automatically.")
