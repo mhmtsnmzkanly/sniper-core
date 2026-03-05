@@ -28,8 +28,9 @@ impl BrowserManager {
     ) -> AppResult<std::process::Child> {
         tracing::info!("[CORE -> BROWSER] Initializing launch on port {}", port);
 
-        // KOD NOTU: Tarayıcı hatalarını ve loglarını yakalamak için log dosyası oluşturulur.
-        let log_path = output_dir.join("chrome.log");
+        // KOD NOTU: Chrome log dosyası formatı chrome_YYMMDD_HHMMSS.log olarak güncellendi.
+        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let log_path = output_dir.join(format!("chrome_{}.log", ts));
         let log_file = std::fs::File::create(&log_path).map_err(AppError::Io)?;
         let log_file_err = log_file.try_clone().map_err(AppError::Io)?;
 
@@ -73,6 +74,33 @@ impl BrowserManager {
             tracing::error!("[CORE -> BROWSER] Process spawn failed: {}", e);
             AppError::Io(e)
         })?;
+
+        // KOD NOTU: Log dosyasını izleyip "ERROR" satırlarını UI'a "CHROME ERROR" olarak basan task.
+        let log_path_clone = log_path.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if let Ok(file) = std::fs::File::open(&log_path_clone) {
+                use std::io::{BufRead, BufReader, Seek, SeekFrom};
+                let mut reader = BufReader::new(file);
+                let mut last_pos = 0;
+                loop {
+                    if let Ok(metadata) = std::fs::metadata(&log_path_clone) {
+                        if metadata.len() > last_pos {
+                            let _ = reader.seek(SeekFrom::Start(last_pos));
+                            let mut line = String::new();
+                            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                                if line.contains("ERROR:") {
+                                    tracing::error!("[CHROME ERROR] {}", line.trim());
+                                }
+                                line.clear();
+                            }
+                            last_pos = reader.stream_position().unwrap_or(last_pos);
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                }
+            }
+        });
 
         let tx_clone = tx.clone();
         let hb_url = format!("http://127.0.0.1:{}/json/version", port);
