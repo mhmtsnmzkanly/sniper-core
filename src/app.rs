@@ -268,7 +268,16 @@ impl eframe::App for CrawlerApp {
                 AppEvent::ScriptingDebugPlanResult(lines) => {
                     // KOD NOTU: Debug plan Scripting sekmesinde step-by-step gezinti için state'e kaydedilir.
                     self.state.scripting_debug_plan = lines;
-                    self.state.scripting_debug_index = 0;
+                    let break_cond = self.state.scripting_break_condition.trim().to_ascii_lowercase();
+                    self.state.scripting_debug_index = if break_cond.is_empty() {
+                        0
+                    } else {
+                        self.state
+                            .scripting_debug_plan
+                            .iter()
+                            .position(|l| l.to_ascii_lowercase().contains(&break_cond))
+                            .unwrap_or(0)
+                    };
                     self.state.notify(NotificationLevel::Ok, "Script Debugger", "Debug plan generated.");
                 }
                 AppEvent::ScriptingFinished => {
@@ -487,6 +496,12 @@ impl eframe::App for CrawlerApp {
                         selected_tab_id,
                         selected_tab_console_logs,
                         selected_tab_cookies,
+                        break_condition: if self.state.scripting_break_condition.trim().is_empty() {
+                            None
+                        } else {
+                            Some(self.state.scripting_break_condition.trim().to_string())
+                        },
+                        emit_step_timing: self.state.scripting_emit_step_timing,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: token,
@@ -521,6 +536,8 @@ impl eframe::App for CrawlerApp {
                         selected_tab_id: selected,
                         selected_tab_console_logs,
                         selected_tab_cookies,
+                        break_condition: None,
+                        emit_step_timing: false,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),
@@ -547,6 +564,8 @@ impl eframe::App for CrawlerApp {
                         selected_tab_id: selected,
                         selected_tab_console_logs,
                         selected_tab_cookies,
+                        break_condition: None,
+                        emit_step_timing: false,
                         port: self.state.config.remote_debug_port,
                         output_dir: self.state.config.output_dir.clone(),
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),

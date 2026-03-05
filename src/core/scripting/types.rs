@@ -38,6 +38,8 @@ pub struct ScriptExecutionRequest {
     pub selected_tab_id: Option<String>,
     pub selected_tab_console_logs: Vec<String>,
     pub selected_tab_cookies: HashMap<String, String>,
+    pub break_condition: Option<String>,
+    pub emit_step_timing: bool,
     pub port: u16,
     pub output_dir: std::path::PathBuf,
     pub cancel_token: Arc<AtomicBool>,

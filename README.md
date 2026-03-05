@@ -56,6 +56,8 @@ cargo run -- --port 9222
 - `Check`: compile + basic lint without executing browser actions.
 - `Dry-Run`: build action plan without browser execution.
 - `Debugger`: build step preview and inspect actions one-by-one in Scripting tab.
+- `Break Condition`: stop execution when an action text matches your condition.
+- `Timing Telemetry`: emit per-step `TIMING` lines into System Telemetry.
 - `Execute`: runs script through shared automation runtime.
 - `Stop`: cooperative cancel request.
 - Script output goes to `System Telemetry` (not local script output list).

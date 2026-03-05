@@ -200,6 +200,20 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     ui.separator();
     ui.label(RichText::new("Script Debugger").strong());
+    ui.horizontal(|ui| {
+        ui.label("Break Condition:");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.scripting_break_condition)
+                .hint_text("Action text contains... (e.g. Capture, RunDsl, selector)")
+                .desired_width(ui.available_width() * 0.7),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.checkbox(
+            &mut state.scripting_emit_step_timing,
+            "Emit step timing telemetry (TIMING lines)",
+        );
+    });
     if state.scripting_debug_plan.is_empty() {
         ui.colored_label(Color32::from_gray(170), "No debug plan yet. Click Debugger to build step preview.");
     } else {
@@ -231,13 +245,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             ));
         });
         ui.add_space(4.0);
-        ui.monospace(
-            state
-                .scripting_debug_plan
-                .get(state.scripting_debug_index)
-                .cloned()
-                .unwrap_or_default(),
-        );
+        let current_line = state
+            .scripting_debug_plan
+            .get(state.scripting_debug_index)
+            .cloned()
+            .unwrap_or_default();
+        let break_match = !state.scripting_break_condition.trim().is_empty()
+            && current_line
+                .to_ascii_lowercase()
+                .contains(&state.scripting_break_condition.to_ascii_lowercase());
+        if break_match {
+            ui.colored_label(
+                Color32::from_rgb(255, 200, 120),
+                "Break condition matches this step.",
+            );
+        }
+        ui.monospace(current_line);
     }
 
     ui.separator();

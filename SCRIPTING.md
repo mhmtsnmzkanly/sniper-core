@@ -301,6 +301,9 @@ It does **not**:
 - Compiles script and builds internal action list.
 - Stores plan in Scripting UI panel (`Script Debugger`).
 - Use `Prev` / `Next` to inspect each planned action.
+- `Break Condition` lets you jump to matching step in debugger preview.
+- During `Execute`, break condition stops further action execution when matched.
+- Optional timing telemetry emits per-step and flush durations as `TIMING` lines.
 
 ---
 

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[derive(Clone)]
 struct TabRef {
@@ -529,15 +530,16 @@ async fn flush_token_steps(
     token: i64,
     token_to_tab: &HashMap<i64, String>,
     step_batches: &mut HashMap<i64, Vec<Step>>,
-) -> AppResult<()> {
+) -> AppResult<usize> {
     let Some(tab_id) = token_to_tab.get(&token).cloned() else {
         return Err(AppError::Internal(format!("Script tab token {} is not bound", token)));
     };
 
     let steps = step_batches.remove(&token).unwrap_or_default();
     if steps.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
+    let step_count = steps.len();
 
     run_dsl_on_tab(
         req.port,
@@ -555,7 +557,9 @@ async fn flush_token_steps(
             steps,
         },
     )
-    .await
+    .await?;
+
+    Ok(step_count)
 }
 
 async fn resolve_cookie_domain(port: u16, tab_id: &str) -> Option<String> {
@@ -575,9 +579,23 @@ fn ensure_not_cancelled(req: &ScriptExecutionRequest) -> AppResult<()> {
 async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>) -> AppResult<()> {
     let mut token_to_tab: HashMap<i64, String> = HashMap::new();
     let mut step_batches: HashMap<i64, Vec<Step>> = HashMap::new();
+    let break_condition = req.break_condition.clone().map(|s| s.to_ascii_lowercase());
 
-    for action in actions {
+    for (idx, action) in actions.into_iter().enumerate() {
         ensure_not_cancelled(&req)?;
+        let action_debug = format!("{:?}", action);
+        if let Some(cond) = &break_condition {
+            if action_debug.to_ascii_lowercase().contains(cond) {
+                crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                    "[BREAK] Step {:03} matched condition '{}': {}",
+                    idx + 1,
+                    cond,
+                    action_debug
+                )));
+                break;
+            }
+        }
+        let started = Instant::now();
         match action {
             ScriptAction::NewTab { token, url } => {
                 let created = crate::core::browser::BrowserManager::create_tab(req.port, url.as_deref()).await?;
@@ -619,7 +637,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 step_batches.entry(token).or_default().push(Step::Screenshot { filename });
             }
             ScriptAction::Capture { token, mode } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-capture flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -633,7 +660,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!("Capture({mode}) -> {:?}", path)));
             }
             ScriptAction::ConsoleInject { token, js } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-inject flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -641,7 +677,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 let _ = crate::core::browser::BrowserManager::execute_script(req.port, tab_id, js).await?;
             }
             ScriptAction::NetworkToggle { token, active } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-network flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -649,7 +694,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 crate::ui::scrape::emit(AppEvent::RequestNetworkToggle(tab_id, active));
             }
             ScriptAction::CookieSet { token, name, value, overwrite } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-cookie-set flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -678,7 +732,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 crate::core::browser::BrowserManager::add_cookie(req.port, tab_id, cookie).await?;
             }
             ScriptAction::CookieDelete { token, name, domain } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-cookie-delete flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -686,7 +749,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 crate::core::browser::BrowserManager::delete_cookie(req.port, tab_id, name, domain).await?;
             }
             ScriptAction::RunDsl { token, json } => {
-                flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                let flush_started = Instant::now();
+                let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+                if req.emit_step_timing && flushed > 0 {
+                    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                        "[TIMING] step {:03} pre-dsl flush {} batched step(s) in {} ms",
+                        idx + 1,
+                        flushed,
+                        flush_started.elapsed().as_millis()
+                    )));
+                }
                 let tab_id = token_to_tab
                     .get(&token)
                     .cloned()
@@ -737,10 +809,27 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(message));
             }
         }
+        if req.emit_step_timing {
+            crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                "[TIMING] step {:03} completed in {} ms | {}",
+                idx + 1,
+                started.elapsed().as_millis(),
+                action_debug
+            )));
+        }
     }
 
     for token in token_to_tab.keys().copied().collect::<Vec<_>>() {
-        flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+        let flush_started = Instant::now();
+        let flushed = flush_token_steps(&req, token, &token_to_tab, &mut step_batches).await?;
+        if req.emit_step_timing && flushed > 0 {
+            crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                "[TIMING] final flush token {} executed {} batched step(s) in {} ms",
+                token,
+                flushed,
+                flush_started.elapsed().as_millis()
+            )));
+        }
     }
 
     Ok(())
