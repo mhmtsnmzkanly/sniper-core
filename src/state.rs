@@ -313,6 +313,7 @@ pub struct AppState {
     pub last_tab_refresh: f64,
     pub last_health_check: f64,
     pub is_translating: bool,
+    pub tabs_per_row: usize,
     // Scripting panel state
     pub script_package: crate::core::scripting::types::ScriptPackage,
     pub script_output: Vec<String>,
@@ -348,6 +349,7 @@ impl AppState {
             last_tab_refresh: 0.0,
             last_health_check: 0.0,
             is_translating: false,
+            tabs_per_row: 3,
             script_package: crate::core::scripting::types::ScriptPackage::default(),
             script_output: Vec::new(),
             script_error: None,

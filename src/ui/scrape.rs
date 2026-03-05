@@ -206,6 +206,12 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         .strong()
                         .color(design::ACCENT_ORANGE),
                 );
+                ui.add_space(8.0);
+                ui.add(
+                    egui::Slider::new(&mut state.tabs_per_row, 1..=3)
+                        .text("tabs/row")
+                        .trailing_fill(true),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("REFRESH LIST").clicked() {
                         tracing::info!("[UI] Click: REFRESH TAB LIST");
@@ -215,7 +221,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             });
             ui.add_space(8.0);
 
-            egui::ScrollArea::vertical().max_height(170.0).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                 if state.available_tabs.is_empty() {
                     ui.centered_and_justified(|ui| {
                         ui.label(
@@ -225,70 +231,79 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         );
                     });
                 } else {
-                    for tab in state.available_tabs.clone() {
-                        let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
-                        let border_col = if is_selected {
-                            Color32::from_rgb(0, 255, 128)
-                        } else {
-                            Color32::from_gray(60)
-                        };
-                        let bg_col = if is_selected {
-                            Color32::from_rgb(30, 50, 60)
-                        } else {
-                            Color32::from_gray(30)
-                        };
+                    let per_row = state.tabs_per_row.clamp(1, 3);
+                    let mut idx = 0;
+                    let spacing = 6.0;
+                    egui::Grid::new("tabs_grid")
+                        .num_columns(per_row)
+                        .spacing([spacing, spacing])
+                        .show(ui, |grid| {
+                            for tab in state.available_tabs.clone() {
+                                let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
+                                let border_col = if is_selected {
+                                    Color32::from_rgb(0, 200, 120)
+                                } else {
+                                    Color32::from_gray(60)
+                                };
+                                let bg_col = if is_selected {
+                                    Color32::from_rgb(26, 42, 52)
+                                } else {
+                                    Color32::from_gray(24)
+                                };
 
-                        let response = Frame::group(ui.style())
-                            .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
-                            .fill(bg_col)
-                            .inner_margin(10.0)
-                            .corner_radius(6.0)
-                            .show(ui, |ui| {
-                                ui.set_min_width(ui.available_width());
-                                ui.vertical(|ui| {
-                                    // KOD NOTU: Başlık ve URL artık otomatik olarak truncate edilir (kesilir).
-                                    // Tooltip ile tam içerik gösterilir.
-                                    ui.add(egui::Label::new(
-                                        RichText::new(&tab.title)
-                                            .strong()
-                                            .color(if is_selected {
-                                                Color32::WHITE
-                                            } else {
-                                                Color32::GRAY
-                                            })
-                                    ).truncate());
-                                    
-                                    ui.add_space(2.0);
-                                    
-                                    ui.add(egui::Label::new(
-                                        RichText::new(&tab.url)
-                                            .size(design::FONT_SMALL)
-                                            .monospace()
-                                            .color(Color32::from_gray(150))
-                                    ).truncate());
+                                grid.vertical(|ui| {
+                                    let tile_width = ui.available_width();
+                                    let response = Frame::group(ui.style())
+                                        .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
+                                        .fill(bg_col)
+                                        .inner_margin(8.0)
+                                        .corner_radius(6.0)
+                                        .show(ui, |ui| {
+                                            ui.set_min_width(tile_width);
+                                            ui.set_max_width(tile_width);
+                                            ui.set_height(72.0);
+                                            ui.vertical(|ui| {
+                                                ui.add(egui::Label::new(
+                                                    RichText::new(&tab.title)
+                                                        .strong()
+                                                        .size(12.0)
+                                                        .color(if is_selected { Color32::WHITE } else { Color32::from_gray(200) })
+                                                ).truncate());
+                                                ui.add_space(2.0);
+                                                ui.add(egui::Label::new(
+                                                    RichText::new(&tab.url)
+                                                        .size(design::FONT_SMALL)
+                                                        .monospace()
+                                                        .color(Color32::from_gray(140))
+                                                ).truncate());
+                                            });
+                                        })
+                                        .response;
+
+                                    response.clone().on_hover_ui(|ui| {
+                                        ui.label(RichText::new(&tab.title).strong());
+                                        ui.label(&tab.url);
+                                        if let Some(ws) = state.workspaces.get(&tab.id) {
+                                            let age = (ui.input(|i| i.time) - ws.open_time).max(0.0);
+                                            ui.small(format!("Workspace age: {:.0}s", age));
+                                        }
+                                    });
+
+                                    if ui
+                                        .interact(response.rect, response.id, egui::Sense::click())
+                                        .clicked()
+                                    {
+                                        tracing::info!("[UI] User selected tab: {}", tab.title);
+                                        state.selected_tab_id = Some(tab.id.clone());
+                                    }
                                 });
-                            })
-                            .response;
 
-                        // Tooltip: Fare ile üzerine gelince tam adresi ve başlığı göster
-                        response.clone().on_hover_ui(|ui| {
-                            ui.label(RichText::new(&tab.title).strong());
-                            ui.label(&tab.url);
-                            if let Some(ws) = state.workspaces.get(&tab.id) {
-                                let age = (ui.input(|i| i.time) - ws.open_time).max(0.0);
-                                ui.small(format!("Workspace age: {:.0}s", age));
+                                idx += 1;
+                                if idx % per_row == 0 {
+                                    grid.end_row();
+                                }
                             }
                         });
-
-                        if ui
-                            .interact(response.rect, response.id, egui::Sense::click())
-                            .clicked()
-                        {
-                            tracing::info!("[UI] User selected tab: {}", tab.title);
-                            state.selected_tab_id = Some(tab.id.clone());
-                        }
-                        ui.add_space(6.0);
-                    }
                 }
             });
         });
