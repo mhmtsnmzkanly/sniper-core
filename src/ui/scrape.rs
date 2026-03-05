@@ -59,54 +59,57 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     .strong()
                     .color(design::ACCENT_ORANGE),
             );
-            ui.add_space(8.0);
+            ui.add_space(4.0);
 
-            egui::Grid::new("browser_config_grid")
-                .spacing([8.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label("Chrome Path:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.chrome_binary_path)
-                            .desired_width(ui.available_width() * 0.95),
-                    );
-                    ui.end_row();
+            // KOD NOTU: Ayarlar kısmı ScrollArea içine alınarak dikeyde %50 daraltıldı.
+            egui::ScrollArea::vertical().id_salt("browser_settings_scroll").max_height(120.0).show(ui, |ui| {
+                egui::Grid::new("browser_config_grid")
+                    .spacing([4.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Chrome Path:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.config.chrome_binary_path)
+                                .desired_width(ui.available_width() * 0.9),
+                        );
+                        ui.end_row();
 
-                    ui.label("Profile Path:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.chrome_profile_path)
-                            .desired_width(ui.available_width() * 0.95),
-                    );
-                    ui.end_row();
+                        ui.label("Profile Path:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.config.chrome_profile_path)
+                                .desired_width(ui.available_width() * 0.9),
+                        );
+                        ui.end_row();
 
-                    ui.label("Remote Port:");
-                    ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
-                    ui.end_row();
+                        ui.label("Remote Port:");
+                        ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+                        ui.end_row();
 
-                    ui.label("Proxy:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.proxy_server)
-                            .hint_text("http://host:port or socks5://host:port")
-                            .desired_width(ui.available_width() * 0.95),
-                    );
-                    ui.end_row();
+                        ui.label("Proxy:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.config.proxy_server)
+                                .hint_text("http://host:port")
+                                .desired_width(ui.available_width() * 0.9),
+                        );
+                        ui.end_row();
 
-                    ui.label("User-Agent:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut state.config.user_agent)
-                            .hint_text("Leave empty to use browser default")
-                            .desired_width(ui.available_width() * 0.95),
-                    );
-                    ui.end_row();
+                        ui.label("User-Agent:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut state.config.user_agent)
+                                .hint_text("Default")
+                                .desired_width(ui.available_width() * 0.9),
+                        );
+                        ui.end_row();
 
-                    ui.label("Launch Randomization:");
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut state.config.randomize_user_agent, "Random UA");
-                        ui.checkbox(&mut state.config.randomize_fingerprint, "Random Fingerprint");
+                        ui.label("Randomization:");
+                        ui.vertical(|ui| {
+                            ui.checkbox(&mut state.config.randomize_user_agent, "UA");
+                            ui.checkbox(&mut state.config.randomize_fingerprint, "Finger");
+                        });
+                        ui.end_row();
                     });
-                    ui.end_row();
-                });
+            });
 
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             if !state.is_browser_running {
                 if ui
                     .add(
