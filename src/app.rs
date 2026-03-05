@@ -2,7 +2,7 @@ use crate::core::events::AppEvent;
 use crate::state::{AppState, AutomationStatus, Tab, AutomationStep, LogEntry, NotificationLevel};
 use crate::ui;
 use eframe::egui;
-use egui::{Color32, RichText};
+use egui::{CentralPanel, Color32, Frame, RichText};
 use std::sync::{Arc, Mutex};
 
 /// CrawlerApp: The main application entry point for the UI thread.
@@ -942,19 +942,81 @@ impl eframe::App for CrawlerApp {
             return;
         }
 
-        // Main Panel Dispatcher
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Frame::new()
-                .fill(ui::design::BG_PRIMARY)
-                .inner_margin(egui::Margin::same(8))
-                .show(ui, |ui| match self.state.active_tab {
-                    Tab::Scrape => ui::scrape::render(ui, &mut self.state),
-                    Tab::Scripting => ui::scripting::render(ui, &mut self.state),
-                    Tab::Translate => ui::translate::render(ui, &mut self.state),
-                    Tab::Settings => ui::config_panel::render(ui, &mut self.state),
-                    Tab::Logs => ui::log_panel::render(ui, &mut self.state),
-                    _ => { ui.label("Panel not implemented."); }
+        egui::SidePanel::left("navigation_panel")
+            .resizable(true)
+            .default_width(240.0)
+            .min_width(200.0)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("Sniper Studio").strong().size(18.0).color(ui::design::ACCENT_ORANGE));
+                    ui.label(RichText::new("Octane workflow").small().color(ui::design::TEXT_MUTED));
                 });
+                ui.separator();
+                ui.vertical(|ui| {
+                    let nav_items = [
+                        (Tab::Scrape, "Operations"),
+                        (Tab::Scripting, "Scripting"),
+                        (Tab::Translate, "Translate"),
+                        (Tab::Settings, "Configuration"),
+                        (Tab::Logs, "Logs"),
+                    ];
+                    for (tab, label) in nav_items.iter() {
+                        if ui
+                            .selectable_label(self.state.active_tab == *tab, *label)
+                            .clicked()
+                        {
+                            self.state.active_tab = *tab;
+                        }
+                    }
+                });
+                ui.separator();
+                ui.label(RichText::new("Browser Status").strong().color(ui::design::ACCENT_CYAN));
+                ui.label(
+                    RichText::new(if self.state.is_browser_running { "LIVE" } else { "OFFLINE" })
+                        .color(if self.state.is_browser_running { ui::design::ACCENT_GREEN } else { Color32::from_rgb(255, 119, 119) })
+                        .strong(),
+                );
+                ui.label(RichText::new(format!("Tabs: {}", self.state.available_tabs.len())).small());
+                ui.add_space(10.0);
+            });
+
+        // Main panel layout
+        CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
+                ui.add_space(6.0);
+                Frame::group(ui.style())
+                    .fill(ui::design::BG_PRIMARY)
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui::scrape::render(ui, &mut self.state);
+                    });
+                ui.add_space(12.0);
+                Frame::group(ui.style())
+                    .fill(ui::design::BG_SURFACE)
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| match self.state.active_tab {
+                        Tab::Scrape => {
+                            ui.label("Scrape mode is always active above. Use Command Center to drive actions.");
+                        }
+                        Tab::Scripting => ui::scripting::render(ui, &mut self.state),
+                        Tab::Translate => ui::translate::render(ui, &mut self.state),
+                        Tab::Settings => ui::config_panel::render(ui, &mut self.state),
+                        Tab::Logs => {
+                            ui.label("System telemetry lives below. Use the log controls to filter or export.");
+                        }
+                        _ => {
+                            ui.label("Auxiliary workspace panels remain available via the Operations Deck windows.");
+                        }
+                    });
+                ui.add_space(12.0);
+                Frame::group(ui.style())
+                    .fill(ui::design::BG_PRIMARY)
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui::log_panel::render(ui, &mut self.state);
+                    });
+            });
         });
 
         // --- MDI WORKSPACE WINDOWS ---
