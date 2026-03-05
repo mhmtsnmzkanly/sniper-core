@@ -152,7 +152,7 @@ Common failures:
 - permission denied
 
 ### `fs_exists(rel_path: string) -> bool`
-Currently a basic stub in this version.
+Checks if a relative path exists under output scope.
 
 ---
 
@@ -167,8 +167,17 @@ Creates a new tab and opens URL.
 ### `TabNew()`
 Alias for blank tab creation.
 
+### `tab_new()`
+Alias for blank tab creation.
+
 ### `TabCatch()`
 Binds to currently selected UI tab.
+
+### `TabCurrent()`
+Alias for selected tab binding.
+
+### `tab_catch()`
+Alias for selected tab binding.
 
 Common failures:
 - no selected tab in UI
@@ -186,8 +195,8 @@ Queues wait (rounded to seconds in current action mapping).
 ### `tab.screenshot()` / `tab.screenshot(name: string)`
 Queues screenshot step.
 
-### `tab.find_el(selector: string) -> ElementRef`
-Returns element handle for `click/type` methods.
+### `tab.find_el(selector: string) -> ElementQuery`
+Returns query handle for chained filtering and actions.
 
 ### `tab.run_automation_json(dsl_json: string)`
 Parses DSL JSON and runs through shared automation runtime.
@@ -199,12 +208,27 @@ Common failures:
 
 ---
 
-## 2.4 ElementRef Methods
+## 2.4 ElementQuery Methods
 
-### `el.click()`
+### `query.filter_id(id: string) -> ElementQuery`
+Appends id filter.
+
+### `query.filter_class(name: string) -> ElementQuery`
+Appends class filter.
+
+### `query.filter_attr(key: string, value: string) -> ElementQuery`
+Appends attribute filter.
+
+### `query.first_or_none() -> string`
+Returns resolved selector string.
+
+### `query.all() -> Array<string>`
+Returns selector list (current implementation returns a single resolved selector).
+
+### `query.click()`
 Queues click action.
 
-### `el.type(value: string)`
+### `query.type(value: string)`
 Queues type action.
 
 Common failures:
@@ -225,7 +249,9 @@ Outputs:
 
 ## Console
 - `tab.console.inject(js_code)`
-- `tab.console.logs() -> Array` *(currently stub/empty)*
+- `tab.console.logs() -> Array`
+  - returns selected UI tab console snapshot when tab is `TabCatch`/`TabCurrent`
+  - returns empty for newly created tab refs
 
 ## Network
 - `tab.network.start()`
@@ -234,7 +260,9 @@ Outputs:
 ## Cookies
 - `tab.cookies.set(name, value, overwrite)`
 - `tab.cookies.delete(name, domain)`
-- `tab.cookies.get_all() -> Map` *(currently stub/empty)*
+- `tab.cookies.get_all() -> Map`
+  - returns selected UI tab cookie snapshot when tab is `TabCatch`/`TabCurrent`
+  - returns empty for newly created tab refs
 
 ---
 
@@ -278,9 +306,9 @@ Chrome console logs additionally appear in:
 
 ## 2.9 Current Known Gaps
 
-- API naming still uses `TabCatch`/`TabNew` instead of final `Tab.catch`/`Tab.new` shape.
-- `console.logs`, `cookies.get_all`, `fs_exists` are incomplete/stub in current backend.
-- Advanced selector query chaining (`findEl().filter().all()`) is not fully implemented.
+- Dot-style construction (`Tab.new`, `Tab.catch`) is still not available; function aliases are used.
+- Query result model is still selector-centric (`first_or_none` / `all`) rather than concrete element objects.
+- Runtime selector validation remains dynamic (compile-time check cannot validate DOM presence).
 
 ---
 

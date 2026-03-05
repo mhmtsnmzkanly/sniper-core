@@ -213,19 +213,19 @@ Flow:
 4. Actions are executed via shared automation runtime and browser APIs
 
 Current helper families:
-- tab creation/binding (`Tab`, `TabNew`, `TabCatch`)
-- element actions (`find_el`, `click`, `type`)
+- tab creation/binding (`Tab`, `TabNew`, `tab_new`, `TabCatch`, `TabCurrent`, `tab_catch`)
+- element query/actions (`find_el`, `filter_id`, `filter_class`, `filter_attr`, `first_or_none`, `all`, `click`, `type`)
 - capture/network/console/cookies services
-- file helpers (`fs_write_text`, `fs_append_text`, `fs_mkdir_all`)
+- file helpers (`fs_write_text`, `fs_append_text`, `fs_mkdir_all`, `fs_exists`)
 
 Important behavior:
 - Script output is written to **System Telemetry**.
 - `Stop` is cooperative (cancel token).
 
 Known limitations:
-- `Tab.catch()` naming not fully normalized (`TabCatch` still used)
-- `console.logs`, `cookies.get_all`, `fs_exists` are stub/limited
-- advanced query chaining is not fully implemented yet
+- dot-style constructor names (`Tab.new`, `Tab.catch`) are not yet available
+- query outputs are selector-centric instead of concrete element objects
+- compile-time check cannot guarantee runtime selector existence
 
 See full API in [`SCRIPTING.md`](./SCRIPTING.md).
 
