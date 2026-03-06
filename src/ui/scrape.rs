@@ -59,54 +59,66 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.separator();
                     ui.add_space(4.0);
 
-                    ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
                         // Settings Grid
                         ui.vertical(|ui| {
                             egui::Grid::new("browser_mini_grid").spacing([8.0, 4.0]).show(ui, |ui| {
                                 ui.label("Path:"); 
-                                ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(200.0));
-                                ui.label("Port:"); 
-                                ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+                                ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(ui.available_width() * 0.6));
                                 ui.end_row();
 
-                                ui.label("Proxy:"); 
-                                ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).desired_width(200.0));
-                                ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode");
+                                ui.label("Launch URL:");
+                                ui.add(egui::TextEdit::singleline(&mut state.config.default_launch_url).desired_width(ui.available_width() * 0.6));
                                 ui.end_row();
 
-                                ui.label("UA:");
-                                ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).desired_width(200.0));
-                                ui.checkbox(&mut state.config.randomize_user_agent, "Random UA");
+                                ui.horizontal(|ui| {
+                                   ui.label("Port:"); 
+                                   ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+                                   ui.add_space(20.0);
+                                   ui.label("Proxy:"); 
+                                   ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).desired_width(200.0));
+                                });
+                                ui.end_row();
+
+                                ui.horizontal(|ui| {
+                                    ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode");
+                                    ui.add_space(10.0);
+                                    ui.checkbox(&mut state.config.randomize_user_agent, "Random UA");
+                                });
+                                ui.end_row();
+
+                                ui.label("Custom UA:");
+                                ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).desired_width(ui.available_width() * 0.8));
                                 ui.end_row();
                             });
                         });
 
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let btn_h = 40.0;
+                        ui.add_space(12.0);
+
+                        ui.horizontal(|ui| {
+                            let btn_h = 32.0;
                             if !state.is_browser_running {
-                                if ui.add(egui::Button::new(RichText::new("LAUNCH BROWSER").strong().size(14.0))
-                                    .min_size([180.0, btn_h].into())
+                                if ui.add(egui::Button::new(RichText::new("🚀 LAUNCH BROWSER").strong().size(14.0))
+                                    .min_size([200.0, btn_h].into())
                                     .fill(Color32::from_rgb(0, 110, 170))).clicked() {
                                     launch_browser(state);
                                 }
                             } else {
-                                ui.horizontal(|ui| {
-                                    if ui.add(egui::Button::new(RichText::new("RELAUNCH\nAPPLY PROFILE").strong().size(11.0))
-                                        .min_size([140.0, btn_h].into())
-                                        .fill(design::ACCENT_CYAN)).clicked() {
-                                        emit(AppEvent::TerminateBrowser);
-                                        launch_browser(state);
-                                    }
-                                    if ui.add(egui::Button::new(RichText::new("TERMINATE").strong().size(14.0))
-                                        .min_size([100.0, btn_h].into())
-                                        .fill(Color32::from_rgb(255, 80, 80))).clicked() {
-                                        emit(AppEvent::TerminateBrowser);
-                                    }
-                                });
+                                if ui.add(egui::Button::new(RichText::new("⟳ RELAUNCH").strong().size(12.0))
+                                    .min_size([120.0, btn_h].into())
+                                    .fill(design::ACCENT_CYAN)).clicked() {
+                                    emit(AppEvent::TerminateBrowser);
+                                    launch_browser(state);
+                                }
+                                ui.add_space(8.0);
+                                if ui.add(egui::Button::new(RichText::new("⏹ TERMINATE").strong().size(12.0))
+                                    .min_size([120.0, btn_h].into())
+                                    .fill(Color32::from_rgb(255, 80, 80))).clicked() {
+                                    emit(AppEvent::TerminateBrowser);
+                                }
                             }
                         });
-                    });
-                });
+                    });                });
 
             ui.add_space(12.0);
 
