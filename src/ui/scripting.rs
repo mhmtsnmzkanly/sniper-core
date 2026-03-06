@@ -9,7 +9,7 @@ use egui::{Color32, Frame, RichText, Stroke, Ui};
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     design::title(ui, "Scripting Studio", design::ACCENT_CYAN);
     ui.label(
-        RichText::new("Rhai tabanlı script editörü. Automation runtime ile ortak çalışır.")
+        RichText::new("Rhai tabanlı script editörü. Browser komutları (click, type vb.) arka planda Automation Runtime (DSL) ile ortak çalışır.")
             .small()
             .color(design::TEXT_MUTED),
     );

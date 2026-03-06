@@ -792,6 +792,11 @@ async fn flush_token_steps(
     }
     let step_count = steps.len();
 
+    crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+        "[SCRIPT -> ENGINE] Executing {} batched automation step(s)...",
+        step_count
+    )));
+
     run_dsl_on_tab(
         req.port,
         tab_id,
@@ -849,13 +854,16 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
         let started = Instant::now();
         match action {
             ScriptAction::NewTab { token, url } => {
+                crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
+                    "[SCRIPT] Creating new tab..."
+                )));
                 let created = crate::core::browser::BrowserManager::create_tab(req.port, url.as_deref()).await?;
                 if req.apply_stealth {
                     let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(req.port, created.id.clone()).await;
                 }
                 token_to_tab.insert(token, created.id.clone());
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
-                    "Tab[{}] created: {}",
+                    "[SCRIPT] Tab[{}] created: {}",
                     token, created.url
                 )));
             }
@@ -869,7 +877,7 @@ async fn execute_actions(req: ScriptExecutionRequest, actions: Vec<ScriptAction>
                 }
                 token_to_tab.insert(token, selected);
                 crate::ui::scrape::emit(AppEvent::ScriptingOutput(format!(
-                    "Tab[{}] attached to selected target",
+                    "[SCRIPT] Tab[{}] attached to selected target",
                     token
                 )));
             }
