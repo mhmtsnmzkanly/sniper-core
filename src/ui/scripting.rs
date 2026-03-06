@@ -59,32 +59,91 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
     }
 }
 
+/// KOD NOTU: Parantez eşleştirme mantığı.
+fn find_matching_brace(code: &str, cursor_idx: usize) -> Option<(usize, usize)> {
+    if cursor_idx == 0 || code.is_empty() { return None; }
+    
+    let chars: Vec<char> = code.chars().collect();
+    let idx = cursor_idx.saturating_sub(1);
+    if idx >= chars.len() { return None; }
+    
+    let c = chars[idx];
+    let (open, close, forward) = match c {
+        '(' => ('(', ')', true),
+        '{' => ('{', '}', true),
+        '[' => ('[', ']', true),
+        ')' => ('(', ')', false),
+        '}' => ('{', '}', false),
+        ']' => ('[', ']', false),
+        _ => return None,
+    };
+
+    if forward {
+        let mut depth = 0;
+        for i in idx..chars.len() {
+            if chars[i] == open { depth += 1; }
+            else if chars[i] == close {
+                depth -= 1;
+                if depth == 0 { return Some((idx, i)); }
+            }
+        }
+    } else {
+        let mut depth = 0;
+        for i in (0..=idx).rev() {
+            if chars[i] == close { depth += 1; }
+            else if chars[i] == open {
+                depth -= 1;
+                if depth == 0 { return Some((i, idx)); }
+            }
+        }
+    }
+    None
+}
+
 /// KOD NOTU: Rhai sözdizimi için basit bir renklendirici (Syntax Highlighter).
-fn rhai_highlighter(ui: &Ui, code: &str) -> LayoutJob {
+fn rhai_highlighter(ui: &Ui, code: &str, highlight_braces: Option<(usize, usize)>) -> LayoutJob {
     let mut job = LayoutJob::default();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
 
-    let mut it = code.chars().peekable();
-    while let Some(c) = it.next() {
-        if c == '/' && it.peek() == Some(&'/') { // Comment
-            let mut s = format!("{}", c);
-            while let Some(&nc) = it.peek() {
-                if nc == '\n' { break; }
-                s.push(it.next().unwrap());
+    let mut it = code.chars().enumerate().peekable();
+    while let Some((idx, c)) = it.next() {
+        let is_brace_match = highlight_braces.map_or(false, |(a, b)| idx == a || idx == b);
+        let base_format = if is_brace_match {
+            egui::TextFormat { 
+                color: Color32::WHITE, 
+                font_id: font_id.clone(), 
+                background: Color32::from_rgb(60, 80, 100),
+                ..Default::default() 
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(100, 150, 100), font_id: font_id.clone(), ..Default::default() });
+        } else {
+            egui::TextFormat { font_id: font_id.clone(), ..Default::default() }
+        };
+
+        if c == '/' && it.peek().map_or(false, |(_, nc)| *nc == '/') { // Comment
+            let mut s = format!("{}", c);
+            while let Some((_, nc)) = it.peek() {
+                if *nc == '\n' { break; }
+                let next_c = it.next().unwrap().1;
+                s.push(next_c);
+            }
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(100, 150, 100), ..base_format.clone() });
         } else if c == '"' || c == '`' || c == '\'' { // String
             let quote = c;
             let mut s = format!("{}", c);
-            while let Some(&nc) = it.peek() {
-                s.push(it.next().unwrap());
-                if nc == quote { break; }
+            while let Some((_, nc)) = it.peek() {
+                let nc_val = *nc;
+                let next_c = it.next().unwrap().1;
+                s.push(next_c);
+                if nc_val == quote { break; }
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(200, 150, 100), font_id: font_id.clone(), ..Default::default() });
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(200, 150, 100), ..base_format.clone() });
         } else if c.is_alphabetic() || c == '_' { // Word
             let mut s = format!("{}", c);
-            while let Some(&nc) = it.peek() {
-                if nc.is_alphanumeric() || nc == '_' { s.push(it.next().unwrap()); } else { break; }
+            while let Some((_, nc)) = it.peek() {
+                if nc.is_alphanumeric() || *nc == '_' { 
+                    let next_c = it.next().unwrap().1;
+                    s.push(next_c); 
+                } else { break; }
             }
             let color = if RHAI_KEYWORDS.contains(&s.as_str()) {
                 Color32::from_rgb(80, 150, 255) // Keyword
@@ -93,16 +152,19 @@ fn rhai_highlighter(ui: &Ui, code: &str) -> LayoutJob {
             } else {
                 Color32::from_rgb(200, 200, 200) // Default
             };
-            job.append(&s, 0.0, egui::TextFormat { color, font_id: font_id.clone(), ..Default::default() });
+            job.append(&s, 0.0, egui::TextFormat { color, ..base_format.clone() });
         } else if c.is_numeric() { // Number
             let mut s = format!("{}", c);
-            while let Some(&nc) = it.peek() {
-                if nc.is_numeric() || nc == '.' { s.push(it.next().unwrap()); } else { break; }
+            while let Some((_, nc)) = it.peek() {
+                if nc.is_numeric() || *nc == '.' { 
+                    let next_c = it.next().unwrap().1;
+                    s.push(next_c); 
+                } else { break; }
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(180, 130, 220), font_id: font_id.clone(), ..Default::default() });
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(180, 130, 220), ..base_format.clone() });
         } else { // Symbol/Punctuation
             let color = if "(){}[].,;".contains(c) { Color32::from_gray(140) } else { Color32::from_gray(200) };
-            job.append(&c.to_string(), 0.0, egui::TextFormat { color, font_id: font_id.clone(), ..Default::default() });
+            job.append(&c.to_string(), 0.0, egui::TextFormat { color, ..base_format.clone() });
         }
     }
     job
@@ -384,8 +446,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ui.separator();
                         
                         // 2. Kod Alanı
+                        let cursor_pos = state.ide_autocomplete_cursor; 
+                        let highlight_braces = find_matching_brace(&state.script_package.code, cursor_pos);
+
                         let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
-                            let mut job = rhai_highlighter(ui, string);
+                            let mut job = rhai_highlighter(ui, string, highlight_braces);
                             job.wrap.max_width = f32::INFINITY; 
                             ui.ctx().fonts(|f| f.layout_job(job))
                         };
@@ -400,8 +465,29 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 .show(ui);
 
                         if let Some(cursor_range) = output.cursor_range {
-                            let cursor_pos = cursor_range.primary.ccursor.index;
-                            handle_autocomplete(ui, state, cursor_pos);
+                            let cp = cursor_range.primary.ccursor.index;
+                            state.ide_autocomplete_cursor = cp;
+                            handle_autocomplete(ui, state, cp);
+                            
+                            // Auto-Indentation Logic
+                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                let code = state.script_package.code.clone();
+                                // Find the start of the line where the cursor was before Enter
+                                let mut line_start = cp.saturating_sub(1);
+                                while line_start > 0 && code.chars().nth(line_start-1) != Some('\n') {
+                                    line_start -= 1;
+                                }
+                                let prev_line = &code[line_start..cp.saturating_sub(1)];
+                                let indent = prev_line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                                let extra = if prev_line.trim_end().ends_with('{') { "    " } else { "" };
+                                let to_insert = format!("{}{}", indent, extra);
+                                
+                                if !to_insert.is_empty() {
+                                    let mut new_code = code.clone();
+                                    new_code.insert_str(cp, &to_insert);
+                                    state.script_package.code = new_code;
+                                }
+                            }
                             
                             // Autocomplete Popup
                             if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
@@ -417,7 +503,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                             let res = ui.selectable_label(is_selected, sug);
                                             if res.clicked() {
                                                 let mut new_code = state.script_package.code.clone();
-                                                new_code.insert_str(cursor_pos, sug);
+                                                new_code.insert_str(cp, sug);
                                                 state.script_package.code = new_code;
                                                 state.ide_autocomplete_open = false;
                                             }
