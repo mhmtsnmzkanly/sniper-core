@@ -377,6 +377,23 @@ impl eframe::App for CrawlerApp {
                     }
                     self.state.script_error = Some(msg.clone());
                     self.state.notify(NotificationLevel::Error, "Scripting", &msg);
+
+                    // Try to extract line/col to show in IDE
+                    let re = regex::Regex::new(r"at line (\d+), col (\d+)").unwrap();
+                    if let Some(caps) = re.captures(&msg) {
+                        let line = caps.get(1).and_then(|m| m.as_str().parse::<usize>().ok());
+                        let col = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok());
+                        
+                        self.state.ide_diagnostics.push(crate::core::scripting::types::ScriptDiagnostic {
+                            code: "RUNTIME-ERR".into(),
+                            stage: crate::core::scripting::types::DiagnosticStage::Compile,
+                            severity: crate::core::scripting::types::DiagnosticSeverity::Error,
+                            message: msg,
+                            line,
+                            column: col,
+                            hint: None,
+                        });
+                    }
                 }
                 
                 // --- COMMAND ROUTING WITH AUDIT LOGS ---

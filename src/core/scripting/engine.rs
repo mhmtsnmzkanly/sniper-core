@@ -732,15 +732,24 @@ fn collect_actions(package: &ScriptPackage, static_ctx: &ScriptStaticContext) ->
     let normalized_code = normalize_scripting_code(&package.code);
     let ast = engine
         .compile(&normalized_code)
-        .map_err(|e| AppError::Internal(format!("Rhai compile error: {e}")))?;
+        .map_err(|e| {
+            let pos = e.position();
+            AppError::Internal(format!("Rhai compile error at line {}, col {}: {}", pos.line().unwrap_or(0), pos.position().unwrap_or(0), e))
+        })?;
 
     engine
         .run_ast_with_scope(&mut scope, &ast)
-        .map_err(|e| AppError::Internal(format!("Rhai runtime error: {e}")))?;
+        .map_err(|e| {
+            let pos = e.position();
+            AppError::Internal(format!("Rhai runtime error at line {}, col {}: {}", pos.line().unwrap_or(0), pos.position().unwrap_or(0), e))
+        })?;
 
     engine
         .call_fn::<()>(&mut scope, &ast, &package.entry, ())
-        .map_err(|e| AppError::Internal(format!("Rhai entry error: {e}")))?;
+        .map_err(|e| {
+            let pos = e.position();
+            AppError::Internal(format!("Rhai entry error at line {}, col {}: {}", pos.line().unwrap_or(0), pos.position().unwrap_or(0), e))
+        })?;
 
     let actions = {
         let lock = build.lock().unwrap();
