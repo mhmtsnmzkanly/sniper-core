@@ -626,17 +626,30 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             }
                         });
 
+                        // Sync cursor pos for IDE features
                         if let Some(cursor_range) = output.cursor_range {
                             let cp = cursor_range.primary.ccursor.index;
-                            state.ide_autocomplete_cursor = cp;
+                            
+                            // Sadece autocomplete kapalıyken veya yeni açılıyorken konumu güncelle
+                            if !state.ide_autocomplete_open {
+                                state.ide_autocomplete_cursor = cp;
+                            }
+                            
                             handle_autocomplete(ui, state, cp);
                             
                             // Autocomplete Logic
                             if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
-                                if ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab)) {
-                                    if let Some(suggestion) = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index).cloned() {
-                                        apply_autocomplete(state, &suggestion);
+                                // Tuş vuruşlarını tüket (consume) etmeden önce kontrol et
+                                let mut selected_suggestion = None;
+                                
+                                ui.input(|i| {
+                                    if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab) {
+                                        selected_suggestion = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index).cloned();
                                     }
+                                });
+
+                                if let Some(suggestion) = selected_suggestion {
+                                    apply_autocomplete(state, &suggestion);
                                 }
 
                                 // Popup UI (floating)
@@ -657,7 +670,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                                     if res.clicked() {
                                                         apply_autocomplete(state, sug);
                                                     }
-                                                }                                            });
+                                                }
+                                            });
                                     });
                             } else {
                                 // Auto-Indentation Logic (Only if autocomplete is closed)
