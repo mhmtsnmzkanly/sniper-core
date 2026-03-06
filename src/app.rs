@@ -63,7 +63,6 @@ fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation:
         AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_ui_steps_to_dsl(body) },
         AutomationStep::IfCondition { condition, then_steps } => crate::core::automation::dsl::Step::IfCondition { condition: condition.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
         AutomationStep::CallFunction(name) => crate::core::automation::dsl::Step::CallFunction { name: name.clone() },
-
         AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset { filename: f.clone() },
     }).collect()
 }
@@ -81,16 +80,33 @@ impl eframe::App for CrawlerApp {
 
         // KOD NOTU: Her 2 saniyede bir browser'ın hayatta olup olmadığını kontrol eder.
         // Bu, manuel kapatılan browser instance'larını tespit etmek için kritiktir.
+        // 1. HEALTH CHECKS & AUTO-SYNC
         if self.state.is_browser_running {
             let now = ctx.input(|i| i.time);
+
+            // Health check every 2 seconds
             if now - self.state.last_health_check > 2.0 {
                 self.state.last_health_check = now;
                 let port = self.state.config.remote_debug_port;
                 tokio::spawn(async move {
                     if !crate::core::browser::BrowserManager::check_health(port).await {
-                        crate::ui::scrape::emit(AppEvent::BrowserTerminated);
+                        let _ = crate::ui::scrape::emit(AppEvent::BrowserTerminated);
                     }
                 });
+            }
+
+            // Auto-refresh tabs every 5 seconds
+            static mut LAST_TAB_SYNC: f64 = 0.0;
+            unsafe {
+                if now - LAST_TAB_SYNC > 5.0 {
+                    LAST_TAB_SYNC = now;
+                    let port = self.state.config.remote_debug_port;
+                    tokio::spawn(async move {
+                        if let Ok(tabs) = crate::core::browser::BrowserManager::list_tabs(port).await {
+                            let _ = crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs));
+                        }
+                    });
+                }
             }
         }
 
@@ -909,6 +925,7 @@ impl eframe::App for CrawlerApp {
 
         // Setup Modals
         if !self.state.output_confirmed {
+            // (Initial Setup modal remains...)
             egui::Window::new("Sniper Studio - Initial Setup").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false).resizable(false).show(ctx, |ui| {
                     ui.heading("Select Output Directory");
@@ -942,167 +959,152 @@ impl eframe::App for CrawlerApp {
             return;
         }
 
-        egui::SidePanel::left("navigation_panel")
-            .resizable(true)
-            .default_width(240.0)
-            .min_width(200.0)
-            .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new("Sniper Studio").strong().size(18.0).color(ui::design::ACCENT_ORANGE));
-                    ui.label(RichText::new("Octane workflow").small().color(ui::design::TEXT_MUTED));
-                });
-                ui.separator();
-                ui.vertical(|ui| {
-                    let nav_items = [
-                        (Tab::Scrape, "Operations"),
-                        (Tab::Scripting, "Scripting"),
-                        (Tab::Translate, "Translate"),
-                        (Tab::Settings, "Configuration"),
-                        (Tab::Logs, "Logs"),
-                    ];
-                    for (tab, label) in nav_items.iter() {
-                        if ui
-                            .selectable_label(self.state.active_tab == *tab, *label)
-                            .clicked()
-                        {
-                            self.state.active_tab = *tab;
-                        }
-                    }
-                });
-                ui.separator();
-                ui.label(RichText::new("Browser Status").strong().color(ui::design::ACCENT_CYAN));
-                ui.label(
-                    RichText::new(if self.state.is_browser_running { "LIVE" } else { "OFFLINE" })
-                        .color(if self.state.is_browser_running { ui::design::ACCENT_GREEN } else { Color32::from_rgb(255, 119, 119) })
-                        .strong(),
-                );
-                ui.label(RichText::new(format!("Tabs: {}", self.state.available_tabs.len())).small());
-                ui.add_space(10.0);
-            });
-
-        // Main panel layout
+        // --- MAIN PANEL ---
         CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.add_space(6.0);
-                Frame::group(ui.style())
-                    .fill(ui::design::BG_PRIMARY)
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| {
-                        ui::scrape::render(ui, &mut self.state);
-                    });
-                ui.add_space(12.0);
-                Frame::group(ui.style())
-                    .fill(ui::design::BG_SURFACE)
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| match self.state.active_tab {
-                        Tab::Scrape => {
-                            ui.label("Scrape mode is always active above. Use Command Center to drive actions.");
-                        }
-                        Tab::Scripting => ui::scripting::render(ui, &mut self.state),
-                        Tab::Translate => ui::translate::render(ui, &mut self.state),
-                        Tab::Settings => ui::config_panel::render(ui, &mut self.state),
-                        Tab::Logs => {
-                            ui.label("System telemetry lives below. Use the log controls to filter or export.");
-                        }
-                        _ => {
-                            ui.label("Auxiliary workspace panels remain available via the Operations Deck windows.");
-                        }
-                    });
-                ui.add_space(12.0);
-                Frame::group(ui.style())
-                    .fill(ui::design::BG_PRIMARY)
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| {
-                        ui::log_panel::render(ui, &mut self.state);
-                    });
+                
+                match self.state.active_tab {
+                    Tab::Scrape => {
+                        Frame::group(ui.style())
+                            .fill(ui::design::BG_PRIMARY)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| {
+                                ui::scrape::render(ui, &mut self.state);
+                            });
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("Use the Command Center above to drive browser actions.").small().color(Color32::GRAY));
+                    }
+                    Tab::Scripting => {
+                        Frame::group(ui.style())
+                            .fill(ui::design::BG_SURFACE)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| ui::scripting::render(ui, &mut self.state));
+                    }
+                    Tab::Translate => {
+                        Frame::group(ui.style())
+                            .fill(ui::design::BG_SURFACE)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| ui::translate::render(ui, &mut self.state));
+                    }
+                    Tab::Settings => {
+                        Frame::group(ui.style())
+                            .fill(ui::design::BG_SURFACE)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| ui::config_panel::render(ui, &mut self.state));
+                    }
+                    Tab::Logs => {
+                        Frame::group(ui.style())
+                            .fill(ui::design::BG_PRIMARY)
+                            .inner_margin(egui::Margin::same(8))
+                            .show(ui, |ui| {
+                                ui::log_panel::render(ui, &mut self.state);
+                            });
+                    }
+                    _ => {
+                        ui.label("Auxiliary workspace panels remain available via the Operations Deck windows.");
+                    }
+                }
             });
         });
 
-        // --- MDI WORKSPACE WINDOWS ---
-        // Decouple workspace info from mut borrow of self.state.workspaces
+        // --- MDI WORKSPACE WINDOWS (ISOLATED PER TAB) ---
         let active_workspaces: Vec<(String, String, bool, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
             (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation, ws.show_console)
         }).collect();
 
         for (tid, title, show_net, show_med, show_stor, show_auto, show_cons) in active_workspaces {
+            let window_title_prefix = format!("[{}] {}", tid.chars().take(4).collect::<String>(), title);
+
             if show_net {
                 let mut open = true;
-                egui::Window::new(format!("Network - {}", title)).open(&mut open).id(egui::Id::new(format!("net_{}", tid)))
+                egui::Window::new(format!("🌐 Network Inspector - {}", window_title_prefix))
+                    .open(&mut open)
+                    .id(egui::Id::new(format!("net_{}", tid)))
                     .default_width(600.0)
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::network_panel::render(ui, &mut self.state, &tid);
-                });
+                        ui::network_panel::render(ui, &mut self.state, &tid);
+                    });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = false; } }
             }
             if show_med {
                 let mut open = true;
-                egui::Window::new(format!("Media - {}", title)).open(&mut open).id(egui::Id::new(format!("med_{}", tid)))
+                egui::Window::new(format!("🎥 Media Assets - {}", window_title_prefix))
+                    .open(&mut open)
+                    .id(egui::Id::new(format!("med_{}", tid)))
                     .default_width(700.0)
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::media_panel::render(ui, &mut self.state, &tid);
-                });
+                        ui::media_panel::render(ui, &mut self.state, &tid);
+                    });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = false; } }
             }
             if show_stor {
                 let mut open = true;
-                egui::Window::new(format!("Cookies - {}", title)).open(&mut open).id(egui::Id::new(format!("stor_{}", tid)))
+                egui::Window::new(format!("🍪 Cookies & Storage - {}", window_title_prefix))
+                    .open(&mut open)
+                    .id(egui::Id::new(format!("stor_{}", tid)))
                     .default_width(600.0)
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::storage_panel::render(ui, &mut self.state, &tid);
-                });
+                        ui::storage_panel::render(ui, &mut self.state, &tid);
+                    });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = false; } }
             }
             if show_auto {
                 let mut open = true;
-                egui::Window::new(format!("Automation - {}", title)).open(&mut open).id(egui::Id::new(format!("auto_{}", tid)))
+                egui::Window::new(format!("🤖 Automation Pipeline - {}", window_title_prefix))
+                    .open(&mut open)
+                    .id(egui::Id::new(format!("auto_{}", tid)))
                     .default_width(800.0)
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    ui::automation::render_embedded(ui, &mut self.state, &tid);
-                });
+                        ui::automation::render_embedded(ui, &mut self.state, &tid);
+                    });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_automation = false; } }
             }
             if show_cons {
                 let mut open = true;
-                egui::Window::new(format!("Console - {}", title)).open(&mut open).id(egui::Id::new(format!("cons_{}", tid)))
+                egui::Window::new(format!("⌨ JavaScript Console - {}", window_title_prefix))
+                    .open(&mut open)
+                    .id(egui::Id::new(format!("cons_{}", tid)))
                     .default_width(500.0)
                     .resizable(true)
                     .vscroll(true)
                     .show(ctx, |ui| {
-                    let (mut script, res, logs) = {
-                        let ws = self.state.workspaces.get(&tid).unwrap();
-                        (ws.js_script.clone(), ws.js_result.clone(), ws.console_logs.clone())
-                    };
-                    ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.heading(RichText::new("JS CONSOLE").color(Color32::LIGHT_BLUE));
-                            if ui.button("📂 LOAD JS").clicked() {
-                                if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
-                                    if let Ok(c) = std::fs::read_to_string(path) { script = c; }
+                        // Isolated console logic inside the window
+                        let (mut script, res, logs) = {
+                            let ws = self.state.workspaces.get(&tid).unwrap();
+                            (ws.js_script.clone(), ws.js_result.clone(), ws.console_logs.clone())
+                        };
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.heading(RichText::new("JS EXECUTOR").color(Color32::LIGHT_BLUE));
+                                if ui.button("📂 LOAD").clicked() {
+                                    if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
+                                        if let Ok(c) = std::fs::read_to_string(path) { script = c; }
+                                    }
                                 }
+                                if ui.button("🗑 CLEAR").clicked() { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.console_logs.clear(); } }
+                            });
+                            ui.add(egui::TextEdit::multiline(&mut script).font(egui::FontId::monospace(12.0)).desired_rows(5).desired_width(f32::INFINITY).hint_text("Enter JS code to run on this tab..."));
+                            if ui.button(RichText::new("▶ RUN ON TAB").strong()).clicked() {
+                                ui::scrape::emit(AppEvent::RequestScriptExecution(tid.clone(), script.clone()));
                             }
-                            if ui.button("🗑 CLEAR").clicked() { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.console_logs.clear(); } }
+                            if !res.is_empty() { ui.label(RichText::new(format!("Result: {}", res)).color(Color32::GREEN).monospace()); }
+                            ui.separator();
+                            ui.label(RichText::new("TAB CONSOLE OUTPUT:").small().color(Color32::GRAY));
+                            egui::ScrollArea::vertical().stick_to_bottom(true).max_height(200.0).id_salt(format!("{}_cons_scroll", tid)).show(ui, |ui| {
+                                for log in logs { ui.label(RichText::new(format!("> {}", log)).monospace().size(11.0)); }
+                            });
                         });
-                        ui.add(egui::TextEdit::multiline(&mut script).font(egui::FontId::monospace(12.0)).desired_rows(5).desired_width(f32::INFINITY));
-                        if ui.button(RichText::new("▶ EXECUTE SCRIPT").strong()).clicked() {
-                            ui::scrape::emit(AppEvent::RequestScriptExecution(tid.clone(), script.clone()));
-                        }
-                        if !res.is_empty() { ui.label(RichText::new(format!("Result: {}", res)).color(Color32::GREEN).monospace()); }
-                        ui.separator();
-                        egui::ScrollArea::vertical().stick_to_bottom(true).max_height(200.0).show(ui, |ui| {
-                            for log in logs { ui.label(RichText::new(format!("> {}", log)).monospace().size(11.0)); }
-                        });
+                        if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.js_script = script; }
                     });
-                    if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.js_script = script; }
-                });
                 if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_console = false; } }
             }
         }
