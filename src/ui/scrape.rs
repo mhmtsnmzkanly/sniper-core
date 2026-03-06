@@ -245,6 +245,9 @@ fn render_command_center(ui: &mut Ui, state: &mut AppState, panel_stroke: Stroke
                         if ui.add_enabled(can_action, egui::Button::new(RichText::new("📦 COMPLETE").strong().color(Color32::LIGHT_BLUE)).min_size([min_w, btn_h].into())).clicked() {
                             emit(AppEvent::RequestCapture(tid.clone(), "complete".into()));
                         }
+                        if ui.add_enabled(can_action, egui::Button::new(RichText::new("🪞 MIRROR").strong().color(Color32::KHAKI)).min_size([min_w, btn_h].into())).clicked() {
+                            emit(AppEvent::RequestCapture(tid.clone(), "mirror".into()));
+                        }
                     });
                 });
 
