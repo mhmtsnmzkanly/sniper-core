@@ -236,46 +236,52 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                             });
                                         });
                                     } else {
-                                        let per_row = state.tabs_per_row.clamp(1, 6);
+                                        let per_row = state.tabs_per_row.clamp(1, 6) as usize;
                                         let spacing = 8.0;
-                                        let avail_w = ui.available_width();
+                                        let avail_w = ui.available_width() - 16.0; // Small buffer for scrollbar
                                         let col_w = ((avail_w - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
                                         
-                                        ui.horizontal_wrapped(|ui| {
-                                            ui.spacing_mut().item_spacing = egui::vec2(spacing, spacing);
-                                            for tab in state.available_tabs.iter() {
-                                                let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
-                                                let (border_col, bg_col) = if is_selected { 
-                                                    (design::ACCENT_GREEN, Color32::from_rgb(30, 50, 60)) 
-                                                } else { 
-                                                    (Color32::from_gray(50), design::BG_PRIMARY) 
-                                                };
-                                                
-                                                let res = Frame::group(ui.style())
-                                                    .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
-                                                    .fill(bg_col)
-                                                    .inner_margin(8.0)
-                                                    .corner_radius(6.0)
-                                                    .show(ui, |ui| {
-                                                        ui.set_width(col_w);
-                                                        ui.set_height(64.0);
-                                                        ui.vertical(|ui| {
-                                                            ui.add(egui::Label::new(RichText::new(&tab.title).strong().size(11.0).color(Color32::WHITE)).truncate());
-                                                            ui.add(egui::Label::new(RichText::new(&tab.url).size(9.0).color(Color32::from_gray(140))).truncate());
-                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
-                                                                ui.label(RichText::new(&tab.id[..8.min(tab.id.len())]).size(7.0).color(Color32::from_gray(80)).monospace());
+                                        egui::Grid::new("tabs_grid_layout")
+                                            .spacing([spacing, spacing])
+                                            .min_col_width(col_w)
+                                            .show(ui, |ui| {
+                                                for (idx, tab) in state.available_tabs.iter().enumerate() {
+                                                    let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
+                                                    let (border_col, bg_col) = if is_selected { 
+                                                        (design::ACCENT_GREEN, Color32::from_rgb(30, 50, 60)) 
+                                                    } else { 
+                                                        (Color32::from_gray(50), design::BG_PRIMARY) 
+                                                    };
+                                                    
+                                                    let res = Frame::group(ui.style())
+                                                        .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
+                                                        .fill(bg_col)
+                                                        .inner_margin(8.0)
+                                                        .corner_radius(6.0)
+                                                        .show(ui, |ui| {
+                                                            ui.set_width(col_w);
+                                                            ui.set_height(64.0);
+                                                            ui.vertical(|ui| {
+                                                                ui.add(egui::Label::new(RichText::new(&tab.title).strong().size(11.0).color(Color32::WHITE)).truncate());
+                                                                ui.add(egui::Label::new(RichText::new(&tab.url).size(9.0).color(Color32::from_gray(140))).truncate());
+                                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
+                                                                    ui.label(RichText::new(&tab.id[..8.min(tab.id.len())]).size(7.0).color(Color32::from_gray(80)).monospace());
+                                                                });
                                                             });
-                                                        });
-                                                    }).response;
+                                                        }).response;
 
-                                                let click_res = ui.interact(res.rect, res.id, egui::Sense::click());
-                                                if click_res.clicked() {
-                                                    state.selected_tab_id = Some(tab.id.clone());
-                                                    tracing::info!("[UI] Selected tab: {}", tab.id);
+                                                    let click_res = ui.interact(res.rect, res.id, egui::Sense::click());
+                                                    if click_res.clicked() {
+                                                        state.selected_tab_id = Some(tab.id.clone());
+                                                        tracing::info!("[UI] Selected tab: {}", tab.id);
+                                                    }
+                                                    res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
+
+                                                    if (idx + 1) % per_row == 0 {
+                                                        ui.end_row();
+                                                    }
                                                 }
-                                                res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
-                                            }
-                                        });
+                                            });
                                     }
                                 });
                         });
