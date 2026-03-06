@@ -27,260 +27,264 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     Frame::NONE
         .inner_margin(egui::Margin {
             left: 0,
-            right: 12,
+            right: 24,
             top: 0,
             bottom: 0,
         })
         .show(ui, |ui| {
-            design::title(ui, "Operations Deck", design::ACCENT_CYAN);
-            ui.add_space(4.0);
-
-            let panel_stroke = Stroke::new(1.0, Color32::from_rgb(42, 64, 78));
-            let full_w = ui.available_width();
-
-            // ── ROW 1: BROWSER LAUNCHER ───────────────────────────────────────
-            Frame::group(ui.style())
-                .fill(design::BG_SURFACE)
-                .stroke(panel_stroke)
-                .corner_radius(8.0)
-                .inner_margin(12.0)
+            egui::ScrollArea::vertical()
+                .id_salt("main_scrape_scroll")
                 .show(ui, |ui| {
-                    ui.set_width(full_w);
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("🚀 BROWSER CONTROL").strong().color(design::ACCENT_ORANGE));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if state.is_browser_running {
-                                ui.label(RichText::new("● ONLINE").monospace().strong().color(design::ACCENT_GREEN));
-                            } else {
-                                ui.label(RichText::new("○ OFFLINE").monospace().color(Color32::GRAY));
-                            }
-                        });
-                    });
-                    ui.separator();
+                    design::title(ui, "Operations Deck", design::ACCENT_CYAN);
                     ui.add_space(4.0);
 
-                    ui.vertical(|ui| {
-                        ui.set_width(ui.available_width());
+                    let panel_stroke = Stroke::new(1.0, Color32::from_rgb(42, 64, 78));
+                    let full_w = ui.available_width();
 
-                        // --- GROUP 1: NETWORK & IDENTITY ---
-                        Frame::NONE
-                            .fill(design::BG_PRIMARY)
-                            .inner_margin(8.0)
-                            .corner_radius(6.0)
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(RichText::new("🌐 NETWORK & IDENTITY").strong().size(11.0).color(design::ACCENT_CYAN));
-                                ui.add_space(4.0);
-
-                                egui::Grid::new("browser_network_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                                    ui.label("Proxy:");
-                                    ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).hint_text("http://host:port").desired_width(280.0));
-                                    ui.end_row();
-
-                                    ui.label("Custom UA:");
-                                    ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).hint_text("Mozilla/5.0...").desired_width(280.0));
-                                    ui.end_row();
-                                });
-
-                                ui.add_space(6.0);
-                                ui.horizontal(|ui| {
-                                    ui.checkbox(&mut state.config.randomize_user_agent, "Random UA Mode");
-                                    ui.add_space(12.0);
-                                    ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode (Anti-Fingerprint)");
-                                });
-                            });
-
-                        ui.add_space(10.0);
-
-                        // --- GROUP 2: ENGINE & BEHAVIOR ---
-                        Frame::NONE
-                            .fill(design::BG_PRIMARY)
-                            .inner_margin(8.0)
-                            .corner_radius(6.0)
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(RichText::new("⚙ ENGINE & BEHAVIOR").strong().size(11.0).color(design::ACCENT_CYAN));
-                                ui.add_space(4.0);
-
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.checkbox(&mut state.config.headless, "Headless");
-                                    ui.add_space(8.0);
-                                    ui.checkbox(&mut state.config.incognito, "Incognito");
-                                    ui.add_space(8.0);
-                                    ui.checkbox(&mut state.config.ignore_cert_errors, "Ignore SSL Errors");
-                                    ui.add_space(8.0);
-                                    ui.checkbox(&mut state.config.mute_audio, "Mute Audio");
-                                    ui.add_space(8.0);
-                                    ui.checkbox(&mut state.config.disable_gpu, "Disable GPU");
-                                });
-                            });
-
-                        ui.add_space(10.0);
-
-                        // --- GROUP 3: WINDOW & ENVIRONMENT ---
-                        Frame::NONE
-                            .fill(design::BG_PRIMARY)
-                            .inner_margin(8.0)
-                            .corner_radius(6.0)
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(RichText::new("🖥 WINDOW & ENVIRONMENT").strong().size(11.0).color(design::ACCENT_CYAN));
-                                ui.add_space(4.0);
-
-                                egui::Grid::new("browser_env_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                                    ui.label("Binary Path:");
-                                    ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(280.0));
-                                    ui.end_row();
-
-                                    ui.label("Launch URL:");
-                                    ui.add(egui::TextEdit::singleline(&mut state.config.default_launch_url).desired_width(280.0));
-                                    ui.end_row();
-
-                                    ui.label("Resolution:");
-                                    ui.horizontal(|ui| {
-                                        ui.add(egui::DragValue::new(&mut state.config.window_width).prefix("W: "));
-                                        ui.label("x");
-                                        ui.add(egui::DragValue::new(&mut state.config.window_height).prefix("H: "));
-                                        ui.add_space(20.0);
-                                        ui.label("Language:");
-                                        ui.add(egui::TextEdit::singleline(&mut state.config.browser_language).desired_width(80.0));
-                                    });
-                                    ui.end_row();
-                                });
-                            });
-
-                        ui.add_space(16.0);
-
-                        // --- LAUNCH CONTROLS ---
-                        ui.horizontal(|ui| {
-                            let btn_h = 36.0;
-                            if !state.is_browser_running {
-                                let launch_btn = egui::Button::new(RichText::new("🚀  LAUNCH TARGET BROWSER").strong().size(15.0))
-                                    .min_size([280.0, btn_h].into())
-                                    .fill(Color32::from_rgb(0, 110, 170));
-
-                                if ui.add(launch_btn).clicked() {
-                                    launch_browser(state);
-                                }
-
-                                ui.add_space(12.0);
-                                ui.vertical(|ui| {
-                                    ui.label(RichText::new("Remote CDP Port:").size(9.0).color(design::TEXT_MUTED));
-                                    ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
-                                });
-                            } else {
-                                if ui.add(egui::Button::new(RichText::new("⟳  RELAUNCH").strong().size(13.0))
-                                    .min_size([140.0, btn_h].into())
-                                    .fill(design::ACCENT_CYAN)).clicked() {
-                                    emit(AppEvent::TerminateBrowser);
-                                    launch_browser(state);
-                                }
-                                ui.add_space(10.0);
-                                if ui.add(egui::Button::new(RichText::new("⏹  TERMINATE").strong().size(13.0))
-                                    .min_size([140.0, btn_h].into())
-                                    .fill(Color32::from_rgb(255, 80, 80))).clicked() {
-                                    emit(AppEvent::TerminateBrowser);
-                                }
-
-                                ui.add_space(20.0);
-                                ui.label(RichText::new(format!("Connected to port {}", state.config.remote_debug_port)).italics().color(design::ACCENT_GREEN));
-                            }
-                        });
-                    });                });
-
-            ui.add_space(12.0);
-
-            // ── ROW 2: CHROME TABS ────────────────────────────────────────────
-            Frame::group(ui.style())
-                .fill(design::BG_SURFACE)
-                .stroke(panel_stroke)
-                .corner_radius(8.0)
-                .inner_margin(12.0)
-                .show(ui, |ui| {
-                    ui.set_width(full_w);
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("📑 CHROME TABS").strong().color(design::ACCENT_ORANGE));
-                        ui.add_space(10.0);
-                        if state.is_browser_running {
-                            ui.add(egui::Slider::new(&mut state.tabs_per_row, 1..=6).text("Columns"));
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add_enabled(state.is_browser_running, egui::Button::new("⟳ SYNC TABS")).clicked() {
-                                emit(AppEvent::RequestTabRefresh);
-                            }
-                        });
-                    });
-                    ui.separator();
-                    ui.add_space(4.0);
-
-                    let scroll_h = 240.0;
-                    egui::ScrollArea::vertical()
-                        .max_height(scroll_h)
-                        .id_salt("scrape_tab_scroll")
-                        .auto_shrink([false, true])
+                    // ── ROW 1: BROWSER LAUNCHER ───────────────────────────────────────
+                    Frame::group(ui.style())
+                        .fill(design::BG_SURFACE)
+                        .stroke(panel_stroke)
+                        .corner_radius(8.0)
+                        .inner_margin(12.0)
                         .show(ui, |ui| {
-                            if !state.is_browser_running {
-                                ui.centered_and_justified(|ui| {
-                                    ui.label(RichText::new("BROWSER NOT CONNECTED\nTabs will appear here after launch").italics().color(Color32::GRAY));
-                                });
-                            } else if state.available_tabs.is_empty() {
-                                ui.centered_and_justified(|ui| {
-                                    ui.vertical_centered(|ui| {
-                                        ui.spinner();
-                                        ui.add_space(8.0);
-                                        ui.label(RichText::new(format!("Searching for active targets on port {}", state.config.remote_debug_port)).color(Color32::KHAKI));
-                                        if ui.button("Retry Force Sync").clicked() { emit(AppEvent::RequestTabRefresh); }
-                                    });
-                                });
-                            } else {
-                                let per_row = state.tabs_per_row.clamp(1, 6);
-                                let spacing = 8.0;
-                                let avail_w = ui.available_width();
-                                let col_w = ((avail_w - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
-                                
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.spacing_mut().item_spacing = egui::vec2(spacing, spacing);
-                                    for tab in state.available_tabs.iter() {
-                                        let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
-                                        let (border_col, bg_col) = if is_selected { 
-                                            (design::ACCENT_GREEN, Color32::from_rgb(30, 50, 60)) 
-                                        } else { 
-                                            (Color32::from_gray(50), design::BG_PRIMARY) 
-                                        };
-                                        
-                                        let res = Frame::group(ui.style())
-                                            .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
-                                            .fill(bg_col)
-                                            .inner_margin(8.0)
-                                            .corner_radius(6.0)
-                                            .show(ui, |ui| {
-                                                ui.set_width(col_w);
-                                                ui.set_height(64.0);
-                                                ui.vertical(|ui| {
-                                                    ui.add(egui::Label::new(RichText::new(&tab.title).strong().size(11.0).color(Color32::WHITE)).truncate());
-                                                    ui.add(egui::Label::new(RichText::new(&tab.url).size(9.0).color(Color32::from_gray(140))).truncate());
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
-                                                        ui.label(RichText::new(&tab.id[..8.min(tab.id.len())]).size(7.0).color(Color32::from_gray(80)).monospace());
-                                                    });
-                                                });
-                                            }).response;
-
-                                        let click_res = ui.interact(res.rect, res.id, egui::Sense::click());
-                                        if click_res.clicked() {
-                                            state.selected_tab_id = Some(tab.id.clone());
-                                            tracing::info!("[UI] Selected tab: {}", tab.id);
-                                        }
-                                        res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
+                            ui.set_width(full_w);
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("🚀 BROWSER CONTROL").strong().color(design::ACCENT_ORANGE));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if state.is_browser_running {
+                                        ui.label(RichText::new("● ONLINE").monospace().strong().color(design::ACCENT_GREEN));
+                                    } else {
+                                        ui.label(RichText::new("○ OFFLINE").monospace().color(Color32::GRAY));
                                     }
                                 });
-                            }
+                            });
+                            ui.separator();
+                            ui.add_space(4.0);
+
+                            ui.vertical(|ui| {
+                                ui.set_width(ui.available_width());
+
+                                // --- GROUP 1: NETWORK & IDENTITY ---
+                                Frame::NONE
+                                    .fill(design::BG_PRIMARY)
+                                    .inner_margin(8.0)
+                                    .corner_radius(6.0)
+                                    .show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        ui.label(RichText::new("🌐 NETWORK & IDENTITY").strong().size(11.0).color(design::ACCENT_CYAN));
+                                        ui.add_space(4.0);
+
+                                        egui::Grid::new("browser_network_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                            ui.label("Proxy:");
+                                            ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).hint_text("http://host:port").desired_width(280.0));
+                                            ui.end_row();
+
+                                            ui.label("Custom UA:");
+                                            ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).hint_text("Mozilla/5.0...").desired_width(280.0));
+                                            ui.end_row();
+                                        });
+
+                                        ui.add_space(6.0);
+                                        ui.horizontal(|ui| {
+                                            ui.checkbox(&mut state.config.randomize_user_agent, "Random UA Mode");
+                                            ui.add_space(12.0);
+                                            ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode (Anti-Fingerprint)");
+                                        });
+                                    });
+
+                                ui.add_space(10.0);
+
+                                // --- GROUP 2: ENGINE & BEHAVIOR ---
+                                Frame::NONE
+                                    .fill(design::BG_PRIMARY)
+                                    .inner_margin(8.0)
+                                    .corner_radius(6.0)
+                                    .show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        ui.label(RichText::new("⚙ ENGINE & BEHAVIOR").strong().size(11.0).color(design::ACCENT_CYAN));
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal_wrapped(|ui| {
+                                            ui.checkbox(&mut state.config.headless, "Headless");
+                                            ui.add_space(8.0);
+                                            ui.checkbox(&mut state.config.incognito, "Incognito");
+                                            ui.add_space(8.0);
+                                            ui.checkbox(&mut state.config.ignore_cert_errors, "Ignore SSL Errors");
+                                            ui.add_space(8.0);
+                                            ui.checkbox(&mut state.config.mute_audio, "Mute Audio");
+                                            ui.add_space(8.0);
+                                            ui.checkbox(&mut state.config.disable_gpu, "Disable GPU");
+                                        });
+                                    });
+
+                                ui.add_space(10.0);
+
+                                // --- GROUP 3: WINDOW & ENVIRONMENT ---
+                                Frame::NONE
+                                    .fill(design::BG_PRIMARY)
+                                    .inner_margin(8.0)
+                                    .corner_radius(6.0)
+                                    .show(ui, |ui| {
+                                        ui.set_width(ui.available_width());
+                                        ui.label(RichText::new("🖥 WINDOW & ENVIRONMENT").strong().size(11.0).color(design::ACCENT_CYAN));
+                                        ui.add_space(4.0);
+
+                                        egui::Grid::new("browser_env_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                            ui.label("Binary Path:");
+                                            ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(280.0));
+                                            ui.end_row();
+
+                                            ui.label("Launch URL:");
+                                            ui.add(egui::TextEdit::singleline(&mut state.config.default_launch_url).desired_width(280.0));
+                                            ui.end_row();
+
+                                            ui.label("Resolution:");
+                                            ui.horizontal(|ui| {
+                                                ui.add(egui::DragValue::new(&mut state.config.window_width).prefix("W: "));
+                                                ui.label("x");
+                                                ui.add(egui::DragValue::new(&mut state.config.window_height).prefix("H: "));
+                                                ui.add_space(20.0);
+                                                ui.label("Language:");
+                                                ui.add(egui::TextEdit::singleline(&mut state.config.browser_language).desired_width(80.0));
+                                            });
+                                            ui.end_row();
+                                        });
+                                    });
+
+                                ui.add_space(16.0);
+
+                                // --- LAUNCH CONTROLS ---
+                                ui.horizontal(|ui| {
+                                    let btn_h = 36.0;
+                                    if !state.is_browser_running {
+                                        let launch_btn = egui::Button::new(RichText::new("🚀  LAUNCH TARGET BROWSER").strong().size(15.0))
+                                            .min_size([280.0, btn_h].into())
+                                            .fill(Color32::from_rgb(0, 110, 170));
+
+                                        if ui.add(launch_btn).clicked() {
+                                            launch_browser(state);
+                                        }
+
+                                        ui.add_space(12.0);
+                                        ui.vertical(|ui| {
+                                            ui.label(RichText::new("Remote CDP Port:").size(9.0).color(design::TEXT_MUTED));
+                                            ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+                                        });
+                                    } else {
+                                        if ui.add(egui::Button::new(RichText::new("⟳  RELAUNCH").strong().size(13.0))
+                                            .min_size([140.0, btn_h].into())
+                                            .fill(design::ACCENT_CYAN)).clicked() {
+                                            emit(AppEvent::TerminateBrowser);
+                                            launch_browser(state);
+                                        }
+                                        ui.add_space(10.0);
+                                        if ui.add(egui::Button::new(RichText::new("⏹  TERMINATE").strong().size(13.0))
+                                            .min_size([140.0, btn_h].into())
+                                            .fill(Color32::from_rgb(255, 80, 80))).clicked() {
+                                            emit(AppEvent::TerminateBrowser);
+                                        }
+
+                                        ui.add_space(20.0);
+                                        ui.label(RichText::new(format!("Connected to port {}", state.config.remote_debug_port)).italics().color(design::ACCENT_GREEN));
+                                    }
+                                });
+                            });                });
+
+                    ui.add_space(12.0);
+
+                    // ── ROW 2: CHROME TABS ────────────────────────────────────────────
+                    Frame::group(ui.style())
+                        .fill(design::BG_SURFACE)
+                        .stroke(panel_stroke)
+                        .corner_radius(8.0)
+                        .inner_margin(12.0)
+                        .show(ui, |ui| {
+                            ui.set_width(full_w);
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📑 CHROME TABS").strong().color(design::ACCENT_ORANGE));
+                                ui.add_space(10.0);
+                                if state.is_browser_running {
+                                    ui.add(egui::Slider::new(&mut state.tabs_per_row, 1..=6).text("Columns"));
+                                }
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add_enabled(state.is_browser_running, egui::Button::new("⟳ SYNC TABS")).clicked() {
+                                        emit(AppEvent::RequestTabRefresh);
+                                    }
+                                });
+                            });
+                            ui.separator();
+                            ui.add_space(4.0);
+
+                            let scroll_h = 280.0;
+                            egui::ScrollArea::vertical()
+                                .max_height(scroll_h)
+                                .id_salt("scrape_tab_scroll")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    if !state.is_browser_running {
+                                        ui.centered_and_justified(|ui| {
+                                            ui.label(RichText::new("BROWSER NOT CONNECTED\nTabs will appear here after launch").italics().color(Color32::GRAY));
+                                        });
+                                    } else if state.available_tabs.is_empty() {
+                                        ui.centered_and_justified(|ui| {
+                                            ui.vertical_centered(|ui| {
+                                                ui.spinner();
+                                                ui.add_space(8.0);
+                                                ui.label(RichText::new(format!("Searching for active targets on port {}", state.config.remote_debug_port)).color(Color32::KHAKI));
+                                                if ui.button("Retry Force Sync").clicked() { emit(AppEvent::RequestTabRefresh); }
+                                            });
+                                        });
+                                    } else {
+                                        let per_row = state.tabs_per_row.clamp(1, 6);
+                                        let spacing = 8.0;
+                                        let avail_w = ui.available_width();
+                                        let col_w = ((avail_w - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
+                                        
+                                        ui.horizontal_wrapped(|ui| {
+                                            ui.spacing_mut().item_spacing = egui::vec2(spacing, spacing);
+                                            for tab in state.available_tabs.iter() {
+                                                let is_selected = Some(tab.id.clone()) == state.selected_tab_id;
+                                                let (border_col, bg_col) = if is_selected { 
+                                                    (design::ACCENT_GREEN, Color32::from_rgb(30, 50, 60)) 
+                                                } else { 
+                                                    (Color32::from_gray(50), design::BG_PRIMARY) 
+                                                };
+                                                
+                                                let res = Frame::group(ui.style())
+                                                    .stroke(Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_col))
+                                                    .fill(bg_col)
+                                                    .inner_margin(8.0)
+                                                    .corner_radius(6.0)
+                                                    .show(ui, |ui| {
+                                                        ui.set_width(col_w);
+                                                        ui.set_height(64.0);
+                                                        ui.vertical(|ui| {
+                                                            ui.add(egui::Label::new(RichText::new(&tab.title).strong().size(11.0).color(Color32::WHITE)).truncate());
+                                                            ui.add(egui::Label::new(RichText::new(&tab.url).size(9.0).color(Color32::from_gray(140))).truncate());
+                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
+                                                                ui.label(RichText::new(&tab.id[..8.min(tab.id.len())]).size(7.0).color(Color32::from_gray(80)).monospace());
+                                                            });
+                                                        });
+                                                    }).response;
+
+                                                let click_res = ui.interact(res.rect, res.id, egui::Sense::click());
+                                                if click_res.clicked() {
+                                                    state.selected_tab_id = Some(tab.id.clone());
+                                                    tracing::info!("[UI] Selected tab: {}", tab.id);
+                                                }
+                                                res.on_hover_text(format!("{}\n{}", tab.title, tab.url));
+                                            }
+                                        });
+                                    }
+                                });
                         });
+
+                    ui.add_space(12.0);
+
+                    // ── ROW 3: COMMAND CENTER ──────────────────────────────────────────
+                    render_command_center(ui, state, panel_stroke);
                 });
-
-            ui.add_space(12.0);
-
-            // ── ROW 3: COMMAND CENTER ──────────────────────────────────────────
-            render_command_center(ui, state, panel_stroke);
         });
 }
 
