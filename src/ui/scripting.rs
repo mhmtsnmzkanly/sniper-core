@@ -32,13 +32,24 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
 
     // Tetikleyici karakterler
     if let Some(c) = last_char {
-        if c == '.' || c == '(' || c == '{' || c == '[' || c.is_alphanumeric() || c == '_' {
+        // Sadece nokta koyulduğunda otomatik tetikle (Metotlar için)
+        if c == '.' {
             trigger = true;
+        }
+        // Eğer boşluk bırakıldıysa autocomplete'i zorla kapat
+        if c == ' ' {
+            state.ide_autocomplete_open = false;
+            return;
         }
     }
     
-    // Manuel tetikleyici (Ctrl+Space)
+    // Manuel tetikleyici (Ctrl+Space) her zaman çalışır
     if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space)) {
+        trigger = true;
+    }
+
+    // Eğer zaten açıksa, yazmaya devam ettikçe önerileri güncellemeye devam et
+    if state.ide_autocomplete_open {
         trigger = true;
     }
 
