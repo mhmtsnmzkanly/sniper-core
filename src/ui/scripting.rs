@@ -712,7 +712,30 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 
                                 if let Some(txt) = hover_text {
                                     ui.set_max_width(350.0);
-                                    ui.add(egui::Label::new(txt).wrap());
+                                    let is_error = txt.starts_with("❌");
+                                    
+                                    Frame::none()
+                                        .fill(if is_error { Color32::from_rgb(45, 20, 20) } else { Color32::from_rgb(20, 30, 45) })
+                                        .stroke(Stroke::new(1.0, if is_error { Color32::from_rgb(180, 50, 50) } else { design::ACCENT_CYAN }))
+                                        .inner_margin(8.0)
+                                        .corner_radius(6.0)
+                                        .show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                if is_error {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RichText::new("⚠ Runtime Error").strong().color(Color32::from_rgb(255, 100, 100)));
+                                                    });
+                                                    ui.separator();
+                                                    ui.add(egui::Label::new(RichText::new(txt.replace("❌ Error: ", "")).size(13.0)).wrap());
+                                                } else {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RichText::new("📖 API Documentation").strong().color(design::ACCENT_CYAN));
+                                                    });
+                                                    ui.separator();
+                                                    ui.add(egui::Label::new(RichText::new(txt.replace("📖 API: ", "")).size(13.0)).wrap());
+                                                }
+                                            });
+                                        });
                                 }
                             }
                         });
