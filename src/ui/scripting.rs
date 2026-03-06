@@ -711,6 +711,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 }
                                 
                                 if let Some(txt) = hover_text {
+                                    ui.set_max_width(350.0);
                                     ui.add(egui::Label::new(txt).wrap());
                                 }
                             }
