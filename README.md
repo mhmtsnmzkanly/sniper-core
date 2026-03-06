@@ -13,14 +13,15 @@ It combines:
 - Captures page content (`html`, `complete`, `mirror`).
 - Collects network/media/cookie/console data per tab.
 - Downloads non-DRM HLS streams (`.m3u8`) from Media panel with one click.
-- Includes a Blob URL `De-Masker` to resolve `blob:http...` media URLs to probable source URLs.
+- Includes a **🎭 Blob De-Masker** UI to resolve `blob:http...` media URLs to probable source URLs.
 - Runs automation pipelines from UI blocks.
-- Runs Rhai scripts that can call automation actions.
+- **Advanced Scripting IDE:** Rhai-based editor with syntax highlighting, autocomplete, live diagnostics, and hover documentation.
 
 ## Architecture (Short Self-Review)
 - `ui/*`: egui panels and interaction flow.
 - `core/events`: event bus between UI and async tasks.
 - `core/browser`: CDP/browser operations.
+- `core/network`: Dedicated network & media capture handler.
 - `core/automation`: DSL + execution runtime.
 - `core/scripting`: Rhai parser/checker + action mapper to automation runtime.
 - `logger`: system log + chrome log file writing.
@@ -48,27 +49,21 @@ cargo run -- --port 9222
 
 ## Main UI Flow
 ### Ops
-- **Browser Control** (Top Row): launch/terminate + browser config (Path, Port, Proxy, Stealth Mode, User-Agent, Random UA).
-- **Chrome Tabs** (Middle Row): active tab targets, columns selector, and sync button.
-- **Command Center** (Bottom Row): capture (HTML, COMPLETE, MIRROR), network, media, cookie, and console actions.
+- **Browser Control** (Top Row): launch/terminate + advanced config (Proxy, Stealth Mode, Headless, Incognito, Resolution, Language, GPU/Audio toggle).
+- **Chrome Tabs** (Middle Row): active tab targets, responsive grid with adjustable columns, and safe background auto-sync.
+- **Command Center** (Bottom Row): capture (HTML, COMPLETE, MIRROR, DE-MASK), network, media, cookie, and console actions.
 - Command Center now includes a **SCAN** button in Automation panel for visual selector capture.
 - While browser is active, **RELAUNCH APPLY PROFILE** applies updated proxy/identity settings via controlled restart.
-- While browser is active, you can reload the current tab from Command Center.
 
-### Scripting
-- Import/Export JSON script package.
-- Built-in Template Library (`Apply Template`) for quick script bootstrap.
-- `Check`: compile + basic lint without executing browser actions.
-- `Check` now emits structured diagnostics (`code/stage/severity/line/column/hint`).
-- `Dry-Run`: build action plan without browser execution.
-- `Debugger`: build step preview and inspect actions one-by-one in Scripting tab.
-- `Break Condition`: stop execution when an action text matches your condition.
-- `Timing Telemetry`: emit per-step `TIMING` lines into System Telemetry.
-- `Execute`: runs script through shared automation runtime.
-- `Stop`: cooperative cancel request.
-- Script output goes to `System Telemetry` (not local script output list).
-- Known scripting errors emit KB hints (`KB` lines) in System Telemetry.
-- Detailed scripting tutorial + API reference: see [`SCRIPTING.md`](./SCRIPTING.md).
+### Scripting (Mini-IDE)
+- **Professional Editor:** Features line numbers, syntax highlighting, and selection highlighting.
+- **Intelligent Autocomplete:** Context-aware suggestions for Browser APIs and Rhai keywords (triggered via `.` or `Ctrl+Space`).
+- **Real-time Diagnostics:** Background error checking with visual red underlines and an **Error Gutter** (❌ icons) for immediate feedback.
+- **Hover Documentation:** Mouse-over Browser APIs or errors to see documentation and detailed fixes.
+- **Smart Indentation:** Automatic tab/space alignment on `Enter` (including auto-indent after `{`).
+- **Find & Replace:** Dedicated search bar integrated into the editor (`Ctrl+F`).
+- **Debugger & Dry-Run:** Preview and inspect action plans before execution.
+- Known scripting errors emit KB hints (`KB` lines) in System Telemetry (e.g., suggesting `let` instead of reserved `var`).
 
 ## Extended Documentation
 - Full system documentation (A-Z): [`DOCS.md`](./DOCS.md)
@@ -98,14 +93,13 @@ Central log stream for:
 
 ## Rhai Helpers (Current)
 Tab and action helpers include:
-- `Tab()`, `Tab("url")`, `TabNew()`, `tab_new()`, `Tab.new()`
-- `TabCatch()`, `TabCurrent()`, `tab_catch()`, `Tab.catch()`
-- `tab.navigate(url)`
+- `Tab()`, `Tab("url")`, `TabNew()`, `TabCatch()`, `TabCurrent()`
+- `tab.navigate(url)`, `tab.wait_for_ms(ms)`
 - `tab.find_el(selector).click()` / `.type(value)`
-- `tab.capture.html()/mirror()/complete()`
-- `tab.console.inject(js)`
-- `tab.network.start()/stop()`
-- `tab.cookies.set/delete(...)`
+- `tab.capture.html()`, `tab.capture.mirror()`, `tab.capture.complete()`
+- `tab.console.inject(js)`, `tab.console.log(msg)`
+- `tab.network.start()`, `tab.network.stop()`
+- `tab.cookies.set/delete/get_all(...)`
 - `tab.run_automation_json(dsl_json)`
 
 File helpers (write scope restricted to output directory tree):
@@ -113,6 +107,12 @@ File helpers (write scope restricted to output directory tree):
 - `fs_append_text(rel_path, content)`
 - `fs_mkdir_all(rel_dir)`
 - `fs_exists(rel_path)`
+
+## Media Vault
+- Responsive card-based gallery for all captured assets.
+- **Sorting:** Sort by Name, Type, or Size (asc/desc).
+- **Filtering:** Filter by Type or **Minimum File Size (KB)**.
+- Integrated HLS Downloader and **🎭 Blob De-Masker**.
 
 ## Log Files
 Inside selected output directory:
