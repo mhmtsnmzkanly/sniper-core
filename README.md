@@ -48,10 +48,11 @@ cargo run -- --port 9222
 
 ## Main UI Flow
 ### Ops
-- **Browser Control** (Top Row): launch/terminate + browser config (Path, Port, Proxy, Stealth Mode).
+- **Browser Control** (Top Row): launch/terminate + browser config (Path, Port, Proxy, Stealth Mode, User-Agent, Random UA).
 - **Chrome Tabs** (Middle Row): active tab targets, columns selector, and sync button.
-- **Command Center** (Bottom Row): capture/network/media/cookie/console actions.
+- **Command Center** (Bottom Row): capture (HTML, COMPLETE, MIRROR), network, media, cookie, and console actions.
 - Command Center now includes a **SCAN** button in Automation panel for visual selector capture.
+- While browser is active, **RELAUNCH APPLY PROFILE** applies updated proxy/identity settings via controlled restart.
 - While browser is active, you can reload the current tab from Command Center.
 
 ### Scripting
