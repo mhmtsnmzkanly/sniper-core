@@ -76,15 +76,12 @@ Potential startup errors:
 ## 4.1 Browser Control
 What it does:
 - Launches/terminates browser instance.
-- Uses configured Chrome path/profile/path/port.
-- Supports launch-time proxy and identity options.
+- Uses configured Chrome path/profile/port.
+- Supports launch-time proxy and Stealth Mode (anti-fingerprint).
 
 Launch options:
 - `Proxy` (e.g. `http://host:port`, `socks5://host:port`)
-- `User-Agent` override
-- `Random UA`
-- `Random Fingerprint` (window size/lang/automation flag randomization)
-- `RELAUNCH APPLY NETWORK PROFILE` for active-session proxy/identity update.
+- `Stealth Mode` (window size/lang/automation flag randomization)
 
 Outputs:
 - Browser process lifecycle events.
@@ -94,11 +91,11 @@ Errors:
 - Launch failures due to bad binary path.
 - Permission errors for profile/output folders.
 - Invalid or unreachable proxy target.
-- Relaunch race when previous process is still exiting.
 
 ## 4.2 Chrome Tabs
 What it does:
 - Lists CDP tabs (`type=page`).
+- Grid layout with adjustable column count.
 - Lets user choose active tab target.
 
 Outputs:
@@ -106,19 +103,17 @@ Outputs:
 
 Potential issues:
 - No tabs when browser not ready.
-- Stale tab list if refresh fails.
+- Stale tab list if sync fails.
 
 ## 4.3 Command Center
 Actions:
-- Capture HTML / Complete / Mirror
-- Open Automation window
-- Open Network/Media/Cookies/Console windows
-- Selector Inspector (`YAKALA`, `FETCH`, `CLEAR`) via JS injection
+- Capture HTML / Complete
+- Open Panels (Network, Media, Cookies, Console)
+- Reload current tab
 
 Outputs:
 - Capture files
 - Workspace records (network/media/cookies/logs)
-- Captured selector pushed to workspace selector search/suggestions
 
 Potential issues:
 - Command denied when browser offline.
