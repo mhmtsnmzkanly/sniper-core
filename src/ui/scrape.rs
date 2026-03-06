@@ -27,7 +27,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     Frame::NONE
         .inner_margin(egui::Margin {
             left: 0,
-            right: 24,
+            right: 32, // Increased from 24
             top: 0,
             bottom: 0,
         })
@@ -238,8 +238,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     } else {
                                         let per_row = state.tabs_per_row.clamp(1, 6) as usize;
                                         let spacing = 8.0;
-                                        let avail_w = ui.available_width() - 16.0; // Small buffer for scrollbar
-                                        let col_w = ((avail_w - (per_row as f32 - 1.0) * spacing) / per_row as f32).max(100.0);
+                                        // Use more conservative width and account for internal spacing
+                                        let avail_w = (ui.available_width() - 24.0).max(100.0);
+                                        let col_w = ((avail_w - (per_row as f32 - 1.0) * spacing) / per_row as f32).floor();
                                         
                                         egui::Grid::new("tabs_grid_layout")
                                             .spacing([spacing, spacing])
