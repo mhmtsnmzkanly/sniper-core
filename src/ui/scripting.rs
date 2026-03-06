@@ -714,7 +714,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     ui.set_max_width(350.0);
                                     let is_error = txt.starts_with("❌");
                                     
-                                    Frame::none()
+                                    Frame::NONE
                                         .fill(if is_error { Color32::from_rgb(45, 20, 20) } else { Color32::from_rgb(20, 30, 45) })
                                         .stroke(Stroke::new(1.0, if is_error { Color32::from_rgb(180, 50, 50) } else { design::ACCENT_CYAN }))
                                         .inner_margin(8.0)
