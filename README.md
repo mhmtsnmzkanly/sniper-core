@@ -48,12 +48,11 @@ cargo run -- --port 9222
 
 ## Main UI Flow
 ### Ops
-- `Browser Control` (left, ~30%): launch/terminate + browser config.
-- `Chrome Tabs` (right, ~70%): active tab targets.
-- Command Center: capture/network/media/cookie/console/automation actions.
-- Browser Control now includes per-launch `Proxy`, `User-Agent`, `Random UA`, and `Random Fingerprint` options.
-- While browser is active, `RELAUNCH APPLY NETWORK PROFILE` applies updated proxy/identity settings via controlled restart.
-- Command Center includes `Selector Inspector` actions (`YAKALA`, `FETCH`, `CLEAR`) for visual selector capture.
+- **Browser Control** (Top Row): launch/terminate + browser config (Path, Port, Proxy, Stealth Mode).
+- **Chrome Tabs** (Middle Row): active tab targets, columns selector, and sync button.
+- **Command Center** (Bottom Row): capture/network/media/cookie/console actions.
+- Command Center now includes a **SCAN** button in Automation panel for visual selector capture.
+- While browser is active, you can reload the current tab from Command Center.
 
 ### Scripting
 - Import/Export JSON script package.
