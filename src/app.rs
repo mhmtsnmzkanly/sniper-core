@@ -320,29 +320,16 @@ impl eframe::App for CrawlerApp {
                     if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
                 }
                 AppEvent::ScriptingCheckResult(report) => {
-                    for d in report.diagnostics {
-                        let level = match d.severity {
-                            crate::core::scripting::types::DiagnosticSeverity::Error => "CHECK-ERR",
-                            crate::core::scripting::types::DiagnosticSeverity::Warn => "CHECK-WARN",
-                            crate::core::scripting::types::DiagnosticSeverity::Info => "CHECK",
-                        };
-                        let loc = match (d.line, d.column) {
-                            (Some(l), Some(c)) => format!(" @{}:{}", l, c),
-                            (Some(l), None) => format!(" @{}", l),
-                            _ => String::new(),
-                        };
-                        let hint = d.hint.map(|h| format!(" | hint: {}", h)).unwrap_or_default();
-                        self.state.logs.push(LogEntry {
-                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                            level: level.to_string(),
-                            message: format!("[{}::{:?}] {}{}{}", d.code, d.stage, d.message, loc, hint),
-                        });
+                    self.state.ide_diagnostics = report.diagnostics.clone();
+                    if report.ok {
+                        self.state.script_error = None;
+                    } else if let Some(err) = report.diagnostics.iter().find(|d| d.severity == crate::core::scripting::types::DiagnosticSeverity::Error) {
+                        self.state.script_error = Some(err.message.clone());
                     }
-                    self.state.notify(
-                        if report.ok { NotificationLevel::Ok } else { NotificationLevel::Error },
-                        "Scripting Check",
-                        if report.ok { "Check completed successfully." } else { "Check failed. See System Telemetry." },
-                    );
+                    
+                    // Keep old notify behavior for manual "Check" button if needed, 
+                    // but usually real-time IDEs don't show toast for every keystroke.
+                    // We only notify if it was likely a manual check or a critical state change.
                 }
                 AppEvent::ScriptingDryRunResult(lines) => {
                     for line in lines {

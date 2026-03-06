@@ -4,21 +4,65 @@ use crate::core::scripting::templates;
 use crate::state::AppState;
 use crate::ui::design;
 use crate::ui::scrape::emit;
-use egui::{Color32, Frame, RichText, Stroke, Ui, text::LayoutJob};
+use egui::{Color32, Frame, RichText, Stroke, Ui, text::LayoutJob, Id};
+
+const RHAI_KEYWORDS: &[&str] = &[
+    "fn", "let", "const", "if", "else", "for", "loop", "while", "return", "break", "continue", "import", "as", "export",
+];
+
+const BROWSER_APIS: &[&str] = &[
+    "Tab", "TabNew", "TabCatch", "TabCurrent", "navigate", "click", "type", "wait_for_ms", "screenshot", "find_el",
+    "capture", "html", "mirror", "complete", "console", "inject", "network", "cookies", "log", "fs_write_text", "fs_append_text",
+];
+
+/// KOD NOTU: Otomatik tamamlama mantığını işler.
+fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
+    let code = &state.script_package.code;
+    if cursor_pos == 0 { return; }
+
+    let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
+    let mut trigger = false;
+
+    // Trigger on '.' or Ctrl+Space (handled via input check)
+    if last_char == Some('.') {
+        trigger = true;
+    }
+
+    if trigger || (ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space))) {
+        state.ide_autocomplete_open = true;
+        state.ide_autocomplete_cursor = cursor_pos;
+        state.ide_autocomplete_index = 0;
+        
+        // Basit öneri listesi (Gelecekte bağlama göre filtrelenebilir)
+        state.ide_autocomplete_suggestions = BROWSER_APIS.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Enter or Tab to apply
+    if state.ide_autocomplete_open {
+        if ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab)) {
+            if let Some(suggestion) = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index) {
+                let mut new_code = code.clone();
+                new_code.insert_str(cursor_pos, suggestion);
+                state.script_package.code = new_code;
+                state.ide_autocomplete_open = false;
+            }
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            state.ide_autocomplete_index = (state.ide_autocomplete_index + 1) % state.ide_autocomplete_suggestions.len().max(1);
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            state.ide_autocomplete_index = (state.ide_autocomplete_index + state.ide_autocomplete_suggestions.len().saturating_sub(1)) % state.ide_autocomplete_suggestions.len().max(1);
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            state.ide_autocomplete_open = false;
+        }
+    }
+}
 
 /// KOD NOTU: Rhai sözdizimi için basit bir renklendirici (Syntax Highlighter).
 fn rhai_highlighter(ui: &Ui, code: &str) -> LayoutJob {
     let mut job = LayoutJob::default();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
-
-    // Basit tokenlaştırma (Regex yerine daha hızlı manuel tarama)
-    let keywords = [
-        "fn", "let", "const", "if", "else", "for", "loop", "while", "return", "break", "continue", "import", "as", "export",
-    ];
-    let browser_apis = [
-        "Tab", "TabNew", "TabCatch", "TabCurrent", "navigate", "click", "type", "wait_for_ms", "screenshot", "find_el",
-        "capture", "html", "mirror", "complete", "console", "inject", "network", "cookies", "log", "fs_write_text", "fs_append_text",
-    ];
 
     let mut it = code.chars().peekable();
     while let Some(c) = it.next() {
@@ -42,9 +86,9 @@ fn rhai_highlighter(ui: &Ui, code: &str) -> LayoutJob {
             while let Some(&nc) = it.peek() {
                 if nc.is_alphanumeric() || nc == '_' { s.push(it.next().unwrap()); } else { break; }
             }
-            let color = if keywords.contains(&s.as_str()) {
+            let color = if RHAI_KEYWORDS.contains(&s.as_str()) {
                 Color32::from_rgb(80, 150, 255) // Keyword
-            } else if browser_apis.contains(&s.as_str()) {
+            } else if BROWSER_APIS.contains(&s.as_str()) {
                 Color32::from_rgb(255, 180, 100) // API
             } else {
                 Color32::from_rgb(200, 200, 200) // Default
@@ -343,18 +387,58 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
                             let mut job = rhai_highlighter(ui, string);
                             job.wrap.max_width = f32::INFINITY; 
-                            ui.fonts(|f| f.layout_job(job))
+                            ui.ctx().fonts(|f| f.layout_job(job))
                         };
 
-                        ui.add(
-                            egui::TextEdit::multiline(&mut state.script_package.code)
+                        let output = egui::TextEdit::multiline(&mut state.script_package.code)
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(avail_w)
                                 .desired_rows(20)
                                 .lock_focus(true)
                                 .layouter(&mut layouter)
                                 .frame(false)
-                        );
+                                .show(ui);
+
+                        if let Some(cursor_range) = output.cursor_range {
+                            let cursor_pos = cursor_range.primary.ccursor.index;
+                            handle_autocomplete(ui, state, cursor_pos);
+                            
+                            // Autocomplete Popup
+                            if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
+                                let pos = output.text_draw_pos() + egui::vec2(0.0, 20.0); // Simple positioning
+                                egui::Window::new("Suggestions")
+                                    .fixed_pos(pos)
+                                    .title_bar(false)
+                                    .resizable(false)
+                                    .frame(Frame::group(ui.style()).fill(design::BG_SURFACE))
+                                    .show(ui.ctx(), |ui| {
+                                        for (i, sug) in state.ide_autocomplete_suggestions.iter().enumerate() {
+                                            let is_selected = i == state.ide_autocomplete_index;
+                                            let res = ui.selectable_label(is_selected, sug);
+                                            if res.clicked() {
+                                                let mut new_code = state.script_package.code.clone();
+                                                new_code.insert_str(cursor_pos, sug);
+                                                state.script_package.code = new_code;
+                                                state.ide_autocomplete_open = false;
+                                            }
+                                        }
+                                    });
+                            }
+                        }
+
+                        // Anlık Hata Kontrolü (Debounced)
+                        let now = ui.input(|i| i.time);
+                        if now - state.ide_last_check_time > 2.0 {
+                            state.ide_last_check_time = now;
+                            let package = state.script_package.clone();
+                            let tab_id = state.scripting_tab_binding.clone().or(state.selected_tab_id.clone());
+                            let port = state.config.remote_debug_port;
+                            
+                            tokio::spawn(async move {
+                                let report = crate::core::scripting::engine::check_script(&package, tab_id, Some(port), false).await;
+                                emit(AppEvent::ScriptingCheckResult(report));
+                            });
+                        }
                     });
                 });
         });

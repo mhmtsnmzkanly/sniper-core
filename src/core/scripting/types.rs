@@ -52,14 +52,14 @@ pub struct ScriptingCheckReport {
     pub diagnostics: Vec<ScriptDiagnostic>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
     Error,
     Warn,
     Info,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticStage {
     Compile,
     Entry,
