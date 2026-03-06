@@ -42,14 +42,20 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
         return;
     }
 
-    // İmleçten önceki kelimeyi ve başlangıcını bul
-    let start_of_prefix = code[..cursor_pos]
-        .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let prefix = &code[start_of_prefix..cursor_pos];
-
-    let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
+    // Karakter tabanlı güvenli prefix çıkarma (UTF-8 dostu)
+    let chars: Vec<char> = code.chars().collect();
+    let mut start_idx = cursor_pos;
+    while start_idx > 0 {
+        let c = chars[start_idx - 1];
+        if !c.is_alphanumeric() && c != '_' && c != '.' {
+            break;
+        }
+        start_idx -= 1;
+    }
+    let prefix: String = chars[start_idx..cursor_pos.min(chars.len())]
+        .iter()
+        .collect();
+    let last_char = chars.get(cursor_pos.saturating_sub(1)).cloned();
     let mut trigger = false;
 
     // Tetikleyici karakterler
@@ -77,12 +83,12 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
 
     if trigger {
         let suggestions: Vec<String>;
-        let mut insert_pos = start_of_prefix;
+        let mut insert_pos = start_idx;
 
         if let Some(dot_idx) = prefix.rfind('.') {
             // Noktadan sonra API metotlarını öner
             let after_dot = &prefix[dot_idx + 1..];
-            insert_pos = start_of_prefix + dot_idx + 1;
+            insert_pos = start_idx + dot_idx + 1;
             suggestions = BROWSER_APIS
                 .iter()
                 .filter(|s| s.to_lowercase().starts_with(&after_dot.to_lowercase()))
@@ -114,18 +120,18 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
 
 fn apply_autocomplete(state: &mut AppState, suggestion: &str) {
     let code = &state.script_package.code;
-    let trigger_pos = state.ide_autocomplete_cursor;
+    let trigger_pos = state.ide_autocomplete_cursor; // Bu artık güvenli bir char_index
 
+    let chars: Vec<char> = code.chars().collect();
     // Kelimenin sonunu bul (üzerine yazmamak için)
     let mut end_pos = trigger_pos;
-    let chars: Vec<char> = code.chars().collect();
     while end_pos < chars.len() && (chars[end_pos].is_alphanumeric() || chars[end_pos] == '_') {
         end_pos += 1;
     }
 
-    let mut new_code = code[..trigger_pos].to_string();
+    let mut new_code: String = chars[..trigger_pos.min(chars.len())].iter().collect();
     new_code.push_str(suggestion);
-    new_code.push_str(&code[end_pos..]);
+    new_code.push_str(&chars[end_pos.min(chars.len())..].iter().collect::<String>());
 
     state.script_package.code = new_code;
     state.ide_autocomplete_open = false;
@@ -612,7 +618,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.label(RichText::new("Name:").color(design::TEXT_MUTED));
                     ui.add(
                         egui::TextEdit::singleline(&mut state.script_package.name)
-                            .desired_width(f32::INFINITY),
+                            .desired_width(120.0),
                     );
                     ui.end_row();
 
@@ -880,7 +886,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     // Popup UI (floating at cursor position)
                                     let cursor_rect = output.galley.pos_from_cursor(&cursor_range.primary);
                                     let pos = output.galley_pos + cursor_rect.max.to_vec2() + egui::vec2(4.0, 4.0);
-                                    
+
                                     egui::Area::new(Id::new("ide_autocomplete_area"))
                                         .fixed_pos(pos)
                                         .order(egui::Order::Foreground)
