@@ -65,6 +65,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).desired_width(200.0));
                         ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode");
                         ui.end_row();
+
+                        ui.label("UA:");
+                        ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).desired_width(200.0));
+                        ui.checkbox(&mut state.config.randomize_user_agent, "Random UA");
+                        ui.end_row();
                     });
                 });
 
