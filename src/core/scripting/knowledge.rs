@@ -51,6 +51,9 @@ pub fn hints_for_error(message: &str) -> Vec<&'static str> {
     if lower.contains("cookie") && lower.contains("not bound") {
         out.push("Cookie APIs require a bound tab token; use Tab(url) or Tab.catch() first.");
     }
+    if lower.contains("reserved") && lower.contains("var") {
+        out.push("In Rhai, use 'let' instead of 'var' to declare variables.");
+    }
     if lower.contains("console inject failed") {
         out.push("Ensure target tab is still open; use Tab.catch() to rebind active tab.");
     }

@@ -318,7 +318,9 @@ fn rhai_highlighter(
                 }
             }
 
-            let color = if RHAI_KEYWORDS.contains(&s.as_str()) {
+            let color = if s == "var" {
+                Color32::from_rgb(255, 100, 100) // Reserved word error color
+            } else if RHAI_KEYWORDS.contains(&s.as_str()) {
                 Color32::from_rgb(80, 150, 255) // Keyword
             } else if BROWSER_APIS.contains(&s.as_str()) {
                 Color32::from_rgb(255, 180, 100) // API
