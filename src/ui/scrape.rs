@@ -72,7 +72,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 ui.label(RichText::new("🌐 NETWORK & IDENTITY").strong().size(11.0).color(design::ACCENT_CYAN));
                                 ui.add_space(4.0);
 
-                                egui::Grid::new("network_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                egui::Grid::new("browser_network_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
                                     ui.label("Proxy:");
                                     ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).hint_text("http://host:port").desired_width(280.0));
                                     ui.end_row();
@@ -127,7 +127,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 ui.label(RichText::new("🖥 WINDOW & ENVIRONMENT").strong().size(11.0).color(design::ACCENT_CYAN));
                                 ui.add_space(4.0);
 
-                                egui::Grid::new("env_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                egui::Grid::new("browser_env_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
                                     ui.label("Binary Path:");
                                     ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(280.0));
                                     ui.end_row();
@@ -216,7 +216,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     let scroll_h = 240.0;
                     egui::ScrollArea::vertical()
                         .max_height(scroll_h)
-                        .id_salt("tab_scroll_row")
+                        .id_salt("scrape_tab_scroll")
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             if !state.is_browser_running {
