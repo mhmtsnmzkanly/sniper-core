@@ -20,34 +20,77 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
     let code = &state.script_package.code;
     if cursor_pos == 0 { return; }
 
-    let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
+    // İmleçten önceki kelimeyi ve başlangıcını bul
+    let start_of_prefix = code[..cursor_pos]
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let prefix = &code[start_of_prefix..cursor_pos];
     
-    // Trigger logic
-    if last_char == Some('.') || (ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space))) {
-        state.ide_autocomplete_open = true;
-        state.ide_autocomplete_cursor = cursor_pos;
-        state.ide_autocomplete_index = 0;
-        state.ide_autocomplete_suggestions = BROWSER_APIS.iter().map(|s| s.to_string()).collect();
+    let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
+    let mut trigger = false;
+
+    // Tetikleyici karakterler
+    if let Some(c) = last_char {
+        if c == '.' || c == '(' || c == '{' || c == '[' || c.is_alphanumeric() || c == '_' {
+            trigger = true;
+        }
+    }
+    
+    // Manuel tetikleyici (Ctrl+Space)
+    if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space)) {
+        trigger = true;
     }
 
-    if state.ide_autocomplete_open {
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if trigger {
+        let mut suggestions = Vec::new();
+        let mut insert_pos = start_of_prefix;
+
+        if let Some(dot_idx) = prefix.rfind('.') {
+            // Noktadan sonra API metotlarını öner
+            let after_dot = &prefix[dot_idx + 1..];
+            insert_pos = start_of_prefix + dot_idx + 1;
+            suggestions = BROWSER_APIS.iter()
+                .filter(|s| s.to_lowercase().starts_with(&after_dot.to_lowercase()))
+                .map(|s| s.to_string())
+                .collect();
+        } else {
+            // Kelime başında anahtar kelimeleri ve global API'leri öner
+            let all = RHAI_KEYWORDS.iter().chain(BROWSER_APIS.iter());
+            suggestions = all
+                .filter(|s| s.to_lowercase().starts_with(&prefix.to_lowercase()))
+                .map(|s| s.to_string())
+                .collect();
+        }
+
+        if !suggestions.is_empty() {
+            state.ide_autocomplete_open = true;
+            state.ide_autocomplete_cursor = insert_pos;
+            state.ide_autocomplete_suggestions = suggestions;
+            state.ide_autocomplete_index = state.ide_autocomplete_index.min(state.ide_autocomplete_suggestions.len() - 1);
+        } else {
             state.ide_autocomplete_open = false;
         }
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-            state.ide_autocomplete_index = (state.ide_autocomplete_index + 1) % state.ide_autocomplete_suggestions.len().max(1);
-        }
-        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-            state.ide_autocomplete_index = (state.ide_autocomplete_index + state.ide_autocomplete_suggestions.len().saturating_sub(1)) % state.ide_autocomplete_suggestions.len().max(1);
-        }
+    } else if !state.ide_autocomplete_open {
+        state.ide_autocomplete_suggestions.clear();
     }
 }
 
 fn apply_autocomplete(state: &mut AppState, suggestion: &str) {
     let code = &state.script_package.code;
-    let cursor_pos = state.ide_autocomplete_cursor;
-    let mut new_code = code.clone();
-    new_code.insert_str(cursor_pos, suggestion);
+    let trigger_pos = state.ide_autocomplete_cursor;
+    
+    // Kelimenin sonunu bul (üzerine yazmamak için)
+    let mut end_pos = trigger_pos;
+    let chars: Vec<char> = code.chars().collect();
+    while end_pos < chars.len() && (chars[end_pos].is_alphanumeric() || chars[end_pos] == '_') {
+        end_pos += 1;
+    }
+
+    let mut new_code = code[..trigger_pos].to_string();
+    new_code.push_str(suggestion);
+    new_code.push_str(&code[end_pos..]);
+    
     state.script_package.code = new_code;
     state.ide_autocomplete_open = false;
 }
@@ -629,19 +672,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         // Sync cursor pos for IDE features
                         if let Some(cursor_range) = output.cursor_range {
                             let cp = cursor_range.primary.ccursor.index;
-                            
-                            // Sadece autocomplete kapalıyken veya yeni açılıyorken konumu güncelle
-                            if !state.ide_autocomplete_open {
-                                state.ide_autocomplete_cursor = cp;
-                            }
-                            
+
+                            // Autocomplete mantığını çalıştır
                             handle_autocomplete(ui, state, cp);
-                            
+
                             // Autocomplete Logic
                             if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
-                                // Tuş vuruşlarını tüket (consume) etmeden önce kontrol et
+                                // Tuş vuruşlarını kontrol et
                                 let mut selected_suggestion = None;
-                                
+
                                 ui.input(|i| {
                                     if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab) {
                                         selected_suggestion = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index).cloned();
@@ -650,31 +689,36 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
                                 if let Some(suggestion) = selected_suggestion {
                                     apply_autocomplete(state, &suggestion);
+                                } else {
+                                    // Popup UI (floating)
+                                    let pos = output.galley_pos + egui::vec2(0.0, 24.0);
+                                    egui::Area::new(Id::new("ide_autocomplete_area"))
+                                        .fixed_pos(pos)
+                                        .order(egui::Order::Foreground)
+                                        .show(ui.ctx(), |ui| {
+                                            Frame::group(ui.style())
+                                                .fill(design::BG_SURFACE)
+                                                .stroke(Stroke::new(1.0, design::ACCENT_CYAN))
+                                                .show(ui, |ui| {
+                                                    ui.set_max_width(250.0);
+                                                    let suggestions = state.ide_autocomplete_suggestions.clone();
+                                                    egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                                                        for (i, sug) in suggestions.iter().enumerate() {
+                                                            let is_selected = i == state.ide_autocomplete_index;
+                                                            let res = ui.selectable_label(is_selected, sug);
+                                                            if res.clicked() {
+                                                                apply_autocomplete(state, sug);
+                                                            }
+                                                        }
+                                                    });
+                                                });
+                                        });
                                 }
-
-                                // Popup UI (floating)
-                                let pos = output.galley_pos + egui::vec2(0.0, 24.0);
-                                egui::Area::new(Id::new("ide_autocomplete_area"))
-                                    .fixed_pos(pos)
-                                    .order(egui::Order::Foreground)
-                                    .show(ui.ctx(), |ui| {
-                                        Frame::group(ui.style())
-                                            .fill(design::BG_SURFACE)
-                                            .stroke(Stroke::new(1.0, design::ACCENT_CYAN))
-                                            .show(ui, |ui| {
-                                                ui.set_max_width(200.0);
-                                                let suggestions = state.ide_autocomplete_suggestions.clone();
-                                                for (i, sug) in suggestions.iter().enumerate() {
-                                                    let is_selected = i == state.ide_autocomplete_index;
-                                                    let res = ui.selectable_label(is_selected, sug);
-                                                    if res.clicked() {
-                                                        apply_autocomplete(state, sug);
-                                                    }
-                                                }
-                                            });
-                                    });
                             } else {
-                                // Auto-Indentation Logic (Only if autocomplete is closed)
+                                // Sadece autocomplete kapalıyken normal imleç takibi ve auto-indent yap
+                                state.ide_autocomplete_cursor = cp;
+
+                                // Auto-Indentation Logic
                                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     let code = state.script_package.code.clone();
                                     let mut line_start = cp.saturating_sub(1);
@@ -685,7 +729,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     let indent = prev_line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
                                     let extra = if prev_line.trim_end().ends_with('{') { "    " } else { "" };
                                     let to_insert = format!("{}{}", indent, extra);
-                                    
+
                                     if !to_insert.is_empty() {
                                         let mut new_code = code.clone();
                                         new_code.insert_str(cp, &to_insert);
