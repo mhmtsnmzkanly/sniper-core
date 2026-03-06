@@ -100,24 +100,77 @@ fn find_matching_brace(code: &str, cursor_idx: usize) -> Option<(usize, usize)> 
     None
 }
 
-/// KOD NOTU: Rhai sözdizimi için basit bir renklendirici (Syntax Highlighter).
-fn rhai_highlighter(ui: &Ui, code: &str, highlight_braces: Option<(usize, usize)>) -> LayoutJob {
+fn get_api_doc(api: &str) -> &'static str {
+    match api {
+        "Tab" => "Creates a new tab or attaches to one. Usage: let t = Tab(\"url\");",
+        "TabNew" => "Force opens a new browser tab. Usage: let t = TabNew(\"url\");",
+        "TabCatch" => "Attaches to the tab currently selected in the Ops UI.",
+        "navigate" => "Navigates the tab to a new URL. Usage: tab.navigate(\"url\");",
+        "click" => "Clicks an element identified by CSS selector. Usage: tab.click(\"#btn\");",
+        "type" => "Types text into an input field. Usage: tab.type(\"input\", \"text\");",
+        "wait_for_ms" => "Pauses script execution. Usage: tab.wait_for_ms(1000);",
+        "screenshot" => "Captures a screenshot of the current page.",
+        "capture" => "Sub-module for page capture (html, complete, mirror).",
+        "html" => "Captures raw HTML of the page. Usage: tab.capture.html();",
+        "mirror" => "Captures a mirror (MHTML/WebBundle) of the page.",
+        "complete" => "Captures a full page archive with all assets.",
+        "console" => "Access to browser console. Usage: tab.console.log(\"msg\");",
+        "inject" => "Injects and executes custom JavaScript. Usage: tab.console.inject(\"code\");",
+        "network" => "Network monitoring and interception APIs.",
+        "cookies" => "Cookie management. Usage: tab.cookies.get_all();",
+        "fs_write_text" => "Writes text to a file in output_dir. Usage: fs_write_text(\"path\", \"data\");",
+        _ => "Sniper Browser API function.",
+    }
+}
+
+/// KOD NOTU: Rhai sözdizimi için gelişmiş renklendirici.
+fn rhai_highlighter(
+    ui: &Ui, 
+    code: &str, 
+    highlight_braces: Option<(usize, usize)>,
+    diagnostics: &[crate::core::scripting::types::ScriptDiagnostic]
+) -> LayoutJob {
     let mut job = LayoutJob::default();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
 
+    // Satır başlangıç indekslerini hesapla (Hata vurgulama için)
+    let mut line_starts = vec![0];
+    for (i, c) in code.chars().enumerate() {
+        if c == '\n' { line_starts.push(i + 1); }
+    }
+
     let mut it = code.chars().enumerate().peekable();
     while let Some((idx, c)) = it.next() {
+        // 1. Parantez eşleşme kontrolü
         let is_brace_match = highlight_braces.map_or(false, |(a, b)| idx == a || idx == b);
-        let base_format = if is_brace_match {
-            egui::TextFormat { 
-                color: Color32::WHITE, 
-                font_id: font_id.clone(), 
-                background: Color32::from_rgb(60, 80, 100),
-                ..Default::default() 
+        
+        // 2. Hata kontrolü (Bu karakter bir hata bölgesinde mi?)
+        let mut error_color = None;
+        for d in diagnostics {
+            if let Some(line_idx) = d.line.map(|l| l.saturating_sub(1)) {
+                if let Some(&start_pos) = line_starts.get(line_idx) {
+                    let end_pos = line_starts.get(line_idx + 1).cloned().unwrap_or(code.len());
+                    // Basitlik için tüm satırı vurgula veya kolonu kullan
+                    if idx >= start_pos && idx < end_pos {
+                        error_color = Some(Color32::from_rgb(180, 50, 50));
+                    }
+                }
             }
-        } else {
-            egui::TextFormat { font_id: font_id.clone(), ..Default::default() }
+        }
+
+        let mut base_format = egui::TextFormat { 
+            font_id: font_id.clone(), 
+            ..Default::default() 
         };
+
+        if is_brace_match {
+            base_format.background = Color32::from_rgb(60, 80, 100);
+            base_format.color = Color32::WHITE;
+        }
+        
+        if let Some(ec) = error_color {
+            base_format.underline = Stroke::new(1.5, ec);
+        }
 
         if c == '/' && it.peek().map_or(false, |(_, nc)| *nc == '/') { // Comment
             let mut s = format!("{}", c);
@@ -518,9 +571,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         // 2. Kod Alanı
                         let cursor_pos = state.ide_autocomplete_cursor; 
                         let highlight_braces = find_matching_brace(&state.script_package.code, cursor_pos);
+                        let diagnostics = &state.ide_diagnostics;
 
                         let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
-                            let mut job = rhai_highlighter(ui, string, highlight_braces);
+                            let mut job = rhai_highlighter(ui, string, highlight_braces, diagnostics);
                             job.wrap.max_width = f32::INFINITY; 
                             ui.ctx().fonts(|f| f.layout_job(job))
                         };
@@ -533,6 +587,51 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 .layouter(&mut layouter)
                                 .frame(false)
                                 .show(ui);
+
+                        // Hover Tooltips Logic
+                        output.response.on_hover_ui(|ui| {
+                            if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
+                                let relative_pos = hover_pos - output.galley_pos;
+                                let cursor_at_hover = output.galley.cursor_from_pos(relative_pos);
+                                let char_idx = cursor_at_hover.ccursor.index;
+                                let code = &state.script_package.code;
+                                
+                                // 1. Check for Errors at this position
+                                let mut hover_text = None;
+                                let mut line_starts = vec![0];
+                                for (i, c) in code.chars().enumerate() {
+                                    if c == '\n' { line_starts.push(i + 1); }
+                                }
+                                
+                                for d in diagnostics {
+                                    if let Some(line_idx) = d.line.map(|l| l.saturating_sub(1)) {
+                                        if let Some(&start) = line_starts.get(line_idx) {
+                                            let end = line_starts.get(line_idx + 1).cloned().unwrap_or(code.len());
+                                            if char_idx >= start && char_idx < end {
+                                                hover_text = Some(format!("❌ Error: {}", d.message));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 2. Check for API Docs if no error
+                                if hover_text.is_none() {
+                                    let start_idx = code[..char_idx.min(code.len())].rfind(|c: char| !c.is_alphanumeric() && c != '_').map(|i| i + 1).unwrap_or(0);
+                                    let end_idx = code[char_idx..].find(|c: char| !c.is_alphanumeric() && c != '_').map(|i| i + char_idx).unwrap_or(code.len());
+                                    if start_idx < end_idx {
+                                        let word = &code[start_idx..end_idx];
+                                        if BROWSER_APIS.contains(&word) {
+                                            hover_text = Some(format!("📖 API: {}\n{}", word, get_api_doc(word)));
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(txt) = hover_text {
+                                    ui.label(txt);
+                                }
+                            }
+                        });
 
                         if let Some(cursor_range) = output.cursor_range {
                             let cp = cursor_range.primary.ccursor.index;
@@ -561,7 +660,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             
                             // Autocomplete Popup
                             if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
-                                let pos = output.text_draw_pos() + egui::vec2(0.0, 20.0); // Simple positioning
+                                let pos = output.galley_pos + egui::vec2(0.0, 20.0); // Simple positioning
                                 egui::Window::new("Suggestions")
                                     .fixed_pos(pos)
                                     .title_bar(false)
