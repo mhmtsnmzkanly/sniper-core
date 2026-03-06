@@ -4,7 +4,65 @@ use crate::core::scripting::templates;
 use crate::state::AppState;
 use crate::ui::design;
 use crate::ui::scrape::emit;
-use egui::{Color32, Frame, RichText, Stroke, Ui};
+use egui::{Color32, Frame, RichText, Stroke, Ui, text::LayoutJob};
+
+/// KOD NOTU: Rhai sözdizimi için basit bir renklendirici (Syntax Highlighter).
+fn rhai_highlighter(ui: &Ui, code: &str) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+
+    // Basit tokenlaştırma (Regex yerine daha hızlı manuel tarama)
+    let keywords = [
+        "fn", "let", "const", "if", "else", "for", "loop", "while", "return", "break", "continue", "import", "as", "export",
+    ];
+    let browser_apis = [
+        "Tab", "TabNew", "TabCatch", "TabCurrent", "navigate", "click", "type", "wait_for_ms", "screenshot", "find_el",
+        "capture", "html", "mirror", "complete", "console", "inject", "network", "cookies", "log", "fs_write_text", "fs_append_text",
+    ];
+
+    let mut it = code.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '/' && it.peek() == Some(&'/') { // Comment
+            let mut s = format!("{}", c);
+            while let Some(&nc) = it.peek() {
+                if nc == '\n' { break; }
+                s.push(it.next().unwrap());
+            }
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(100, 150, 100), font_id: font_id.clone(), ..Default::default() });
+        } else if c == '"' || c == '`' || c == '\'' { // String
+            let quote = c;
+            let mut s = format!("{}", c);
+            while let Some(&nc) = it.peek() {
+                s.push(it.next().unwrap());
+                if nc == quote { break; }
+            }
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(200, 150, 100), font_id: font_id.clone(), ..Default::default() });
+        } else if c.is_alphabetic() || c == '_' { // Word
+            let mut s = format!("{}", c);
+            while let Some(&nc) = it.peek() {
+                if nc.is_alphanumeric() || nc == '_' { s.push(it.next().unwrap()); } else { break; }
+            }
+            let color = if keywords.contains(&s.as_str()) {
+                Color32::from_rgb(80, 150, 255) // Keyword
+            } else if browser_apis.contains(&s.as_str()) {
+                Color32::from_rgb(255, 180, 100) // API
+            } else {
+                Color32::from_rgb(200, 200, 200) // Default
+            };
+            job.append(&s, 0.0, egui::TextFormat { color, font_id: font_id.clone(), ..Default::default() });
+        } else if c.is_numeric() { // Number
+            let mut s = format!("{}", c);
+            while let Some(&nc) = it.peek() {
+                if nc.is_numeric() || nc == '.' { s.push(it.next().unwrap()); } else { break; }
+            }
+            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(180, 130, 220), font_id: font_id.clone(), ..Default::default() });
+        } else { // Symbol/Punctuation
+            let color = if "(){}[].,;".contains(c) { Color32::from_gray(140) } else { Color32::from_gray(200) };
+            job.append(&c.to_string(), 0.0, egui::TextFormat { color, font_id: font_id.clone(), ..Default::default() });
+        }
+    }
+    job
+}
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     design::title(ui, "Scripting Studio", design::ACCENT_CYAN);
@@ -250,20 +308,55 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
 
     // ── Kod Editörü ───────────────────────────────────────────────────
-    // KOD NOTU: Editör yüksekliği available_height'ın %50'si ile kısıtlanır.
-    // Böylece alt paneller (debugger / runtime) her zaman görünür kalır.
-    ui.label(RichText::new("Code").strong().color(design::ACCENT_ORANGE));
-    let editor_h = (ui.available_height() * 0.45).clamp(120.0, 400.0);
-    egui::ScrollArea::vertical()
-        .id_salt("script_code_scroll")
-        .max_height(editor_h)
+    ui.label(RichText::new("Code Editor").strong().color(design::ACCENT_ORANGE));
+    let editor_h = (ui.available_height() * 0.55).clamp(200.0, 600.0);
+    
+    Frame::canvas(ui.style())
+        .fill(design::BG_PRIMARY)
+        .stroke(panel_stroke)
+        .corner_radius(4.0)
         .show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut state.script_package.code)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(16),
-            );
+            let avail_w = ui.available_width();
+            
+            egui::ScrollArea::vertical()
+                .id_salt("script_editor_scroll")
+                .max_height(editor_h)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        // 1. Satır Numaraları
+                        let line_count = state.script_package.code.lines().count().max(1);
+                        let mut line_numbers = String::new();
+                        for i in 1..=line_count {
+                            line_numbers.push_str(&format!("{:>3}\n", i));
+                        }
+                        
+                        ui.add_space(4.0);
+                        ui.vertical(|ui| {
+                            ui.add_space(2.0);
+                            ui.label(RichText::new(line_numbers).monospace().color(Color32::from_gray(80)).line_height(Some(14.5)));
+                        });
+                        
+                        ui.add_space(4.0);
+                        ui.separator();
+                        
+                        // 2. Kod Alanı
+                        let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
+                            let mut job = rhai_highlighter(ui, string);
+                            job.wrap.max_width = f32::INFINITY; 
+                            ui.fonts(|f| f.layout_job(job))
+                        };
+
+                        ui.add(
+                            egui::TextEdit::multiline(&mut state.script_package.code)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(avail_w)
+                                .desired_rows(20)
+                                .lock_focus(true)
+                                .layouter(&mut layouter)
+                                .frame(false)
+                        );
+                    });
+                });
         });
 
     ui.add_space(6.0);
