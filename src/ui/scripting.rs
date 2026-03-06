@@ -1,24 +1,46 @@
 use crate::core::events::AppEvent;
-use crate::core::scripting::types::ScriptPackage;
 use crate::core::scripting::templates;
+use crate::core::scripting::types::ScriptPackage;
 use crate::state::AppState;
 use crate::ui::design;
 use crate::ui::scrape::emit;
-use egui::{Color32, Frame, RichText, Stroke, Ui, text::LayoutJob, Id};
+use egui::{text::LayoutJob, Color32, Frame, Id, RichText, Stroke, Ui};
 
 const RHAI_KEYWORDS: &[&str] = &[
-    "fn", "let", "const", "if", "else", "for", "loop", "while", "return", "break", "continue", "import", "as", "export",
+    "fn", "let", "const", "if", "else", "for", "loop", "while", "return", "break", "continue",
+    "import", "as", "export",
 ];
 
 const BROWSER_APIS: &[&str] = &[
-    "Tab", "TabNew", "TabCatch", "TabCurrent", "navigate", "click", "type", "wait_for_ms", "screenshot", "find_el",
-    "capture", "html", "mirror", "complete", "console", "inject", "network", "cookies", "log", "fs_write_text", "fs_append_text",
+    "Tab",
+    "TabNew",
+    "TabCatch",
+    "TabCurrent",
+    "navigate",
+    "click",
+    "type",
+    "wait_for_ms",
+    "screenshot",
+    "find_el",
+    "capture",
+    "html",
+    "mirror",
+    "complete",
+    "console",
+    "inject",
+    "network",
+    "cookies",
+    "log",
+    "fs_write_text",
+    "fs_append_text",
 ];
 
 /// KOD NOTU: Otomatik tamamlama mantığını işler.
 fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
     let code = &state.script_package.code;
-    if cursor_pos == 0 { return; }
+    if cursor_pos == 0 {
+        return;
+    }
 
     // İmleçten önceki kelimeyi ve başlangıcını bul
     let start_of_prefix = code[..cursor_pos]
@@ -26,7 +48,7 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
         .map(|i| i + 1)
         .unwrap_or(0);
     let prefix = &code[start_of_prefix..cursor_pos];
-    
+
     let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
     let mut trigger = false;
 
@@ -42,7 +64,7 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
             return;
         }
     }
-    
+
     // Manuel tetikleyici (Ctrl+Space) her zaman çalışır
     if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space)) {
         trigger = true;
@@ -61,7 +83,8 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
             // Noktadan sonra API metotlarını öner
             let after_dot = &prefix[dot_idx + 1..];
             insert_pos = start_of_prefix + dot_idx + 1;
-            suggestions = BROWSER_APIS.iter()
+            suggestions = BROWSER_APIS
+                .iter()
                 .filter(|s| s.to_lowercase().starts_with(&after_dot.to_lowercase()))
                 .map(|s| s.to_string())
                 .collect();
@@ -78,7 +101,9 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
             state.ide_autocomplete_open = true;
             state.ide_autocomplete_cursor = insert_pos;
             state.ide_autocomplete_suggestions = suggestions;
-            state.ide_autocomplete_index = state.ide_autocomplete_index.min(state.ide_autocomplete_suggestions.len() - 1);
+            state.ide_autocomplete_index = state
+                .ide_autocomplete_index
+                .min(state.ide_autocomplete_suggestions.len() - 1);
         } else {
             state.ide_autocomplete_open = false;
         }
@@ -90,7 +115,7 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
 fn apply_autocomplete(state: &mut AppState, suggestion: &str) {
     let code = &state.script_package.code;
     let trigger_pos = state.ide_autocomplete_cursor;
-    
+
     // Kelimenin sonunu bul (üzerine yazmamak için)
     let mut end_pos = trigger_pos;
     let chars: Vec<char> = code.chars().collect();
@@ -101,19 +126,23 @@ fn apply_autocomplete(state: &mut AppState, suggestion: &str) {
     let mut new_code = code[..trigger_pos].to_string();
     new_code.push_str(suggestion);
     new_code.push_str(&code[end_pos..]);
-    
+
     state.script_package.code = new_code;
     state.ide_autocomplete_open = false;
 }
 
 /// KOD NOTU: Parantez eşleştirme mantığı.
 fn find_matching_brace(code: &str, cursor_idx: usize) -> Option<(usize, usize)> {
-    if cursor_idx == 0 || code.is_empty() { return None; }
-    
+    if cursor_idx == 0 || code.is_empty() {
+        return None;
+    }
+
     let chars: Vec<char> = code.chars().collect();
     let idx = cursor_idx.saturating_sub(1);
-    if idx >= chars.len() { return None; }
-    
+    if idx >= chars.len() {
+        return None;
+    }
+
     let c = chars[idx];
     let (open, close, forward) = match c {
         '(' => ('(', ')', true),
@@ -128,19 +157,25 @@ fn find_matching_brace(code: &str, cursor_idx: usize) -> Option<(usize, usize)> 
     if forward {
         let mut depth = 0;
         for i in idx..chars.len() {
-            if chars[i] == open { depth += 1; }
-            else if chars[i] == close {
+            if chars[i] == open {
+                depth += 1;
+            } else if chars[i] == close {
                 depth -= 1;
-                if depth == 0 { return Some((idx, i)); }
+                if depth == 0 {
+                    return Some((idx, i));
+                }
             }
         }
     } else {
         let mut depth = 0;
         for i in (0..=idx).rev() {
-            if chars[i] == close { depth += 1; }
-            else if chars[i] == open {
+            if chars[i] == close {
+                depth += 1;
+            } else if chars[i] == open {
                 depth -= 1;
-                if depth == 0 { return Some((i, idx)); }
+                if depth == 0 {
+                    return Some((i, idx));
+                }
             }
         }
     }
@@ -165,18 +200,20 @@ fn get_api_doc(api: &str) -> &'static str {
         "inject" => "Injects and executes custom JavaScript. Usage: tab.console.inject(\"code\");",
         "network" => "Network monitoring and interception APIs.",
         "cookies" => "Cookie management. Usage: tab.cookies.get_all();",
-        "fs_write_text" => "Writes text to a file in output_dir. Usage: fs_write_text(\"path\", \"data\");",
+        "fs_write_text" => {
+            "Writes text to a file in output_dir. Usage: fs_write_text(\"path\", \"data\");"
+        }
         _ => "Sniper Browser API function.",
     }
 }
 
 /// KOD NOTU: Rhai sözdizimi için gelişmiş renklendirici.
 fn rhai_highlighter(
-    ui: &Ui, 
-    code: &str, 
+    ui: &Ui,
+    code: &str,
     highlight_braces: Option<(usize, usize)>,
     diagnostics: &[crate::core::scripting::types::ScriptDiagnostic],
-    highlight_word: Option<&str>
+    highlight_word: Option<&str>,
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
@@ -184,14 +221,16 @@ fn rhai_highlighter(
     // Satır başlangıç indekslerini hesapla (Hata vurgulama için)
     let mut line_starts = vec![0];
     for (i, c) in code.chars().enumerate() {
-        if c == '\n' { line_starts.push(i + 1); }
+        if c == '\n' {
+            line_starts.push(i + 1);
+        }
     }
 
     let mut it = code.chars().enumerate().peekable();
     while let Some((idx, c)) = it.next() {
         // 1. Parantez eşleşme kontrolü
         let is_brace_match = highlight_braces.map_or(false, |(a, b)| idx == a || idx == b);
-        
+
         // 2. Hata kontrolü (Bu karakter bir hata bölgesinde mi?)
         let mut error_color = None;
         for d in diagnostics {
@@ -206,49 +245,72 @@ fn rhai_highlighter(
             }
         }
 
-        let mut base_format = egui::TextFormat { 
-            font_id: font_id.clone(), 
-            ..Default::default() 
+        let mut base_format = egui::TextFormat {
+            font_id: font_id.clone(),
+            ..Default::default()
         };
 
         if is_brace_match {
             base_format.background = Color32::from_rgb(60, 80, 100);
             base_format.color = Color32::WHITE;
         }
-        
+
         if let Some(ec) = error_color {
             base_format.underline = Stroke::new(1.5, ec);
         }
 
-        if c == '/' && it.peek().map_or(false, |(_, nc)| *nc == '/') { // Comment
+        if c == '/' && it.peek().map_or(false, |(_, nc)| *nc == '/') {
+            // Comment
             let mut s = format!("{}", c);
             while let Some((_, nc)) = it.peek() {
-                if *nc == '\n' { break; }
+                if *nc == '\n' {
+                    break;
+                }
                 let next_c = it.next().unwrap().1;
                 s.push(next_c);
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(100, 150, 100), ..base_format.clone() });
-        } else if c == '"' || c == '`' || c == '\'' { // String
+            job.append(
+                &s,
+                0.0,
+                egui::TextFormat {
+                    color: Color32::from_rgb(100, 150, 100),
+                    ..base_format.clone()
+                },
+            );
+        } else if c == '"' || c == '`' || c == '\'' {
+            // String
             let quote = c;
             let mut s = format!("{}", c);
             while let Some((_, nc)) = it.peek() {
                 let nc_val = *nc;
                 let next_c = it.next().unwrap().1;
                 s.push(next_c);
-                if nc_val == quote { break; }
+                if nc_val == quote {
+                    break;
+                }
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(200, 150, 100), ..base_format.clone() });
-        } else if c.is_alphabetic() || c == '_' { // Word
+            job.append(
+                &s,
+                0.0,
+                egui::TextFormat {
+                    color: Color32::from_rgb(200, 150, 100),
+                    ..base_format.clone()
+                },
+            );
+        } else if c.is_alphabetic() || c == '_' {
+            // Word
             let mut s = format!("{}", c);
             while let Some((_, nc)) = it.peek() {
-                if nc.is_alphanumeric() || *nc == '_' { 
+                if nc.is_alphanumeric() || *nc == '_' {
                     let next_c = it.next().unwrap().1;
-                    s.push(next_c); 
-                } else { break; }
+                    s.push(next_c);
+                } else {
+                    break;
+                }
             }
-            
+
             let mut word_format = base_format.clone();
-            
+
             // Selection Highlight Logic
             if let Some(h_word) = highlight_word {
                 if !h_word.is_empty() && s == h_word {
@@ -263,19 +325,48 @@ fn rhai_highlighter(
             } else {
                 Color32::from_rgb(200, 200, 200) // Default
             };
-            job.append(&s, 0.0, egui::TextFormat { color, ..word_format });
-        } else if c.is_numeric() { // Number
+            job.append(
+                &s,
+                0.0,
+                egui::TextFormat {
+                    color,
+                    ..word_format
+                },
+            );
+        } else if c.is_numeric() {
+            // Number
             let mut s = format!("{}", c);
             while let Some((_, nc)) = it.peek() {
-                if nc.is_numeric() || *nc == '.' { 
+                if nc.is_numeric() || *nc == '.' {
                     let next_c = it.next().unwrap().1;
-                    s.push(next_c); 
-                } else { break; }
+                    s.push(next_c);
+                } else {
+                    break;
+                }
             }
-            job.append(&s, 0.0, egui::TextFormat { color: Color32::from_rgb(180, 130, 220), ..base_format.clone() });
-        } else { // Symbol/Punctuation
-            let color = if "(){}[].,;".contains(c) { Color32::from_gray(140) } else { Color32::from_gray(200) };
-            job.append(&c.to_string(), 0.0, egui::TextFormat { color, ..base_format.clone() });
+            job.append(
+                &s,
+                0.0,
+                egui::TextFormat {
+                    color: Color32::from_rgb(180, 130, 220),
+                    ..base_format.clone()
+                },
+            );
+        } else {
+            // Symbol/Punctuation
+            let color = if "(){}[].,;".contains(c) {
+                Color32::from_gray(140)
+            } else {
+                Color32::from_gray(200)
+            };
+            job.append(
+                &c.to_string(),
+                0.0,
+                egui::TextFormat {
+                    color,
+                    ..base_format.clone()
+                },
+            );
         }
     }
     job
@@ -283,7 +374,9 @@ fn rhai_highlighter(
 
 /// KOD NOTU: Kod içinde arama ve değiştirme arayüzü.
 fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
-    if !state.ide_search_open { return; }
+    if !state.ide_search_open {
+        return;
+    }
 
     Frame::NONE
         .fill(design::BG_SURFACE)
@@ -296,14 +389,17 @@ fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
                 ui.add(egui::TextEdit::singleline(&mut state.ide_search_text).desired_width(120.0));
 
                 ui.label(RichText::new("Replace:").small().color(design::TEXT_MUTED));
-                ui.add(egui::TextEdit::singleline(&mut state.ide_replace_text).desired_width(120.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.ide_replace_text).desired_width(120.0),
+                );
 
                 if ui.button("Next").clicked() {
                     let code = &state.script_package.code;
                     if !state.ide_search_text.is_empty() {
                         let start = state.ide_autocomplete_cursor;
                         if let Some(pos) = code[start..].find(&state.ide_search_text) {
-                            state.ide_autocomplete_cursor = start + pos + state.ide_search_text.len();
+                            state.ide_autocomplete_cursor =
+                                start + pos + state.ide_search_text.len();
                         } else if let Some(pos) = code.find(&state.ide_search_text) {
                             state.ide_autocomplete_cursor = pos + state.ide_search_text.len();
                         }
@@ -313,8 +409,12 @@ fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
                 if ui.button("Replace").clicked() {
                     if !state.ide_search_text.is_empty() {
                         let code = state.script_package.code.clone();
-                        let start = state.ide_autocomplete_cursor.saturating_sub(state.ide_search_text.len());
-                        if code.get(start..state.ide_autocomplete_cursor) == Some(&state.ide_search_text) {
+                        let start = state
+                            .ide_autocomplete_cursor
+                            .saturating_sub(state.ide_search_text.len());
+                        if code.get(start..state.ide_autocomplete_cursor)
+                            == Some(&state.ide_search_text)
+                        {
                             let mut new_code = code[..start].to_string();
                             new_code.push_str(&state.ide_replace_text);
                             new_code.push_str(&code[state.ide_autocomplete_cursor..]);
@@ -325,7 +425,10 @@ fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
 
                 if ui.button("All").clicked() {
                     if !state.ide_search_text.is_empty() {
-                        state.script_package.code = state.script_package.code.replace(&state.ide_search_text, &state.ide_replace_text);
+                        state.script_package.code = state
+                            .script_package
+                            .code
+                            .replace(&state.ide_search_text, &state.ide_replace_text);
                     }
                 }
 
@@ -337,14 +440,6 @@ fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
 }
 
 pub fn render(ui: &mut Ui, state: &mut AppState) {
-    design::title(ui, "Scripting Studio", design::ACCENT_CYAN);
-    ui.label(
-        RichText::new("Rhai tabanlı script editörü. Browser komutları (click, type vb.) arka planda Automation Runtime (DSL) ile ortak çalışır.")
-            .small()
-            .color(design::TEXT_MUTED),
-    );
-    ui.add_space(8.0);
-
     let template_library = templates::library();
     let panel_stroke = Stroke::new(1.0, Color32::from_rgb(42, 64, 78));
 
@@ -581,7 +676,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
 
     // ── Kod Editörü ───────────────────────────────────────────────────
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Code Editor").strong().color(design::ACCENT_ORANGE));
+        ui.label(
+            RichText::new("Code Editor")
+                .strong()
+                .color(design::ACCENT_ORANGE),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("🔍 Find (Ctrl+F)").clicked() {
                 state.ide_search_open = !state.ide_search_open;
@@ -605,7 +704,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
             let end = range.primary.index.max(range.secondary.index);
             if start != end {
                 if let Some(selected) = state.script_package.code.get(start..end) {
-                    if selected.chars().all(|c: char| c.is_alphanumeric() || c == '_') {
+                    if selected
+                        .chars()
+                        .all(|c: char| c.is_alphanumeric() || c == '_')
+                    {
                         highlight_word = Some(selected.to_string());
                     }
                 }
@@ -614,14 +716,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     }
 
     let editor_h = (ui.available_height() * 0.55).clamp(200.0, 600.0);
-    
+
     Frame::canvas(ui.style())
         .fill(design::BG_PRIMARY)
         .stroke(panel_stroke)
         .corner_radius(4.0)
         .show(ui, |ui| {
             let avail_w = ui.available_width();
-            
+
             egui::ScrollArea::vertical()
                 .id_salt("script_editor_scroll")
                 .max_height(editor_h)
@@ -630,14 +732,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         // 1. Satır Numaraları ve Error Gutter
                         let line_count = state.script_package.code.lines().count().max(1);
                         let diagnostics = &state.ide_diagnostics;
-                        
+
                         ui.add_space(4.0);
                         ui.vertical(|ui| {
                             ui.add_space(2.0);
                             for i in 1..=line_count {
                                 let has_error = diagnostics.iter().any(|d| d.line == Some(i) && d.severity == crate::core::scripting::types::DiagnosticSeverity::Error);
                                 let has_warn = diagnostics.iter().any(|d| d.line == Some(i) && d.severity == crate::core::scripting::types::DiagnosticSeverity::Warn);
-                                
+
                                 ui.horizontal(|ui| {
                                     // Gutter Icon
                                     if has_error {
@@ -651,24 +753,24 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                     } else {
                                         ui.add_space(12.0); // Empty space for alignment
                                     }
-                                    
+
                                     // Line Number
                                     ui.label(RichText::new(format!("{:>3}", i)).monospace().color(Color32::from_gray(80)).line_height(Some(14.5)));
                                 });
                             }
                         });
-                        
+
                         ui.add_space(4.0);
                         ui.separator();
-                        
+
                         // 2. Kod Alanı
-                        let cursor_pos = state.ide_autocomplete_cursor; 
+                        let cursor_pos = state.ide_autocomplete_cursor;
                         let highlight_braces = find_matching_brace(&state.script_package.code, cursor_pos);
                         let diagnostics = &state.ide_diagnostics;
 
                         let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
                             let mut job = rhai_highlighter(ui, string, highlight_braces, diagnostics, highlight_word.as_deref());
-                            job.wrap.max_width = f32::INFINITY; 
+                            job.wrap.max_width = f32::INFINITY;
                             ui.ctx().fonts(|f| f.layout_job(job))
                         };
 
@@ -689,14 +791,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 let cursor_at_hover = output.galley.cursor_from_pos(relative_pos);
                                 let char_idx = cursor_at_hover.ccursor.index;
                                 let code = &state.script_package.code;
-                                
+
                                 // 1. Check for Errors at this position
                                 let mut hover_text = None;
                                 let mut line_starts = vec![0];
                                 for (i, c) in code.chars().enumerate() {
                                     if c == '\n' { line_starts.push(i + 1); }
                                 }
-                                
+
                                 for d in diagnostics {
                                     if let Some(line_idx) = d.line.map(|l| l.saturating_sub(1)) {
                                         if let Some(&start) = line_starts.get(line_idx) {
@@ -708,7 +810,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                         }
                                     }
                                 }
-                                
+
                                 // 2. Check for API Docs if no error
                                 if hover_text.is_none() {
                                     let start_idx = code[..char_idx.min(code.len())].rfind(|c: char| !c.is_alphanumeric() && c != '_').map(|i| i + 1).unwrap_or(0);
@@ -720,11 +822,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                         }
                                     }
                                 }
-                                
+
                                 if let Some(txt) = hover_text {
                                     ui.set_max_width(350.0);
                                     let is_error = txt.starts_with("❌");
-                                    
+
                                     Frame::NONE
                                         .fill(if is_error { Color32::from_rgb(45, 20, 20) } else { Color32::from_rgb(20, 30, 45) })
                                         .stroke(Stroke::new(1.0, if is_error { Color32::from_rgb(180, 50, 50) } else { design::ACCENT_CYAN }))
@@ -772,8 +874,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 if let Some(suggestion) = selected_suggestion {
                                     apply_autocomplete(state, &suggestion);
                                 } else {
-                                    // Popup UI (floating)
-                                    let pos = output.galley_pos + egui::vec2(0.0, 24.0);
+                                    // Popup UI (floating at cursor position)
+                                    let cursor_rect = output.galley.pos_from_cursor(&cursor_range.primary);
+                                    let pos = output.galley_pos + cursor_rect.max.to_vec2() + egui::vec2(4.0, 4.0);
+                                    
                                     egui::Area::new(Id::new("ide_autocomplete_area"))
                                         .fixed_pos(pos)
                                         .order(egui::Order::Foreground)
@@ -828,7 +932,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             let package = state.script_package.clone();
                             let tab_id = state.scripting_tab_binding.clone().or(state.selected_tab_id.clone());
                             let port = state.config.remote_debug_port;
-                            
+
                             tokio::spawn(async move {
                                 let report = crate::core::scripting::engine::check_script(&package, tab_id, Some(port), false).await;
                                 emit(AppEvent::ScriptingCheckResult(report));
@@ -841,100 +945,77 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
 
     // ── Debugger ──────────────────────────────────────────────────────
-    ui.collapsing(
-        RichText::new("Script Debugger").strong(),
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("Break Condition:").color(design::TEXT_MUTED));
-                ui.add(
-                    egui::TextEdit::singleline(&mut state.scripting_break_condition)
-                        .hint_text("Action text contains... (e.g. Capture, RunDsl)")
-                        .desired_width(ui.available_width() * 0.7),
-                );
-            });
-            ui.checkbox(&mut state.scripting_emit_step_timing, "Emit step timing telemetry");
-            ui.add_space(4.0);
+    ui.collapsing(RichText::new("Script Debugger").strong(), |ui| {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Break Condition:").color(design::TEXT_MUTED));
+            ui.add(
+                egui::TextEdit::singleline(&mut state.scripting_break_condition)
+                    .hint_text("Action text contains... (e.g. Capture, RunDsl)")
+                    .desired_width(ui.available_width() * 0.7),
+            );
+        });
+        ui.checkbox(
+            &mut state.scripting_emit_step_timing,
+            "Emit step timing telemetry",
+        );
+        ui.add_space(4.0);
 
-            if state.scripting_debug_plan.is_empty() {
-                ui.colored_label(
-                    Color32::from_gray(150),
-                    "No debug plan yet. Click Debugger to build step preview.",
-                );
-            } else {
-                let max_idx = state.scripting_debug_plan.len().saturating_sub(1);
-                if state.scripting_debug_index > max_idx {
-                    state.scripting_debug_index = max_idx;
-                }
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            state.scripting_debug_index > 0,
-                            egui::Button::new("◀ Prev"),
-                        )
-                        .clicked()
-                    {
-                        state.scripting_debug_index =
-                            state.scripting_debug_index.saturating_sub(1);
-                    }
-                    if ui
-                        .add_enabled(
-                            state.scripting_debug_index + 1 < state.scripting_debug_plan.len(),
-                            egui::Button::new("Next ▶"),
-                        )
-                        .clicked()
-                    {
-                        state.scripting_debug_index += 1;
-                    }
-                    ui.label(format!(
-                        "Step {}/{}",
-                        state.scripting_debug_index + 1,
-                        state.scripting_debug_plan.len()
-                    ));
-                });
-                let current_line = state
-                    .scripting_debug_plan
-                    .get(state.scripting_debug_index)
-                    .cloned()
-                    .unwrap_or_default();
-                let break_match = !state.scripting_break_condition.trim().is_empty()
-                    && current_line
-                        .to_ascii_lowercase()
-                        .contains(&state.scripting_break_condition.to_ascii_lowercase());
-                if break_match {
-                    ui.colored_label(Color32::from_rgb(255, 200, 120), "⚡ Break condition matches this step.");
-                }
-                Frame::new()
-                    .fill(design::BG_PRIMARY)
-                    .corner_radius(6.0)
-                    .inner_margin(8.0)
-                    .show(ui, |ui| {
-                        ui.monospace(&current_line);
-                    });
-            }
-        },
-    );
-
-    ui.add_space(4.0);
-
-    // ── Runtime Output ────────────────────────────────────────────────
-    ui.collapsing(RichText::new("Runtime Output").strong(), |ui| {
-        if let Some(err) = &state.script_error {
+        if state.scripting_debug_plan.is_empty() {
             ui.colored_label(
-                Color32::from_rgb(255, 100, 100),
-                format!("❌ ERROR: {}", err),
+                Color32::from_gray(150),
+                "No debug plan yet. Click Debugger to build step preview.",
             );
         } else {
-            ui.colored_label(design::ACCENT_GREEN, "✓ Output'lar System Telemetry panelinde listelenir.");
-            ui.add_space(2.0);
-            if let Some(last) = state.script_output.last() {
-                Frame::new()
-                    .fill(design::BG_PRIMARY)
-                    .corner_radius(6.0)
-                    .inner_margin(6.0)
-                    .show(ui, |ui| {
-                        ui.monospace(format!("Last: {}", last));
-                    });
+            let max_idx = state.scripting_debug_plan.len().saturating_sub(1);
+            if state.scripting_debug_index > max_idx {
+                state.scripting_debug_index = max_idx;
             }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(state.scripting_debug_index > 0, egui::Button::new("◀ Prev"))
+                    .clicked()
+                {
+                    state.scripting_debug_index = state.scripting_debug_index.saturating_sub(1);
+                }
+                if ui
+                    .add_enabled(
+                        state.scripting_debug_index + 1 < state.scripting_debug_plan.len(),
+                        egui::Button::new("Next ▶"),
+                    )
+                    .clicked()
+                {
+                    state.scripting_debug_index += 1;
+                }
+                ui.label(format!(
+                    "Step {}/{}",
+                    state.scripting_debug_index + 1,
+                    state.scripting_debug_plan.len()
+                ));
+            });
+            let current_line = state
+                .scripting_debug_plan
+                .get(state.scripting_debug_index)
+                .cloned()
+                .unwrap_or_default();
+            let break_match = !state.scripting_break_condition.trim().is_empty()
+                && current_line
+                    .to_ascii_lowercase()
+                    .contains(&state.scripting_break_condition.to_ascii_lowercase());
+            if break_match {
+                ui.colored_label(
+                    Color32::from_rgb(255, 200, 120),
+                    "⚡ Break condition matches this step.",
+                );
+            }
+            Frame::new()
+                .fill(design::BG_PRIMARY)
+                .corner_radius(6.0)
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    ui.monospace(&current_line);
+                });
         }
     });
+
+    ui.add_space(4.0);
 }
