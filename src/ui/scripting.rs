@@ -21,31 +21,18 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
     if cursor_pos == 0 { return; }
 
     let last_char = code.chars().nth(cursor_pos.saturating_sub(1));
-    let mut trigger = false;
-
-    // Trigger on '.' or Ctrl+Space (handled via input check)
-    if last_char == Some('.') {
-        trigger = true;
-    }
-
-    if trigger || (ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space))) {
+    
+    // Trigger logic
+    if last_char == Some('.') || (ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Space))) {
         state.ide_autocomplete_open = true;
         state.ide_autocomplete_cursor = cursor_pos;
         state.ide_autocomplete_index = 0;
-        
-        // Basit öneri listesi (Gelecekte bağlama göre filtrelenebilir)
         state.ide_autocomplete_suggestions = BROWSER_APIS.iter().map(|s| s.to_string()).collect();
     }
 
-    // Enter or Tab to apply
     if state.ide_autocomplete_open {
-        if ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab)) {
-            if let Some(suggestion) = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index) {
-                let mut new_code = code.clone();
-                new_code.insert_str(cursor_pos, suggestion);
-                state.script_package.code = new_code;
-                state.ide_autocomplete_open = false;
-            }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            state.ide_autocomplete_open = false;
         }
         if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
             state.ide_autocomplete_index = (state.ide_autocomplete_index + 1) % state.ide_autocomplete_suggestions.len().max(1);
@@ -53,10 +40,16 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
         if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
             state.ide_autocomplete_index = (state.ide_autocomplete_index + state.ide_autocomplete_suggestions.len().saturating_sub(1)) % state.ide_autocomplete_suggestions.len().max(1);
         }
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            state.ide_autocomplete_open = false;
-        }
     }
+}
+
+fn apply_autocomplete(state: &mut AppState, suggestion: &str) {
+    let code = &state.script_package.code;
+    let cursor_pos = state.ide_autocomplete_cursor;
+    let mut new_code = code.clone();
+    new_code.insert_str(cursor_pos, suggestion);
+    state.script_package.code = new_code;
+    state.ide_autocomplete_open = false;
 }
 
 /// KOD NOTU: Parantez eşleştirme mantığı.
@@ -227,7 +220,7 @@ fn rhai_highlighter(
 fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
     if !state.ide_search_open { return; }
 
-    Frame::none()
+    Frame::NONE
         .fill(design::BG_SURFACE)
         .stroke(Stroke::new(1.0, design::ACCENT_CYAN))
         .inner_margin(4.0)
@@ -628,7 +621,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                 }
                                 
                                 if let Some(txt) = hover_text {
-                                    ui.label(txt);
+                                    ui.add(egui::Label::new(txt).wrap());
                                 }
                             }
                         });
@@ -638,46 +631,53 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             state.ide_autocomplete_cursor = cp;
                             handle_autocomplete(ui, state, cp);
                             
-                            // Auto-Indentation Logic
-                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                let code = state.script_package.code.clone();
-                                // Find the start of the line where the cursor was before Enter
-                                let mut line_start = cp.saturating_sub(1);
-                                while line_start > 0 && code.chars().nth(line_start-1) != Some('\n') {
-                                    line_start -= 1;
-                                }
-                                let prev_line = &code[line_start..cp.saturating_sub(1)];
-                                let indent = prev_line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
-                                let extra = if prev_line.trim_end().ends_with('{') { "    " } else { "" };
-                                let to_insert = format!("{}{}", indent, extra);
-                                
-                                if !to_insert.is_empty() {
-                                    let mut new_code = code.clone();
-                                    new_code.insert_str(cp, &to_insert);
-                                    state.script_package.code = new_code;
-                                }
-                            }
-                            
-                            // Autocomplete Popup
+                            // Autocomplete Logic
                             if state.ide_autocomplete_open && !state.ide_autocomplete_suggestions.is_empty() {
-                                let pos = output.galley_pos + egui::vec2(0.0, 20.0); // Simple positioning
-                                egui::Window::new("Suggestions")
+                                if ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Tab)) {
+                                    if let Some(suggestion) = state.ide_autocomplete_suggestions.get(state.ide_autocomplete_index).cloned() {
+                                        apply_autocomplete(state, &suggestion);
+                                    }
+                                }
+
+                                // Popup UI (floating)
+                                let pos = output.galley_pos + egui::vec2(0.0, 24.0);
+                                egui::Area::new(Id::new("ide_autocomplete_area"))
                                     .fixed_pos(pos)
-                                    .title_bar(false)
-                                    .resizable(false)
-                                    .frame(Frame::group(ui.style()).fill(design::BG_SURFACE))
+                                    .order(egui::Order::Foreground)
                                     .show(ui.ctx(), |ui| {
-                                        for (i, sug) in state.ide_autocomplete_suggestions.iter().enumerate() {
-                                            let is_selected = i == state.ide_autocomplete_index;
-                                            let res = ui.selectable_label(is_selected, sug);
-                                            if res.clicked() {
-                                                let mut new_code = state.script_package.code.clone();
-                                                new_code.insert_str(cp, sug);
-                                                state.script_package.code = new_code;
-                                                state.ide_autocomplete_open = false;
-                                            }
-                                        }
+                                        Frame::group(ui.style())
+                                            .fill(design::BG_SURFACE)
+                                            .stroke(Stroke::new(1.0, design::ACCENT_CYAN))
+                                            .show(ui, |ui| {
+                                                ui.set_max_width(200.0);
+                                                let suggestions = state.ide_autocomplete_suggestions.clone();
+                                                for (i, sug) in suggestions.iter().enumerate() {
+                                                    let is_selected = i == state.ide_autocomplete_index;
+                                                    let res = ui.selectable_label(is_selected, sug);
+                                                    if res.clicked() {
+                                                        apply_autocomplete(state, sug);
+                                                    }
+                                                }                                            });
                                     });
+                            } else {
+                                // Auto-Indentation Logic (Only if autocomplete is closed)
+                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                    let code = state.script_package.code.clone();
+                                    let mut line_start = cp.saturating_sub(1);
+                                    while line_start > 0 && code.chars().nth(line_start-1) != Some('\n') {
+                                        line_start -= 1;
+                                    }
+                                    let prev_line = &code[line_start..cp.saturating_sub(1)];
+                                    let indent = prev_line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                                    let extra = if prev_line.trim_end().ends_with('{') { "    " } else { "" };
+                                    let to_insert = format!("{}{}", indent, extra);
+                                    
+                                    if !to_insert.is_empty() {
+                                        let mut new_code = code.clone();
+                                        new_code.insert_str(cp, &to_insert);
+                                        state.script_package.code = new_code;
+                                    }
+                                }
                             }
                         }
 
