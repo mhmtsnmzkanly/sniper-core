@@ -81,9 +81,10 @@ What it does:
 
 Launch options:
 - `Proxy` (e.g. `http://host:port`, `socks5://host:port`)
-- `User-Agent` override
-- `Random UA`
-- `Stealth Mode` (window size/lang/automation flag randomization)
+- `User-Agent` override and `Random UA` mode.
+- `Stealth Mode` (anti-fingerprint script + resolution randomization).
+- **Advanced Flags:** Headless mode, Incognito mode, Ignore SSL Errors, Mute Audio, and Disable GPU.
+- **Environment:** Custom window resolution (W/H) and browser language setting.
 - `RELAUNCH APPLY PROFILE` for active-session proxy/identity update via controlled restart.
 
 Outputs:
@@ -98,7 +99,8 @@ Errors:
 ## 4.2 Chrome Tabs
 What it does:
 - Lists CDP tabs (`type=page`).
-- Grid layout with adjustable column count.
+- Responsive Grid layout with adjustable column count.
+- Safe background auto-sync (debounced every 5 seconds).
 - Lets user choose active tab target.
 
 Outputs:
@@ -111,6 +113,7 @@ Potential issues:
 ## 4.3 Command Center
 Actions:
 - Capture HTML / Complete / Mirror
+- **🎭 DE-MASK:** Resolves Blob URLs to likely source origins.
 - Open Panels (Network, Media, Cookies, Console)
 - Reload current tab
 
@@ -146,6 +149,7 @@ Potential errors:
 ## 6. Network, Media, Cookies, Console
 
 ## 6.1 Network Listener
+- Dedicated `core/network` handler for high-performance capture.
 - Starts per-tab listener.
 - Receives requests/responses and stores into workspace.
 - Can be toggled on/off with cancellation token.
@@ -159,11 +163,13 @@ Potential errors:
 ## 6.2 Media Capture
 - Media assets are derived from network responses.
 - Binary payload may be decoded from base64 when needed.
-- Quick filters: `Images`, `.png`, `Videos`, `>1MB`, `Reset`.
-- Sort presets: `Name`, `Size`, `Type` with asc/desc.
+- **Advanced Management:**
+  - **Sorting:** Sort assets by Name, Type, or Size.
+  - **Minimum Size Filter:** Hide small tracking pixels or noise by setting a KB threshold (DragValue in UI).
+- Quick filters: `Images`, `Videos`, `Audio`, `Styles`, `Scripts`, `Fonts`.
 - Visual Gallery mode for card-based media browsing.
 - One-click HLS Video Downloader for non-DRM `.m3u8` sources (uses `ffmpeg`).
-- Blob `De-Masker` attempts to map `blob:http...` URLs to likely original media source URLs.
+- **🎭 Blob De-Masker:** Heuristic-based resolver for `blob:` URLs.
 
 Potential errors:
 - binary decode failures
@@ -229,7 +235,18 @@ Includes actions such as:
 
 Scripting is a thin layer over automation/browser operations.
 
-Flow:
+### 8.1 Integrated Development Environment (IDE)
+The Scripting tab features a professional-grade mini-IDE:
+- **Syntax Highlighting:** Custom Rhai and Sniper API coloring.
+- **Smart Autocomplete:** Context-aware suggestions for `tab.` methods and keywords (triggered via `.` or `Ctrl+Space`).
+- **Real-time Diagnostics:** background checking with visual error highlighting (underlines).
+- **Error Gutter:** ❌/⚠️ icons next to line numbers with hover details.
+- **Selection Highlighting:** Automatically highlights all occurrences of the selected word.
+- **Hover Documentation:** Instant API and Error information on mouse-over.
+- **Smart Indent:** Preserves leading spaces and auto-indents after `{`.
+- **Find & Replace:** Search bar with Next/Replace/All capabilities (`Ctrl+F`).
+
+### 8.2 Execution Flow
 1. Script package loaded
 2. `Check` performs compile + basic lint
 3. `Dry-Run` can compile and print planned actions without execution
@@ -237,19 +254,11 @@ Flow:
 5. `Execute` compiles and maps Rhai calls to internal actions
 6. Actions are executed via shared automation runtime and browser APIs
 
-Current helper families:
-- tab creation/binding (`Tab`, `TabNew`, `tab_new`, `Tab.new`, `TabCatch`, `TabCurrent`, `tab_catch`, `Tab.catch`)
-- element query/actions (`find_el`, `filter_id`, `filter_class`, `filter_attr`, `first_or_none`, `all`, `click`, `type`)
-- capture/network/console/cookies services
-- file helpers (`fs_write_text`, `fs_append_text`, `fs_mkdir_all`, `fs_exists`)
-- template library presets (quick capture/search/automation bridge)
-
 Important behavior:
 - Script output is written to **System Telemetry**.
 - `Stop` is cooperative (cancel token).
 - Known error patterns emit KB hints into telemetry (`KB` log level).
-- `Break Condition` can halt execution when a planned action text matches.
-- `TIMING` telemetry can be enabled to emit step/flush execution durations (ms).
+- Extracted line/column info allows IDE to pinpoint exact runtime error locations.
 - Stealth fingerprint script can be applied during automation/scripting target binding.
 
 Known limitations:
