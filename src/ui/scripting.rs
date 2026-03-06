@@ -164,7 +164,8 @@ fn rhai_highlighter(
     ui: &Ui, 
     code: &str, 
     highlight_braces: Option<(usize, usize)>,
-    diagnostics: &[crate::core::scripting::types::ScriptDiagnostic]
+    diagnostics: &[crate::core::scripting::types::ScriptDiagnostic],
+    highlight_word: Option<&str>
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
@@ -234,6 +235,16 @@ fn rhai_highlighter(
                     s.push(next_c); 
                 } else { break; }
             }
+            
+            let mut word_format = base_format.clone();
+            
+            // Selection Highlight Logic
+            if let Some(h_word) = highlight_word {
+                if !h_word.is_empty() && s == h_word {
+                    word_format.background = Color32::from_rgb(45, 70, 90);
+                }
+            }
+
             let color = if RHAI_KEYWORDS.contains(&s.as_str()) {
                 Color32::from_rgb(80, 150, 255) // Keyword
             } else if BROWSER_APIS.contains(&s.as_str()) {
@@ -241,7 +252,7 @@ fn rhai_highlighter(
             } else {
                 Color32::from_rgb(200, 200, 200) // Default
             };
-            job.append(&s, 0.0, egui::TextFormat { color, ..base_format.clone() });
+            job.append(&s, 0.0, egui::TextFormat { color, ..word_format });
         } else if c.is_numeric() { // Number
             let mut s = format!("{}", c);
             while let Some((_, nc)) = it.peek() {
@@ -574,6 +585,23 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     render_search_bar(ui, state);
     ui.add_space(2.0);
 
+    // Selection Highlight Detection (Run before canvas/textedit to avoid borrow conflict)
+    let mut highlight_word: Option<String> = None;
+    let output_id = ui.make_persistent_id("script_code_editor");
+    if let Some(edit_state) = egui::text_edit::TextEditState::load(ui.ctx(), output_id) {
+        if let Some(range) = edit_state.cursor.char_range() {
+            let start = range.primary.index.min(range.secondary.index);
+            let end = range.primary.index.max(range.secondary.index);
+            if start != end {
+                if let Some(selected) = state.script_package.code.get(start..end) {
+                    if selected.chars().all(|c: char| c.is_alphanumeric() || c == '_') {
+                        highlight_word = Some(selected.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     let editor_h = (ui.available_height() * 0.55).clamp(200.0, 600.0);
     
     Frame::canvas(ui.style())
@@ -628,12 +656,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                         let diagnostics = &state.ide_diagnostics;
 
                         let mut layouter = |ui: &Ui, string: &str, _wrap_width: f32| {
-                            let mut job = rhai_highlighter(ui, string, highlight_braces, diagnostics);
+                            let mut job = rhai_highlighter(ui, string, highlight_braces, diagnostics, highlight_word.as_deref());
                             job.wrap.max_width = f32::INFINITY; 
                             ui.ctx().fonts(|f| f.layout_job(job))
                         };
 
                         let output = egui::TextEdit::multiline(&mut state.script_package.code)
+                                .id(output_id)
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(avail_w)
                                 .desired_rows(20)
