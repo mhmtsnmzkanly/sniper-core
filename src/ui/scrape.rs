@@ -82,11 +82,19 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                             launch_browser(state);
                         }
                     } else {
-                        if ui.add(egui::Button::new(RichText::new("TERMINATE").strong().size(14.0))
-                            .min_size([180.0, btn_h].into())
-                            .fill(Color32::from_rgb(255, 80, 80))).clicked() {
-                            emit(AppEvent::TerminateBrowser);
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.add(egui::Button::new(RichText::new("RELAUNCH\nAPPLY PROFILE").strong().size(11.0))
+                                .min_size([140.0, btn_h].into())
+                                .fill(design::ACCENT_CYAN)).clicked() {
+                                emit(AppEvent::TerminateBrowser);
+                                launch_browser(state);
+                            }
+                            if ui.add(egui::Button::new(RichText::new("TERMINATE").strong().size(14.0))
+                                .min_size([100.0, btn_h].into())
+                                .fill(Color32::from_rgb(255, 80, 80))).clicked() {
+                                emit(AppEvent::TerminateBrowser);
+                            }
+                        });
                     }
                 });
             });
