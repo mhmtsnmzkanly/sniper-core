@@ -170,6 +170,61 @@ fn rhai_highlighter(ui: &Ui, code: &str, highlight_braces: Option<(usize, usize)
     job
 }
 
+/// KOD NOTU: Kod içinde arama ve değiştirme arayüzü.
+fn render_search_bar(ui: &mut Ui, state: &mut AppState) {
+    if !state.ide_search_open { return; }
+
+    Frame::none()
+        .fill(design::BG_SURFACE)
+        .stroke(Stroke::new(1.0, design::ACCENT_CYAN))
+        .inner_margin(4.0)
+        .corner_radius(4.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("🔍 Find:").small().color(design::TEXT_MUTED));
+                ui.add(egui::TextEdit::singleline(&mut state.ide_search_text).desired_width(120.0));
+
+                ui.label(RichText::new("Replace:").small().color(design::TEXT_MUTED));
+                ui.add(egui::TextEdit::singleline(&mut state.ide_replace_text).desired_width(120.0));
+
+                if ui.button("Next").clicked() {
+                    let code = &state.script_package.code;
+                    if !state.ide_search_text.is_empty() {
+                        let start = state.ide_autocomplete_cursor;
+                        if let Some(pos) = code[start..].find(&state.ide_search_text) {
+                            state.ide_autocomplete_cursor = start + pos + state.ide_search_text.len();
+                        } else if let Some(pos) = code.find(&state.ide_search_text) {
+                            state.ide_autocomplete_cursor = pos + state.ide_search_text.len();
+                        }
+                    }
+                }
+
+                if ui.button("Replace").clicked() {
+                    if !state.ide_search_text.is_empty() {
+                        let code = state.script_package.code.clone();
+                        let start = state.ide_autocomplete_cursor.saturating_sub(state.ide_search_text.len());
+                        if code.get(start..state.ide_autocomplete_cursor) == Some(&state.ide_search_text) {
+                            let mut new_code = code[..start].to_string();
+                            new_code.push_str(&state.ide_replace_text);
+                            new_code.push_str(&code[state.ide_autocomplete_cursor..]);
+                            state.script_package.code = new_code;
+                        }
+                    }
+                }
+
+                if ui.button("All").clicked() {
+                    if !state.ide_search_text.is_empty() {
+                        state.script_package.code = state.script_package.code.replace(&state.ide_search_text, &state.ide_replace_text);
+                    }
+                }
+
+                if ui.button("❌").clicked() {
+                    state.ide_search_open = false;
+                }
+            });
+        });
+}
+
 pub fn render(ui: &mut Ui, state: &mut AppState) {
     design::title(ui, "Scripting Studio", design::ACCENT_CYAN);
     ui.label(
@@ -414,7 +469,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
     ui.add_space(6.0);
 
     // ── Kod Editörü ───────────────────────────────────────────────────
-    ui.label(RichText::new("Code Editor").strong().color(design::ACCENT_ORANGE));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Code Editor").strong().color(design::ACCENT_ORANGE));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("🔍 Find (Ctrl+F)").clicked() {
+                state.ide_search_open = !state.ide_search_open;
+            }
+        });
+    });
+
+    if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
+        state.ide_search_open = true;
+    }
+
+    render_search_bar(ui, state);
+    ui.add_space(2.0);
+
     let editor_h = (ui.available_height() * 0.55).clamp(200.0, 600.0);
     
     Frame::canvas(ui.style())
