@@ -1,16 +1,15 @@
 use crate::core::error::{AppError, AppResult};
-use crate::state::{ChromeTabInfo, ChromeCookie, NetworkRequest};
+use crate::state::{ChromeTabInfo, ChromeCookie};
 use chromiumoxide::browser::{Browser};
-use chromiumoxide::cdp::browser_protocol::network::{GetResponseBodyParams, SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
-use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams, EventConsoleApiCalled};
+use chromiumoxide::cdp::browser_protocol::network::{SetBlockedUrLsParams, BlockPattern, SetCookieParams, DeleteCookiesParams};
+use chromiumoxide::cdp::js_protocol::runtime::{EvaluateParams};
 use futures::StreamExt;
 use std::path::PathBuf;
 use std::time::Duration;
 use base64::prelude::*;
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 use crate::core::events::AppEvent;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool};
 use std::sync::Arc;
 
 /// BrowserManager: Core controller for browser lifecycle and CDP communication.
@@ -385,103 +384,9 @@ impl BrowserManager {
     pub async fn setup_tab_listeners(port: u16, tab_id: String, active: Arc<AtomicBool>) -> AppResult<()> {
         let (browser, _handler) = Self::connect_robust(port).await?;
         let page = Self::find_tab(&browser, &tab_id).await?;
-        
-        let mut network_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventRequestWillBeSent>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let mut response_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventResponseReceived>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let mut finished_events = page.event_listener::<chromiumoxide::cdp::browser_protocol::network::EventLoadingFinished>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-        let mut console_events = page.event_listener::<EventConsoleApiCalled>().await.map_err(|e| AppError::Browser(e.to_string()))?;
-
         let page_arc = std::sync::Arc::new(page);
-        let tid_inner = tab_id.clone();
 
-        tokio::spawn(async move {
-            let mut pending_responses: HashMap<String, (String, String)> = HashMap::new();
-            loop {
-                // KOD NOTU: Listener artık gerçek bir stop/cancel yapabiliyor.
-                // Her loop başında 'active' flag'i kontrol edilir.
-                if !active.load(Ordering::Relaxed) {
-                    tracing::info!("[BROWSER -> CORE] Listener stop signal received for tab {}", tid_inner);
-                    break;
-                }
-
-                tokio::select! {
-                    // Check activity periodically even if no events
-                    _ = tokio::time::sleep(Duration::from_millis(500)) => {{ continue; }}
-                    Some(e) = network_events.next() => {
-                        let res_type = e.r#type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "Other".into());
-                        let req = NetworkRequest {
-                            request_id: e.request_id.as_ref().to_string(),
-                            url: e.request.url.clone(),
-                            method: e.request.method.clone(),
-                            resource_type: res_type,
-                            status: None, request_body: None, response_body: None,
-                        };
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkRequestSent(tid_inner.clone(), req));
-                    }
-                    Some(e) = response_events.next() => {
-                        let rid = e.request_id.as_ref().to_string();
-                        pending_responses.insert(rid.clone(), (e.response.url.clone(), e.response.mime_type.clone()));
-                        let page_clone = page_arc.clone(); let rid_clone = e.request_id.clone(); let tid_res = tid_inner.clone(); let status = e.response.status as u16;
-                        tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_millis(400)).await;
-                            if let Ok(res) = page_clone.execute(GetResponseBodyParams::new(rid_clone.clone())).await {
-                                crate::ui::scrape::emit(crate::core::events::AppEvent::NetworkResponseReceived(tid_res, rid_clone.as_ref().to_string(), status, Some(res.result.body)));
-                            }
-                        });
-                    }
-                    Some(e) = finished_events.next() => {
-                        let rid = e.request_id.as_ref().to_string();
-                        if let Some((url, mime)) = pending_responses.remove(&rid) {
-                            let lm = mime.to_lowercase();
-                            let lu = url.to_lowercase();
-                            
-                            // KOD NOTU: Video yakalama kapsamı m3u8, ts, mpd ve m4s gibi modern streaming formatlarını içerecek şekilde genişletildi.
-                            let is_video = lm.contains("video") || lm.contains("mpegurl") || lm.contains("dash+xml") || 
-                                           lu.ends_with(".m3u8") || lu.ends_with(".ts") || lu.ends_with(".mpd") || lu.ends_with(".m4s");
-                            
-                            if lm.contains("image") || is_video || lm.contains("audio") || lm.contains("font") || lm.contains("style") || lm.contains("script") || url.ends_with(".svg") || url.ends_with(".css") || url.ends_with(".js") {
-                                let page_clone = page_arc.clone(); let tid_media = tid_inner.clone();
-                                let port_clone = port;
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_millis(600)).await;
-                                    if let Ok(res) = page_clone.execute(GetResponseBodyParams::new(rid.clone())).await {
-                                        let binary_data = if res.result.base64_encoded { BASE64_STANDARD.decode(&res.result.body).ok() } else { Some(res.result.body.into_bytes()) };
-                                        if let Some(data) = binary_data {
-                                            let name = url.split('/').last().unwrap_or("unknown").to_string();
-                                            
-                                            // KOD NOTU: İlk yakalamada thumbnail boş gönderilir.
-                                            crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media.clone(), crate::state::MediaAsset { 
-                                                name: name.clone(), 
-                                                url: url.clone(), 
-                                                mime_type: mime.clone(), 
-                                                size_bytes: data.len(), 
-                                                data: Some(data),
-                                                thumbnail: None 
-                                            }));
-
-                                            // KOD NOTU: Eğer bir video ise arka planda thumbnail üretimi başlatılır.
-                                            if is_video && !url.contains(".ts") && !url.contains(".m4s") {
-                                                if let Ok(Some(thumb)) = Self::capture_video_thumbnail(port_clone, tid_media.clone(), url.clone()).await {
-                                                    crate::ui::scrape::emit(crate::core::events::AppEvent::MediaCaptured(tid_media, crate::state::MediaAsset { 
-                                                        name, url, mime_type: mime, size_bytes: 0, data: None, thumbnail: Some(thumb) 
-                                                    }));
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                    }
-                    Some(e) = console_events.next() => {
-                        let msg = e.args.iter().map(|v| v.value.as_ref().map(|v| v.to_string()).unwrap_or("undefined".into())).collect::<Vec<_>>().join(" ");
-                        crate::ui::scrape::emit(crate::core::events::AppEvent::ConsoleLogAdded(tid_inner.clone(), msg));
-                    }
-                    else => break,
-                }
-            }
-        });
-        Ok(())
+        crate::core::network::NetworkHandler::start_tab_listeners(page_arc, tab_id, port, active).await
     }
 
     pub async fn reload_page(port: u16, tab_id: String) -> AppResult<()> {
