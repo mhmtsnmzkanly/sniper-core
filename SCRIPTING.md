@@ -15,14 +15,17 @@ This is intentional: timeout/retry/execution behavior stays consistent.
 1. Start the app and launch browser from `Ops`.
 2. Select a tab under `Chrome Tabs`.
 3. Open `Scripting` tab.
-4. Confirm `Execution Target`.
+4. **IDE Features:**
+   - **Autocomplete:** Type `.` after a tab variable or press `Ctrl+Space` for suggestions.
+   - **Live Diagnostics:** Errors are underlined in red as you type.
+   - **Hover Docs:** Mouse-over a function to see its purpose.
 5. Write or import script package (`.json`).
 6. Press `Check` and/or `Dry-Run` first, then `Execute`.
 
 Notes:
 - `Check` validates script compile/entry/lint but does **not** execute actions.
-- `Dry-Run` prints planned action sequence to System Telemetry and does **not** execute browser actions.
-- `Debugger` builds the same action plan and shows step-by-step preview inside Scripting tab.
+- `Dry-Run` builds the action plan and prints it to System Telemetry without executing browser operations.
+- `Debugger` shows a step-by-step preview of the action plan.
 - Script output is sent to **System Telemetry**.
 
 ## 1.2 Script Package Format (`.json`)
@@ -280,30 +283,24 @@ Outputs:
 
 ---
 
-## 2.6 Check Button Semantics
+## 2.6 Check Button and Live IDE Diagnostics
 
-`Check` currently validates:
+The editor performs **Real-time Diagnostics** in the background. The `Check` button manually triggers a full validation:
 - Rhai compile success/failure
 - non-empty `entry`
 - entry function name presence in code text
-- known warning patterns (e.g. Rust raw string style usage)
+- known warning patterns (e.g. `var` usage instead of `let`)
 - API guard by running compile+binding stage to catch arity/type misuse
 - optional selector preflight against selected tab
 
-It does **not**:
-- execute browser actions
-- guarantee selector correctness at runtime
-
-Structured diagnostics:
-- `code`: stable diagnostic code (`SC-*`)
-- `stage`: Compile / Entry / ApiGuard / Lint / Preflight
-- `severity`: Error / Warn / Info
-- optional `line` / `column`
-- optional `hint`
+**Visual Feedback:**
+- **Red Underline:** Indicates error location.
+- **Error Gutter:** ❌ icon next to the line number.
+- **Tooltips:** Hover over marked code to see error details and hints.
 
 ### Dry-Run
 - Compiles script and builds internal action list.
-- Emits planned actions (`[001] ...`) to System Telemetry with `DRYRUN` level.
+- Emits planned actions to System Telemetry with `[SCRIPT -> ENGINE]` prefix.
 - Does not call browser/CDP operations.
 
 ### Debugger
@@ -311,22 +308,19 @@ Structured diagnostics:
 - Stores plan in Scripting UI panel (`Script Debugger`).
 - Use `Prev` / `Next` to inspect each planned action.
 - `Break Condition` lets you jump to matching step in debugger preview.
-- During `Execute`, break condition stops further action execution when matched.
-- Optional timing telemetry emits per-step and flush durations as `TIMING` lines.
-- If Browser Control has `Random Fingerprint` enabled, scripting applies stealth patch on bound/new tabs before actions.
+- Extracted line/column info allows the engine to highlight the exact failing line in the IDE during a run.
+- If Browser Control has `Stealth Mode` enabled, scripting applies stealth patch on bound/new tabs.
 
 ---
 
 ## 2.7 Execute and Stop
 
 ### Execute
-- Compiles script
-- Builds internal action list
-- Executes actions through shared runtime/browser APIs
+- Compiles script and executes actions through shared runtime/browser APIs.
+- Extracted line/column info ensures runtime errors are visually mapped in the IDE.
 
 ### Stop
 - Cooperative cancel request.
-- Can stop between actions; long single operations may finish current action first.
 
 ---
 
@@ -336,27 +330,15 @@ Script-related logs appear in:
 - `System Telemetry`
 - `session_<timestamp>.log` (system-level)
 
-Chrome console logs additionally appear in:
-- `chrome_session_<timestamp>.log`
-
 Error Knowledge Base:
-- On runtime/check failures, known-pattern hints are emitted as `KB` lines in System Telemetry.
+- On failures, known-pattern hints are emitted as `KB` lines in System Telemetry (e.g. `Use 'let' instead of 'var'`).
 
 ---
 
-## 2.9 Current Known Gaps
-
-- Query execution still uses selector mapping; it does not yet fetch and cache concrete DOM node snapshots.
-- Runtime selector validation remains dynamic (compile-time check cannot validate DOM presence).
-
----
-
-## 2.10 Contributor Notes
+## 2.9 Contributor Notes
 
 When adding a new scripting API function:
 1. Add `ScriptAction` variant.
 2. Register Rhai binding in action collection stage.
 3. Implement action execution branch.
-4. Add check diagnostics if needed.
-5. Emit telemetry lines for observability.
-6. Update this file and run `cargo check`.
+4. Update this file and run `cargo check`.
