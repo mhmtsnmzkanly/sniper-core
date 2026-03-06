@@ -76,7 +76,7 @@ fn handle_autocomplete(ui: &mut Ui, state: &mut AppState, cursor_pos: usize) {
     }
 
     if trigger {
-        let mut suggestions = Vec::new();
+        let suggestions: Vec<String>;
         let mut insert_pos = start_of_prefix;
 
         if let Some(dot_idx) = prefix.rfind('.') {
@@ -804,13 +804,14 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                                         if let Some(&start) = line_starts.get(line_idx) {
                                             let end = line_starts.get(line_idx + 1).cloned().unwrap_or(code.len());
                                             if char_idx >= start && char_idx < end {
-                                                hover_text = Some(format!("❌ Error: {}", d.message));
+                                                let col_info = d.column.map(|c| format!(" (col {})", c)).unwrap_or_default();
+                                                let hint_info = d.hint.as_ref().map(|h| format!("\n💡 Hint: {}", h)).unwrap_or_default();
+                                                hover_text = Some(format!("❌ Error{}: {}{}", col_info, d.message, hint_info));
                                                 break;
                                             }
                                         }
                                     }
                                 }
-
                                 // 2. Check for API Docs if no error
                                 if hover_text.is_none() {
                                     let start_idx = code[..char_idx.min(code.len())].rfind(|c: char| !c.is_alphanumeric() && c != '_').map(|i| i + 1).unwrap_or(0);

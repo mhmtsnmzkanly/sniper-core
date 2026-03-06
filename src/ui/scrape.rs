@@ -369,6 +369,9 @@ fn render_command_center(ui: &mut Ui, state: &mut AppState, panel_stroke: Stroke
                         if ui.add_enabled(can_action, egui::Button::new(RichText::new("🪞 MIRROR").strong().color(Color32::KHAKI)).min_size([min_w, btn_h].into())).clicked() {
                             emit(AppEvent::RequestCapture(tid.clone(), "mirror".into()));
                         }
+                        if ui.add_enabled(can_action, egui::Button::new(RichText::new("🎭 DE-MASK").strong().color(Color32::from_rgb(200, 100, 255))).min_size([min_w, btn_h].into())).clicked() {
+                            emit(AppEvent::RequestBlobDemask(tid.clone()));
+                        }
                     });
                 });
 

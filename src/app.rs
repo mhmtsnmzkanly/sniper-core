@@ -1,5 +1,5 @@
 use crate::core::events::AppEvent;
-use crate::state::{AppState, AutomationStatus, Tab, AutomationStep, LogEntry, NotificationLevel};
+use crate::state::{AppState, AutomationStatus, AutomationStep, LogEntry, NotificationLevel, Tab};
 use crate::ui;
 use eframe::egui;
 use egui::{CentralPanel, Color32, Frame, RichText};
@@ -25,16 +25,30 @@ impl CrawlerApp {
         log_receiver: tokio::sync::mpsc::UnboundedReceiver<LogEntry>,
         event_receiver: tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     ) -> Self {
-        Self { state, log_receiver, event_receiver, browser_process: Arc::new(Mutex::new(None)) }
+        Self {
+            state,
+            log_receiver,
+            event_receiver,
+            browser_process: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Ensures a workspace exists for the given tab ID.
     /// Lazy-initializes the workspace if it's the first time seeing this tab.
     fn ensure_workspace(&mut self, tid: &str) -> &mut crate::state::TabWorkspace {
         if !self.state.workspaces.contains_key(tid) {
-            let title = self.state.available_tabs.iter().find(|t| t.id == tid).map(|t| t.title.clone()).unwrap_or_else(|| "New Tab".into());
+            let title = self
+                .state
+                .available_tabs
+                .iter()
+                .find(|t| t.id == tid)
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "New Tab".into());
             tracing::debug!("[APP] Creating workspace: {} ({})", title, tid);
-            self.state.workspaces.insert(tid.to_string(), crate::state::TabWorkspace::new(tid.to_string(), title));
+            self.state.workspaces.insert(
+                tid.to_string(),
+                crate::state::TabWorkspace::new(tid.to_string(), title),
+            );
         }
         self.state.workspaces.get_mut(tid).unwrap()
     }
@@ -42,29 +56,106 @@ impl CrawlerApp {
 
 /// Helper to map high-level UI automation steps into low-level engine DSL variants.
 fn map_ui_steps_to_dsl(steps: &[AutomationStep]) -> Vec<crate::core::automation::dsl::Step> {
-    steps.iter().map(|s| match s {
-        AutomationStep::Navigate(u) => crate::core::automation::dsl::Step::Navigate { url: u.clone() },
-        AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click { selector: sel.clone() },
-        AutomationStep::RightClick(sel) => crate::core::automation::dsl::Step::RightClick { selector: sel.clone() },
-        AutomationStep::Hover(sel) => crate::core::automation::dsl::Step::Hover { selector: sel.clone() },
-        AutomationStep::Type { selector, value, is_variable } => crate::core::automation::dsl::Step::Type { selector: selector.clone(), value: value.clone(), is_variable: *is_variable },
-        AutomationStep::Wait(secs) => crate::core::automation::dsl::Step::Wait { seconds: *secs },
-        AutomationStep::WaitSelector { selector, timeout_ms } => crate::core::automation::dsl::Step::WaitSelector { selector: selector.clone(), timeout_ms: *timeout_ms },
-        AutomationStep::WaitUntilIdle { timeout_ms } => crate::core::automation::dsl::Step::WaitUntilIdle { timeout_ms: *timeout_ms },
-        AutomationStep::WaitNetworkIdle { timeout_ms, min_idle_ms } => crate::core::automation::dsl::Step::WaitNetworkIdle { timeout_ms: *timeout_ms, min_idle_ms: *min_idle_ms },
-        AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
-        AutomationStep::Extract { selector, as_key, add_to_dataset } => crate::core::automation::dsl::Step::Extract { selector: selector.clone(), as_key: as_key.clone(), add_to_row: *add_to_dataset },
-        AutomationStep::SetVariable { key, value } => crate::core::automation::dsl::Step::SetVariable { key: key.clone(), value: value.clone() },
-        AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
-        AutomationStep::Export(f) => crate::core::automation::dsl::Step::Export { filename: f.clone() },
-        AutomationStep::Screenshot(f) => crate::core::automation::dsl::Step::Screenshot { filename: f.clone() },
-        AutomationStep::SwitchFrame(sel) => crate::core::automation::dsl::Step::SwitchFrame { selector: sel.clone() },
-        AutomationStep::If { selector, then_steps } => crate::core::automation::dsl::Step::If { selector: selector.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
-        AutomationStep::ForEach { selector, body } => crate::core::automation::dsl::Step::ForEach { selector: selector.clone(), body: map_ui_steps_to_dsl(body) },
-        AutomationStep::IfCondition { condition, then_steps } => crate::core::automation::dsl::Step::IfCondition { condition: condition.clone(), then_steps: map_ui_steps_to_dsl(then_steps) },
-        AutomationStep::CallFunction(name) => crate::core::automation::dsl::Step::CallFunction { name: name.clone() },
-        AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset { filename: f.clone() },
-    }).collect()
+    steps
+        .iter()
+        .map(|s| match s {
+            AutomationStep::Navigate(u) => {
+                crate::core::automation::dsl::Step::Navigate { url: u.clone() }
+            }
+            AutomationStep::Click(sel) => crate::core::automation::dsl::Step::Click {
+                selector: sel.clone(),
+            },
+            AutomationStep::RightClick(sel) => crate::core::automation::dsl::Step::RightClick {
+                selector: sel.clone(),
+            },
+            AutomationStep::Hover(sel) => crate::core::automation::dsl::Step::Hover {
+                selector: sel.clone(),
+            },
+            AutomationStep::Type {
+                selector,
+                value,
+                is_variable,
+            } => crate::core::automation::dsl::Step::Type {
+                selector: selector.clone(),
+                value: value.clone(),
+                is_variable: *is_variable,
+            },
+            AutomationStep::Wait(secs) => {
+                crate::core::automation::dsl::Step::Wait { seconds: *secs }
+            }
+            AutomationStep::WaitSelector {
+                selector,
+                timeout_ms,
+            } => crate::core::automation::dsl::Step::WaitSelector {
+                selector: selector.clone(),
+                timeout_ms: *timeout_ms,
+            },
+            AutomationStep::WaitUntilIdle { timeout_ms } => {
+                crate::core::automation::dsl::Step::WaitUntilIdle {
+                    timeout_ms: *timeout_ms,
+                }
+            }
+            AutomationStep::WaitNetworkIdle {
+                timeout_ms,
+                min_idle_ms,
+            } => crate::core::automation::dsl::Step::WaitNetworkIdle {
+                timeout_ms: *timeout_ms,
+                min_idle_ms: *min_idle_ms,
+            },
+            AutomationStep::ScrollBottom => crate::core::automation::dsl::Step::ScrollBottom,
+            AutomationStep::Extract {
+                selector,
+                as_key,
+                add_to_dataset,
+            } => crate::core::automation::dsl::Step::Extract {
+                selector: selector.clone(),
+                as_key: as_key.clone(),
+                add_to_row: *add_to_dataset,
+            },
+            AutomationStep::SetVariable { key, value } => {
+                crate::core::automation::dsl::Step::SetVariable {
+                    key: key.clone(),
+                    value: value.clone(),
+                }
+            }
+            AutomationStep::NewRow => crate::core::automation::dsl::Step::NewRow,
+            AutomationStep::Export(f) => crate::core::automation::dsl::Step::Export {
+                filename: f.clone(),
+            },
+            AutomationStep::Screenshot(f) => crate::core::automation::dsl::Step::Screenshot {
+                filename: f.clone(),
+            },
+            AutomationStep::SwitchFrame(sel) => crate::core::automation::dsl::Step::SwitchFrame {
+                selector: sel.clone(),
+            },
+            AutomationStep::If {
+                selector,
+                then_steps,
+            } => crate::core::automation::dsl::Step::If {
+                selector: selector.clone(),
+                then_steps: map_ui_steps_to_dsl(then_steps),
+            },
+            AutomationStep::ForEach { selector, body } => {
+                crate::core::automation::dsl::Step::ForEach {
+                    selector: selector.clone(),
+                    body: map_ui_steps_to_dsl(body),
+                }
+            }
+            AutomationStep::IfCondition {
+                condition,
+                then_steps,
+            } => crate::core::automation::dsl::Step::IfCondition {
+                condition: condition.clone(),
+                then_steps: map_ui_steps_to_dsl(then_steps),
+            },
+            AutomationStep::CallFunction(name) => {
+                crate::core::automation::dsl::Step::CallFunction { name: name.clone() }
+            }
+            AutomationStep::ImportDataset(f) => crate::core::automation::dsl::Step::ImportDataset {
+                filename: f.clone(),
+            },
+        })
+        .collect()
 }
 
 /// KOD NOTU: CDP evaluate sonucu JSON-string olarak gelebileceği için UI tarafında normalize edilir.
@@ -96,24 +187,25 @@ impl eframe::App for CrawlerApp {
             }
 
             // Auto-refresh tabs every 5 seconds
-            static mut LAST_TAB_SYNC: f64 = 0.0;
-            unsafe {
-                if now - LAST_TAB_SYNC > 5.0 {
-                    LAST_TAB_SYNC = now;
-                    let port = self.state.config.remote_debug_port;
-                    tokio::spawn(async move {
-                        if let Ok(tabs) = crate::core::browser::BrowserManager::list_tabs(port).await {
-                            let _ = crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs));
-                        }
-                    });
-                }
+            if now - self.state.last_tab_refresh > 5.0 {
+                self.state.last_tab_refresh = now;
+                let port = self.state.config.remote_debug_port;
+                tokio::spawn(async move {
+                    if let Ok(tabs) =
+                        crate::core::browser::BrowserManager::list_tabs(port).await
+                    {
+                        let _ = crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs));
+                    }
+                });
             }
         }
 
         // 1. Drain the log queue and update the system logs list.
         while let Ok(log) = self.log_receiver.try_recv() {
             self.state.logs.push(log);
-            if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
+            if self.state.logs.len() > 1500 {
+                self.state.logs.remove(0);
+            }
         }
 
         // 2. GLOBAL EVENT DISPATCHER: Process all incoming events and route them to state or core.
@@ -123,13 +215,16 @@ impl eframe::App for CrawlerApp {
             // Command Guard: Block browser commands if instance is down.
             if !self.state.is_browser_running {
                 match &event {
-                    AppEvent::RequestCookies(_) | AppEvent::RequestPageReload(_) | 
-                    AppEvent::RequestScriptExecution(_, _) | AppEvent::RequestAutomationRun(..) |
-                    AppEvent::RequestCapture(..) | AppEvent::RequestPageSelectors(_) |
-                    AppEvent::RequestBlobDemask(_) |
-                    AppEvent::RequestVideoDownload(..) |
-                    AppEvent::RequestScriptingRun(..) |
-                    AppEvent::RequestTabRefresh => {
+                    AppEvent::RequestCookies(_)
+                    | AppEvent::RequestPageReload(_)
+                    | AppEvent::RequestScriptExecution(_, _)
+                    | AppEvent::RequestAutomationRun(..)
+                    | AppEvent::RequestCapture(..)
+                    | AppEvent::RequestPageSelectors(_)
+                    | AppEvent::RequestBlobDemask(_)
+                    | AppEvent::RequestVideoDownload(..)
+                    | AppEvent::RequestScriptingRun(..)
+                    | AppEvent::RequestTabRefresh => {
                         let msg = "Action Denied: Browser instance is not active.";
                         self.state.notify(NotificationLevel::Warn, "Denied", msg);
                         tracing::warn!("[APP] {}", msg);
@@ -148,7 +243,8 @@ impl eframe::App for CrawlerApp {
                     // KOD NOTU: Launch edilen process handle'ını saklıyoruz; terminate komutu bunu kullanacak.
                     *self.browser_process.lock().unwrap() = Some(child);
                     self.state.is_browser_running = true;
-                    self.state.notify(NotificationLevel::Ok, "System", "Browser connected.");
+                    self.state
+                        .notify(NotificationLevel::Ok, "System", "Browser connected.");
                     tracing::info!("[BROWSER -> APP] Remote instance handshake successful.");
                 }
                 AppEvent::BrowserTerminated => {
@@ -163,7 +259,8 @@ impl eframe::App for CrawlerApp {
                             token.store(false, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
-                    self.state.notify(NotificationLevel::Error, "System", "Browser disconnected.");
+                    self.state
+                        .notify(NotificationLevel::Error, "System", "Browser disconnected.");
                     tracing::warn!("[BROWSER -> APP] Remote instance heartbeat lost.");
                 }
                 AppEvent::TerminateBrowser => {
@@ -182,7 +279,10 @@ impl eframe::App for CrawlerApp {
                     tracing::info!("[UI -> CORE] User terminated browser instance.");
                 }
                 AppEvent::TabsUpdated(tabs) => {
-                    tracing::debug!("[BROWSER -> CORE] Received {} active tab targets.", tabs.len());
+                    tracing::debug!(
+                        "[BROWSER -> CORE] Received {} active tab targets.",
+                        tabs.len()
+                    );
                     self.state.available_tabs = tabs;
                     for ws in self.state.workspaces.values_mut() {
                         ws.auto_reload_triggered = false;
@@ -197,24 +297,35 @@ impl eframe::App for CrawlerApp {
                         message: format!("[{}] {}", tid, msg),
                     });
                     crate::logger::write_chrome_log_line(&format!("[{}] {}", tid, msg));
-                    if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
+                    if self.state.logs.len() > 1500 {
+                        self.state.logs.remove(0);
+                    }
                     // AUDIT MIRROR: Copy browser console output to Sniper logs.
                     tracing::info!("[BROWSER-CONSOLE][{}] {}", tid, msg);
                 }
                 AppEvent::SelectorsReceived(tid, sels) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.discovered_selectors = sels;
-                    tracing::info!("[BROWSER -> CORE] Captured {} selectors from tab {}", ws.discovered_selectors.len(), tid);
+                    tracing::info!(
+                        "[BROWSER -> CORE] Captured {} selectors from tab {}",
+                        ws.discovered_selectors.len(),
+                        tid
+                    );
                 }
                 AppEvent::MediaCaptured(tid, asset) => {
                     let ws = self.ensure_workspace(&tid);
-                    if let Some(existing) = ws.media_assets.iter_mut().find(|a| a.url == asset.url) {
+                    if let Some(existing) = ws.media_assets.iter_mut().find(|a| a.url == asset.url)
+                    {
                         // KOD NOTU: Eğer asset zaten varsa ve yeni gelen asset bir thumbnail içeriyorsa güncelle.
                         if asset.thumbnail.is_some() {
                             existing.thumbnail = asset.thumbnail;
                         }
                     } else {
-                        tracing::debug!("[BROWSER -> CORE] Media sniffed: {} ({})", asset.name, asset.mime_type);
+                        tracing::debug!(
+                            "[BROWSER -> CORE] Media sniffed: {} ({})",
+                            asset.name,
+                            asset.mime_type
+                        );
                         ws.media_assets.push(asset);
                     }
                 }
@@ -225,7 +336,8 @@ impl eframe::App for CrawlerApp {
                         let ws = self.ensure_workspace(&tid);
                         for (blob_url, resolved_url, reason) in mappings {
                             if resolved_url.is_empty() {
-                                blob_logs.push(format!("Unresolved blob: {} ({})", blob_url, reason));
+                                blob_logs
+                                    .push(format!("Unresolved blob: {} ({})", blob_url, reason));
                                 continue;
                             }
                             if ws.media_assets.iter().any(|m| m.url == resolved_url) {
@@ -247,7 +359,10 @@ impl eframe::App for CrawlerApp {
                                 data: None,
                                 thumbnail: None,
                             });
-                            blob_logs.push(format!("Resolved {} -> {} ({})", blob_url, resolved_url, reason));
+                            blob_logs.push(format!(
+                                "Resolved {} -> {} ({})",
+                                blob_url, resolved_url, reason
+                            ));
                             added += 1;
                         }
                     }
@@ -259,7 +374,11 @@ impl eframe::App for CrawlerApp {
                         });
                     }
                     self.state.notify(
-                        if added > 0 { NotificationLevel::Ok } else { NotificationLevel::Warn },
+                        if added > 0 {
+                            NotificationLevel::Ok
+                        } else {
+                            NotificationLevel::Warn
+                        },
                         "De-Masker",
                         &format!("Blob de-mask completed. Added {} resolved URL(s).", added),
                     );
@@ -267,17 +386,28 @@ impl eframe::App for CrawlerApp {
                 AppEvent::CookiesReceived(tid, cookies) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.cookies = cookies;
-                    tracing::info!("[BROWSER -> CORE] Syncing {} cookies for tab {}", ws.cookies.len(), tid);
+                    tracing::info!(
+                        "[BROWSER -> CORE] Syncing {} cookies for tab {}",
+                        ws.cookies.len(),
+                        tid
+                    );
                 }
                 AppEvent::AutomationProgress(tid, step) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.auto_status = AutomationStatus::Running(step);
-                    tracing::debug!("[ENGINE -> APP] Pipeline progress: Step {} on tab {}", step + 1, tid);
+                    tracing::debug!(
+                        "[ENGINE -> APP] Pipeline progress: Step {} on tab {}",
+                        step + 1,
+                        tid
+                    );
                 }
                 AppEvent::AutomationFinished(tid) => {
                     let ws = self.ensure_workspace(&tid);
                     ws.auto_status = AutomationStatus::Finished;
-                    tracing::info!("[ENGINE -> APP] Pipeline successfully completed on tab {}", tid);
+                    tracing::info!(
+                        "[ENGINE -> APP] Pipeline successfully completed on tab {}",
+                        tid
+                    );
                 }
                 AppEvent::AutomationError(tid, err) => {
                     let ws = self.ensure_workspace(&tid);
@@ -294,7 +424,8 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::NetworkResponseReceived(tid, rid, status, body) => {
                     let ws = self.ensure_workspace(&tid);
-                    if let Some(req) = ws.network_requests.iter_mut().find(|r| r.request_id == rid) {
+                    if let Some(req) = ws.network_requests.iter_mut().find(|r| r.request_id == rid)
+                    {
                         req.status = Some(status);
                         req.response_body = body;
                     }
@@ -317,17 +448,21 @@ impl eframe::App for CrawlerApp {
                     if self.state.script_output.len() > 200 {
                         self.state.script_output.remove(0);
                     }
-                    if self.state.logs.len() > 1500 { self.state.logs.remove(0); }
+                    if self.state.logs.len() > 1500 {
+                        self.state.logs.remove(0);
+                    }
                 }
                 AppEvent::ScriptingCheckResult(report) => {
                     self.state.ide_diagnostics = report.diagnostics.clone();
                     if report.ok {
                         self.state.script_error = None;
-                    } else if let Some(err) = report.diagnostics.iter().find(|d| d.severity == crate::core::scripting::types::DiagnosticSeverity::Error) {
+                    } else if let Some(err) = report.diagnostics.iter().find(|d| {
+                        d.severity == crate::core::scripting::types::DiagnosticSeverity::Error
+                    }) {
                         self.state.script_error = Some(err.message.clone());
                     }
-                    
-                    // Keep old notify behavior for manual "Check" button if needed, 
+
+                    // Keep old notify behavior for manual "Check" button if needed,
                     // but usually real-time IDEs don't show toast for every keystroke.
                     // We only notify if it was likely a manual check or a critical state change.
                 }
@@ -339,12 +474,20 @@ impl eframe::App for CrawlerApp {
                             message: line,
                         });
                     }
-                    self.state.notify(NotificationLevel::Info, "Scripting Dry-Run", "Dry-run plan generated.");
+                    self.state.notify(
+                        NotificationLevel::Info,
+                        "Scripting Dry-Run",
+                        "Dry-run plan generated.",
+                    );
                 }
                 AppEvent::ScriptingDebugPlanResult(lines) => {
                     // KOD NOTU: Debug plan Scripting sekmesinde step-by-step gezinti için state'e kaydedilir.
                     self.state.scripting_debug_plan = lines;
-                    let break_cond = self.state.scripting_break_condition.trim().to_ascii_lowercase();
+                    let break_cond = self
+                        .state
+                        .scripting_break_condition
+                        .trim()
+                        .to_ascii_lowercase();
                     self.state.scripting_debug_index = if break_cond.is_empty() {
                         0
                     } else {
@@ -354,14 +497,22 @@ impl eframe::App for CrawlerApp {
                             .position(|l| l.to_ascii_lowercase().contains(&break_cond))
                             .unwrap_or(0)
                     };
-                    self.state.notify(NotificationLevel::Ok, "Script Debugger", "Debug plan generated.");
+                    self.state.notify(
+                        NotificationLevel::Ok,
+                        "Script Debugger",
+                        "Debug plan generated.",
+                    );
                 }
                 AppEvent::ScriptingFinished => {
                     self.state.is_script_running = false;
                     if let Some(token) = self.state.scripting_cancel_token.take() {
                         token.store(false, std::sync::atomic::Ordering::Relaxed);
                     }
-                    self.state.notify(NotificationLevel::Ok, "Scripting", "Script execution completed.");
+                    self.state.notify(
+                        NotificationLevel::Ok,
+                        "Scripting",
+                        "Script execution completed.",
+                    );
                 }
                 AppEvent::ScriptingError(msg) => {
                     self.state.is_script_running = false;
@@ -376,46 +527,75 @@ impl eframe::App for CrawlerApp {
                         });
                     }
                     self.state.script_error = Some(msg.clone());
-                    self.state.notify(NotificationLevel::Error, "Scripting", &msg);
+                    self.state
+                        .notify(NotificationLevel::Error, "Scripting", &msg);
 
                     // Try to extract line/col to show in IDE
                     let re = regex::Regex::new(r"at line (\d+), col (\d+)").unwrap();
                     if let Some(caps) = re.captures(&msg) {
                         let line = caps.get(1).and_then(|m| m.as_str().parse::<usize>().ok());
                         let col = caps.get(2).and_then(|m| m.as_str().parse::<usize>().ok());
-                        
-                        self.state.ide_diagnostics.push(crate::core::scripting::types::ScriptDiagnostic {
-                            code: "RUNTIME-ERR".into(),
-                            stage: crate::core::scripting::types::DiagnosticStage::Compile,
-                            severity: crate::core::scripting::types::DiagnosticSeverity::Error,
-                            message: msg,
-                            line,
-                            column: col,
-                            hint: None,
-                        });
+
+                        self.state.ide_diagnostics.push(
+                            crate::core::scripting::types::ScriptDiagnostic {
+                                code: "RUNTIME-ERR".into(),
+                                stage: crate::core::scripting::types::DiagnosticStage::Compile,
+                                severity: crate::core::scripting::types::DiagnosticSeverity::Error,
+                                message: msg,
+                                line,
+                                column: col,
+                                hint: None,
+                            },
+                        );
                     }
                 }
-                
+
                 // --- COMMAND ROUTING WITH AUDIT LOGS ---
                 AppEvent::RequestCookies(tid) => {
                     tracing::info!("[UI -> CORE] Requesting cookies for tab: {}", tid);
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::get_cookies(port, tid.clone()).await {
-                            Ok(cookies) => crate::ui::scrape::emit(AppEvent::CookiesReceived(tid, cookies)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Cookie fetch failed: {}", e))),
+                        match crate::core::browser::BrowserManager::get_cookies(port, tid.clone())
+                            .await
+                        {
+                            Ok(cookies) => {
+                                crate::ui::scrape::emit(AppEvent::CookiesReceived(tid, cookies))
+                            }
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Cookie fetch failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
                 AppEvent::RequestCookieDelete(tid, name, domain) => {
-                    tracing::info!("[UI -> CORE] Deleting cookie: {} on domain: {}", name, domain);
+                    tracing::info!(
+                        "[UI -> CORE] Deleting cookie: {} on domain: {}",
+                        name,
+                        domain
+                    );
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::delete_cookie(port, tid.clone(), name, domain).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Delete failed: {}", e)));
+                        if let Err(e) = crate::core::browser::BrowserManager::delete_cookie(
+                            port,
+                            tid.clone(),
+                            name,
+                            domain,
+                        )
+                        .await
+                        {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Delete failed: {}",
+                                e
+                            )));
                         } else {
-                            let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
+                            let _ = crate::core::browser::BrowserManager::get_cookies(
+                                port,
+                                tid_clone.clone(),
+                            )
+                            .await
+                            .map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
                             });
                         }
@@ -426,10 +606,24 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::add_cookie(port, tid.clone(), cookie).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Add failed: {}", e)));
+                        if let Err(e) = crate::core::browser::BrowserManager::add_cookie(
+                            port,
+                            tid.clone(),
+                            cookie,
+                        )
+                        .await
+                        {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Add failed: {}",
+                                e
+                            )));
                         } else {
-                            let _ = crate::core::browser::BrowserManager::get_cookies(port, tid_clone.clone()).await.map(|c| {
+                            let _ = crate::core::browser::BrowserManager::get_cookies(
+                                port,
+                                tid_clone.clone(),
+                            )
+                            .await
+                            .map(|c| {
                                 crate::ui::scrape::emit(AppEvent::CookiesReceived(tid_clone, c));
                             });
                         }
@@ -442,8 +636,13 @@ impl eframe::App for CrawlerApp {
                         ws.auto_reload_triggered = true;
                     }
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::reload_page(port, tid).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Reload failed: {}", e)));
+                        if let Err(e) =
+                            crate::core::browser::BrowserManager::reload_page(port, tid).await
+                        {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Reload failed: {}",
+                                e
+                            )));
                         }
                     });
                 }
@@ -455,9 +654,21 @@ impl eframe::App for CrawlerApp {
                         blocked = ws.blocked_urls.iter().cloned().collect();
                     }
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::set_url_blocking(port, tid.clone(), blocked).await {
-                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("URL block added: {}", pattern))),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("URL block failed: {}", e))),
+                        match crate::core::browser::BrowserManager::set_url_blocking(
+                            port,
+                            tid.clone(),
+                            blocked,
+                        )
+                        .await
+                        {
+                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!(
+                                "URL block added: {}",
+                                pattern
+                            ))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "URL block failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
@@ -469,9 +680,21 @@ impl eframe::App for CrawlerApp {
                         blocked = ws.blocked_urls.iter().cloned().collect();
                     }
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::set_url_blocking(port, tid.clone(), blocked).await {
-                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("URL unblock applied: {}", pattern))),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("URL unblock failed: {}", e))),
+                        match crate::core::browser::BrowserManager::set_url_blocking(
+                            port,
+                            tid.clone(),
+                            blocked,
+                        )
+                        .await
+                        {
+                            Ok(_) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!(
+                                "URL unblock applied: {}",
+                                pattern
+                            ))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "URL unblock failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
@@ -481,18 +704,34 @@ impl eframe::App for CrawlerApp {
                     tokio::spawn(async move {
                         match crate::core::browser::BrowserManager::list_tabs(port).await {
                             Ok(tabs) => crate::ui::scrape::emit(AppEvent::TabsUpdated(tabs)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Target sync failed: {}", e))),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Target sync failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
                 AppEvent::RequestScriptExecution(tid, script) => {
-                    tracing::info!("[UI -> CORE] Injecting custom JS script ({} bytes) to tab {}", script.len(), tid);
+                    tracing::info!(
+                        "[UI -> CORE] Injecting custom JS script ({} bytes) to tab {}",
+                        script.len(),
+                        tid
+                    );
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::execute_script(port, tid, script).await {
-                            Ok(res) => crate::ui::scrape::emit(AppEvent::ScriptFinished(tid_clone, res)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Script failed: {}", e))),
+                        match crate::core::browser::BrowserManager::execute_script(
+                            port, tid, script,
+                        )
+                        .await
+                        {
+                            Ok(res) => {
+                                crate::ui::scrape::emit(AppEvent::ScriptFinished(tid_clone, res))
+                            }
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Script failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
@@ -501,26 +740,41 @@ impl eframe::App for CrawlerApp {
                     {
                         let ws = self.ensure_workspace(&tid);
                         ws.js_result = res.clone();
-                    let decoded = decode_js_result(&res);
-                    if decoded == "SNIPER_SELECTOR_ARMED" {
-                        ws.selector_inspector_armed = true;
-                        notify_msg = Some((NotificationLevel::Ok, "Inspector armed. Click any element on the page, then Fetch.".to_string()));
-                    } else if let Some(selector) = decoded.strip_prefix("SNIPER_SELECTOR_VALUE:") {
-                        let value = selector.trim().to_string();
-                        if value.is_empty() || value == "NONE" {
-                            notify_msg = Some((NotificationLevel::Warn, "No selector captured yet.".to_string()));
-                        } else {
-                            ws.selector_search = value.clone();
-                            if !ws.discovered_selectors.contains(&value) {
-                                ws.discovered_selectors.insert(0, value.clone());
+                        let decoded = decode_js_result(&res);
+                        if decoded == "SNIPER_SELECTOR_ARMED" {
+                            ws.selector_inspector_armed = true;
+                            notify_msg = Some((
+                                NotificationLevel::Ok,
+                                "Inspector armed. Click any element on the page, then Fetch."
+                                    .to_string(),
+                            ));
+                        } else if let Some(selector) =
+                            decoded.strip_prefix("SNIPER_SELECTOR_VALUE:")
+                        {
+                            let value = selector.trim().to_string();
+                            if value.is_empty() || value == "NONE" {
+                                notify_msg = Some((
+                                    NotificationLevel::Warn,
+                                    "No selector captured yet.".to_string(),
+                                ));
+                            } else {
+                                ws.selector_search = value.clone();
+                                if !ws.discovered_selectors.contains(&value) {
+                                    ws.discovered_selectors.insert(0, value.clone());
+                                }
+                                notify_msg = Some((
+                                    NotificationLevel::Ok,
+                                    format!("Captured selector: {}", value),
+                                ));
                             }
-                            notify_msg = Some((NotificationLevel::Ok, format!("Captured selector: {}", value)));
+                            ws.selector_inspector_armed = false;
+                        } else if decoded == "SNIPER_SELECTOR_CLEARED" {
+                            ws.selector_inspector_armed = false;
+                            notify_msg = Some((
+                                NotificationLevel::Ok,
+                                "Inspector state cleared.".to_string(),
+                            ));
                         }
-                        ws.selector_inspector_armed = false;
-                    } else if decoded == "SNIPER_SELECTOR_CLEARED" {
-                        ws.selector_inspector_armed = false;
-                        notify_msg = Some((NotificationLevel::Ok, "Inspector state cleared.".to_string()));
-                    }
                     }
                     if let Some((level, message)) = notify_msg {
                         self.state.notify(level, "Selector Inspector", &message);
@@ -532,9 +786,16 @@ impl eframe::App for CrawlerApp {
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     tokio::spawn(async move {
-                        match crate::core::browser::BrowserManager::get_page_selectors(port, tid).await {
-                            Ok(sels) => crate::ui::scrape::emit(AppEvent::SelectorsReceived(tid_clone, sels)),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Scan failed: {}", e))),
+                        match crate::core::browser::BrowserManager::get_page_selectors(port, tid)
+                            .await
+                        {
+                            Ok(sels) => crate::ui::scrape::emit(AppEvent::SelectorsReceived(
+                                tid_clone, sels,
+                            )),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Scan failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
@@ -564,15 +825,27 @@ impl eframe::App for CrawlerApp {
                     };
 
                     if !should_start {
-                        tracing::debug!("[UI -> CORE] Listener already active for tab {}, skipping.", tid);
+                        tracing::debug!(
+                            "[UI -> CORE] Listener already active for tab {}, skipping.",
+                            tid
+                        );
                         continue;
                     }
 
                     tracing::info!("[UI -> CORE] Activating listeners for tab {}", tid);
                     let port = self.state.config.remote_debug_port;
                     tokio::spawn(async move {
-                        if let Err(e) = crate::core::browser::BrowserManager::setup_tab_listeners(port, tid, token.unwrap()).await {
-                            crate::ui::scrape::emit(AppEvent::OperationError(format!("Setup failed: {}", e)));
+                        if let Err(e) = crate::core::browser::BrowserManager::setup_tab_listeners(
+                            port,
+                            tid,
+                            token.unwrap(),
+                        )
+                        .await
+                        {
+                            crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Setup failed: {}",
+                                e
+                            )));
                         }
                     });
                 }
@@ -582,14 +855,34 @@ impl eframe::App for CrawlerApp {
                     let root = self.state.config.output_dir.clone();
                     tokio::spawn(async move {
                         let res = match mode.as_str() {
-                            "html" => crate::core::browser::BrowserManager::capture_html(port, tid, root).await,
-                            "complete" => crate::core::browser::BrowserManager::capture_complete(port, tid, root).await,
-                            "mirror" => crate::core::browser::BrowserManager::capture_mirror(port, tid, root).await,
-                            _ => Err(crate::core::error::AppError::Internal("Mode not found".into())),
+                            "html" => {
+                                crate::core::browser::BrowserManager::capture_html(port, tid, root)
+                                    .await
+                            }
+                            "complete" => {
+                                crate::core::browser::BrowserManager::capture_complete(
+                                    port, tid, root,
+                                )
+                                .await
+                            }
+                            "mirror" => {
+                                crate::core::browser::BrowserManager::capture_mirror(
+                                    port, tid, root,
+                                )
+                                .await
+                            }
+                            _ => Err(crate::core::error::AppError::Internal(
+                                "Mode not found".into(),
+                            )),
                         };
                         match res {
-                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!("Captured to: {:?}", path))),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!("Capture failed: {}", e))),
+                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(
+                                format!("Captured to: {:?}", path),
+                            )),
+                            Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                "Capture failed: {}",
+                                e
+                            ))),
                         }
                     });
                 }
@@ -604,10 +897,9 @@ impl eframe::App for CrawlerApp {
                         )
                         .await
                         {
-                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(format!(
-                                "Video downloaded: {:?}",
-                                path
-                            ))),
+                            Ok(path) => crate::ui::scrape::emit(AppEvent::OperationSuccess(
+                                format!("Video downloaded: {:?}", path),
+                            )),
                             Err(e) => crate::ui::scrape::emit(AppEvent::OperationError(format!(
                                 "Video download failed: {}",
                                 e
@@ -696,79 +988,126 @@ impl eframe::App for CrawlerApp {
                             return JSON.stringify(out);
                         })()"#;
 
-                        let result = crate::core::browser::BrowserManager::execute_script(port, tid_clone.clone(), script.to_string()).await;
+                        let result = crate::core::browser::BrowserManager::execute_script(
+                            port,
+                            tid_clone.clone(),
+                            script.to_string(),
+                        )
+                        .await;
                         match result {
                             Ok(raw) => {
                                 let decoded = decode_js_result(&raw);
                                 let mut mappings: Vec<(String, String, String)> = Vec::new();
-                                if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&decoded) {
+                                if let Ok(items) =
+                                    serde_json::from_str::<Vec<serde_json::Value>>(&decoded)
+                                {
                                     for item in items {
-                                        let blob_url = item.get("blob_url").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                                        let resolved_url = item.get("resolved_url").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                                        let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                                        let blob_url = item
+                                            .get("blob_url")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or_default()
+                                            .to_string();
+                                        let resolved_url = item
+                                            .get("resolved_url")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or_default()
+                                            .to_string();
+                                        let reason = item
+                                            .get("reason")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string();
                                         mappings.push((blob_url, resolved_url, reason));
                                     }
                                 }
-                                crate::ui::scrape::emit(AppEvent::BlobDemaskResult(tid_clone, mappings));
+                                crate::ui::scrape::emit(AppEvent::BlobDemaskResult(
+                                    tid_clone, mappings,
+                                ));
                             }
                             Err(e) => {
-                                crate::ui::scrape::emit(AppEvent::OperationError(format!("Blob de-mask failed: {}", e)));
+                                crate::ui::scrape::emit(AppEvent::OperationError(format!(
+                                    "Blob de-mask failed: {}",
+                                    e
+                                )));
                             }
                         }
                     });
                 }
                 AppEvent::RequestAutomationRun(tid, steps, funcs, auto_config) => {
-                    tracing::info!("[UI -> CORE] Handing over pipeline to Engine for tab {}", tid);
+                    tracing::info!(
+                        "[UI -> CORE] Handing over pipeline to Engine for tab {}",
+                        tid
+                    );
                     let port = self.state.config.remote_debug_port;
                     let tid_clone = tid.clone();
                     let mut dsl_funcs = std::collections::HashMap::new();
-                    for (name, f_steps) in funcs { dsl_funcs.insert(name, map_ui_steps_to_dsl(&f_steps)); }
+                    for (name, f_steps) in funcs {
+                        dsl_funcs.insert(name, map_ui_steps_to_dsl(&f_steps));
+                    }
                     let dsl = crate::core::automation::dsl::AutomationDsl {
-                        dsl_version: 1, metadata: None, functions: dsl_funcs, steps: map_ui_steps_to_dsl(&steps),
+                        dsl_version: 1,
+                        metadata: None,
+                        functions: dsl_funcs,
+                        steps: map_ui_steps_to_dsl(&steps),
                     };
                     let output_dir = self.state.config.output_dir.clone();
                     let apply_stealth = self.state.config.randomize_fingerprint;
                     tokio::spawn(async move {
                         if apply_stealth {
-                            let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(port, tid_clone.clone()).await;
+                            let _ = crate::core::browser::BrowserManager::apply_stealth_on_tab(
+                                port,
+                                tid_clone.clone(),
+                            )
+                            .await;
                         }
                         let config = crate::core::automation::engine::ExecutionConfig {
-                            step_timeout: std::time::Duration::from_millis(auto_config.step_timeout_ms),
+                            step_timeout: std::time::Duration::from_millis(
+                                auto_config.step_timeout_ms,
+                            ),
                             retry_attempts: auto_config.retry_attempts,
                             screenshot_on_error: auto_config.screenshot_on_error,
                         };
                         // KOD NOTU: UI Automation ve Scripting ortak runtime helper kullanır.
                         if let Err(e) = crate::core::automation::runtime::run_dsl_on_tab(
-                            port,
-                            tid_clone,
-                            output_dir,
-                            config,
-                            dsl,
+                            port, tid_clone, output_dir, config, dsl,
                         )
                         .await
                         {
-                            tracing::error!("[ENGINE -> APP] Pipeline ABORTED on tab {}: {}", tid, e);
+                            tracing::error!(
+                                "[ENGINE -> APP] Pipeline ABORTED on tab {}: {}",
+                                tid,
+                                e
+                            );
                         }
                     });
                 }
                 AppEvent::RequestScriptingRun(package, selected_tab_id) => {
                     if self.state.is_script_running {
-                        self.state.notify(NotificationLevel::Warn, "Scripting", "Another script is already running.");
+                        self.state.notify(
+                            NotificationLevel::Warn,
+                            "Scripting",
+                            "Another script is already running.",
+                        );
                         continue;
                     }
                     self.state.is_script_running = true;
                     let token = Arc::new(std::sync::atomic::AtomicBool::new(true));
                     self.state.scripting_cancel_token = Some(token.clone());
-                    let (selected_tab_console_logs, selected_tab_cookies) = if let Some(tab_id) = &selected_tab_id {
-                        if let Some(ws) = self.state.workspaces.get(tab_id) {
-                            let cookies = ws.cookies.iter().map(|c| (c.name.clone(), c.value.clone())).collect();
-                            (ws.console_logs.clone(), cookies)
+                    let (selected_tab_console_logs, selected_tab_cookies) =
+                        if let Some(tab_id) = &selected_tab_id {
+                            if let Some(ws) = self.state.workspaces.get(tab_id) {
+                                let cookies = ws
+                                    .cookies
+                                    .iter()
+                                    .map(|c| (c.name.clone(), c.value.clone()))
+                                    .collect();
+                                (ws.console_logs.clone(), cookies)
+                            } else {
+                                (Vec::new(), std::collections::HashMap::new())
+                            }
                         } else {
                             (Vec::new(), std::collections::HashMap::new())
-                        }
-                    } else {
-                        (Vec::new(), std::collections::HashMap::new())
-                    };
+                        };
                     let req = crate::core::scripting::types::ScriptExecutionRequest {
                         package,
                         selected_tab_id,
@@ -789,7 +1128,9 @@ impl eframe::App for CrawlerApp {
                         let result = crate::core::scripting::engine::run_script(req).await;
                         match result {
                             Ok(_) => crate::ui::scrape::emit(AppEvent::ScriptingFinished),
-                            Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(e.to_string())),
+                            Err(e) => {
+                                crate::ui::scrape::emit(AppEvent::ScriptingError(e.to_string()))
+                            }
                         }
                     });
                 }
@@ -810,16 +1151,21 @@ impl eframe::App for CrawlerApp {
                 }
                 AppEvent::RequestScriptingDryRun(package, selected_tab_id) => {
                     let selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());
-                    let (selected_tab_console_logs, selected_tab_cookies) = if let Some(tab_id) = &selected {
-                        if let Some(ws) = self.state.workspaces.get(tab_id) {
-                            let cookies = ws.cookies.iter().map(|c| (c.name.clone(), c.value.clone())).collect();
-                            (ws.console_logs.clone(), cookies)
+                    let (selected_tab_console_logs, selected_tab_cookies) =
+                        if let Some(tab_id) = &selected {
+                            if let Some(ws) = self.state.workspaces.get(tab_id) {
+                                let cookies = ws
+                                    .cookies
+                                    .iter()
+                                    .map(|c| (c.name.clone(), c.value.clone()))
+                                    .collect();
+                                (ws.console_logs.clone(), cookies)
+                            } else {
+                                (Vec::new(), std::collections::HashMap::new())
+                            }
                         } else {
                             (Vec::new(), std::collections::HashMap::new())
-                        }
-                    } else {
-                        (Vec::new(), std::collections::HashMap::new())
-                    };
+                        };
                     let req = crate::core::scripting::types::ScriptExecutionRequest {
                         package,
                         selected_tab_id: selected,
@@ -833,22 +1179,32 @@ impl eframe::App for CrawlerApp {
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                     };
                     match crate::core::scripting::engine::dry_run_script(req) {
-                        Ok(lines) => crate::ui::scrape::emit(AppEvent::ScriptingDryRunResult(lines)),
-                        Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(format!("Dry-run failed: {}", e))),
+                        Ok(lines) => {
+                            crate::ui::scrape::emit(AppEvent::ScriptingDryRunResult(lines))
+                        }
+                        Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(format!(
+                            "Dry-run failed: {}",
+                            e
+                        ))),
                     }
                 }
                 AppEvent::RequestScriptingDebugPlan(package, selected_tab_id) => {
                     let selected = selected_tab_id.or_else(|| self.state.selected_tab_id.clone());
-                    let (selected_tab_console_logs, selected_tab_cookies) = if let Some(tab_id) = &selected {
-                        if let Some(ws) = self.state.workspaces.get(tab_id) {
-                            let cookies = ws.cookies.iter().map(|c| (c.name.clone(), c.value.clone())).collect();
-                            (ws.console_logs.clone(), cookies)
+                    let (selected_tab_console_logs, selected_tab_cookies) =
+                        if let Some(tab_id) = &selected {
+                            if let Some(ws) = self.state.workspaces.get(tab_id) {
+                                let cookies = ws
+                                    .cookies
+                                    .iter()
+                                    .map(|c| (c.name.clone(), c.value.clone()))
+                                    .collect();
+                                (ws.console_logs.clone(), cookies)
+                            } else {
+                                (Vec::new(), std::collections::HashMap::new())
+                            }
                         } else {
                             (Vec::new(), std::collections::HashMap::new())
-                        }
-                    } else {
-                        (Vec::new(), std::collections::HashMap::new())
-                    };
+                        };
                     let req = crate::core::scripting::types::ScriptExecutionRequest {
                         package,
                         selected_tab_id: selected,
@@ -862,39 +1218,60 @@ impl eframe::App for CrawlerApp {
                         cancel_token: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                     };
                     match crate::core::scripting::engine::dry_run_script(req) {
-                        Ok(lines) => crate::ui::scrape::emit(AppEvent::ScriptingDebugPlanResult(lines)),
-                        Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(format!("Debug plan failed: {}", e))),
+                        Ok(lines) => {
+                            crate::ui::scrape::emit(AppEvent::ScriptingDebugPlanResult(lines))
+                        }
+                        Err(e) => crate::ui::scrape::emit(AppEvent::ScriptingError(format!(
+                            "Debug plan failed: {}",
+                            e
+                        ))),
                     }
                 }
                 AppEvent::RequestScriptingStop => {
                     if let Some(token) = &self.state.scripting_cancel_token {
                         token.store(false, std::sync::atomic::Ordering::Relaxed);
                     }
-                    self.state.notify(NotificationLevel::Warn, "Scripting", "Stop requested.");
+                    self.state
+                        .notify(NotificationLevel::Warn, "Scripting", "Stop requested.");
                 }
-                AppEvent::RequestScriptingImport(path) => {
-                    match std::fs::read_to_string(path) {
-                        Ok(content) => match serde_json::from_str::<crate::core::scripting::types::ScriptPackage>(&content) {
-                            Ok(pkg) => {
-                                self.state.script_package = pkg;
-                                self.state.script_error = None;
-                                self.state.scripting_debug_plan.clear();
-                                self.state.scripting_debug_index = 0;
-                                self.state.notify(NotificationLevel::Ok, "Scripting", "Script imported.");
-                            }
-                            Err(e) => self.state.script_error = Some(format!("Import parse error: {}", e)),
-                        },
-                        Err(e) => self.state.script_error = Some(format!("Import read error: {}", e)),
-                    }
-                }
+                AppEvent::RequestScriptingImport(path) => match std::fs::read_to_string(path) {
+                    Ok(content) => match serde_json::from_str::<
+                        crate::core::scripting::types::ScriptPackage,
+                    >(&content)
+                    {
+                        Ok(pkg) => {
+                            self.state.script_package = pkg;
+                            self.state.script_error = None;
+                            self.state.scripting_debug_plan.clear();
+                            self.state.scripting_debug_index = 0;
+                            self.state.notify(
+                                NotificationLevel::Ok,
+                                "Scripting",
+                                "Script imported.",
+                            );
+                        }
+                        Err(e) => {
+                            self.state.script_error = Some(format!("Import parse error: {}", e))
+                        }
+                    },
+                    Err(e) => self.state.script_error = Some(format!("Import read error: {}", e)),
+                },
                 AppEvent::RequestScriptingExport(path, mut pkg) => {
                     pkg.updated_at = chrono::Local::now().timestamp();
                     match serde_json::to_string_pretty(&pkg) {
                         Ok(json) => match std::fs::write(path, json) {
-                            Ok(_) => self.state.notify(NotificationLevel::Ok, "Scripting", "Script exported."),
-                            Err(e) => self.state.script_error = Some(format!("Export write error: {}", e)),
+                            Ok(_) => self.state.notify(
+                                NotificationLevel::Ok,
+                                "Scripting",
+                                "Script exported.",
+                            ),
+                            Err(e) => {
+                                self.state.script_error = Some(format!("Export write error: {}", e))
+                            }
                         },
-                        Err(e) => self.state.script_error = Some(format!("Export serialize error: {}", e)),
+                        Err(e) => {
+                            self.state.script_error = Some(format!("Export serialize error: {}", e))
+                        }
                     }
                 }
             }
@@ -905,8 +1282,12 @@ impl eframe::App for CrawlerApp {
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("SNIPER STUDIO").strong().size(20.0).color(ui::design::ACCENT_ORANGE));
-                    ui.label(RichText::new("Browser Forensics + Automation Console").small().color(ui::design::TEXT_MUTED));
+                    ui.label(
+                        RichText::new("SNIPER STUDIO")
+                            .strong()
+                            .size(20.0)
+                            .color(ui::design::ACCENT_ORANGE),
+                    );
                 });
 
                 ui.add_space(14.0);
@@ -918,9 +1299,17 @@ impl eframe::App for CrawlerApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if self.state.is_browser_running {
-                        ui.label(RichText::new("LIVE").color(ui::design::ACCENT_GREEN).strong());
+                        ui.label(
+                            RichText::new("LIVE")
+                                .color(ui::design::ACCENT_GREEN)
+                                .strong(),
+                        );
                     } else {
-                        ui.label(RichText::new("OFFLINE").color(Color32::from_rgb(255, 119, 119)).strong());
+                        ui.label(
+                            RichText::new("OFFLINE")
+                                .color(Color32::from_rgb(255, 119, 119))
+                                .strong(),
+                        );
                     }
                 });
             });
@@ -930,35 +1319,74 @@ impl eframe::App for CrawlerApp {
         // Setup Modals
         if !self.state.output_confirmed {
             // (Initial Setup modal remains...)
-            egui::Window::new("Sniper Studio - Initial Setup").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new("Sniper Studio - Initial Setup")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
                     ui.heading("Select Output Directory");
                     ui.label("Data, logs, and assets will be stored in this location.");
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{:?}", self.state.config.output_dir)).color(Color32::KHAKI));
-                        if ui.button("Browse...").clicked() { if let Some(path) = rfd::FileDialog::new().pick_folder() { self.state.config.output_dir = path; } }
+                        ui.label(
+                            RichText::new(format!("{:?}", self.state.config.output_dir))
+                                .color(Color32::KHAKI),
+                        );
+                        if ui.button("Browse...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                self.state.config.output_dir = path;
+                            }
+                        }
                     });
                     ui.add_space(20.0);
-                    if ui.button(RichText::new("CONFIRM & PROCEED").strong()).clicked() {
+                    if ui
+                        .button(RichText::new("CONFIRM & PROCEED").strong())
+                        .clicked()
+                    {
                         self.state.output_confirmed = true;
                         let _ = std::fs::create_dir_all(&self.state.config.output_dir);
-                        crate::ui::scrape::emit(AppEvent::RequestLogPathSet(self.state.config.output_dir.clone()));
+                        crate::ui::scrape::emit(AppEvent::RequestLogPathSet(
+                            self.state.config.output_dir.clone(),
+                        ));
                     }
                 });
             return;
         }
 
         if !self.state.profile_confirmed {
-            egui::Window::new("Browser Profile Configuration").anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new("Browser Profile Configuration")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
                     ui.heading("Select Profile Mode");
                     ui.vertical(|ui| {
-                        if ui.selectable_label(self.state.use_custom_profile, "🏠 ISOLATED PROFILE (Recommended)").clicked() { self.state.use_custom_profile = true; }
-                        if ui.selectable_label(!self.state.use_custom_profile, "👤 SYSTEM PROFILE (Existing data)").clicked() { self.state.use_custom_profile = false; }
+                        if ui
+                            .selectable_label(
+                                self.state.use_custom_profile,
+                                "🏠 ISOLATED PROFILE (Recommended)",
+                            )
+                            .clicked()
+                        {
+                            self.state.use_custom_profile = true;
+                        }
+                        if ui
+                            .selectable_label(
+                                !self.state.use_custom_profile,
+                                "👤 SYSTEM PROFILE (Existing data)",
+                            )
+                            .clicked()
+                        {
+                            self.state.use_custom_profile = false;
+                        }
                     });
                     ui.add_space(20.0);
-                    if ui.button(RichText::new("CONFIRM & LAUNCH").strong()).clicked() { self.state.profile_confirmed = true; }
+                    if ui
+                        .button(RichText::new("CONFIRM & LAUNCH").strong())
+                        .clicked()
+                    {
+                        self.state.profile_confirmed = true;
+                    }
                 });
             return;
         }
@@ -967,7 +1395,7 @@ impl eframe::App for CrawlerApp {
         CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.add_space(6.0);
-                
+
                 match self.state.active_tab {
                     Tab::Scrape => {
                         Frame::group(ui.style())
@@ -1013,12 +1441,26 @@ impl eframe::App for CrawlerApp {
         });
 
         // --- MDI WORKSPACE WINDOWS (ISOLATED PER TAB) ---
-        let active_workspaces: Vec<(String, String, bool, bool, bool, bool, bool)> = self.state.workspaces.iter().map(|(id, ws)| {
-            (id.clone(), ws.title.clone(), ws.show_network, ws.show_media, ws.show_storage, ws.show_automation, ws.show_console)
-        }).collect();
+        let active_workspaces: Vec<(String, String, bool, bool, bool, bool, bool)> = self
+            .state
+            .workspaces
+            .iter()
+            .map(|(id, ws)| {
+                (
+                    id.clone(),
+                    ws.title.clone(),
+                    ws.show_network,
+                    ws.show_media,
+                    ws.show_storage,
+                    ws.show_automation,
+                    ws.show_console,
+                )
+            })
+            .collect();
 
         for (tid, title, show_net, show_med, show_stor, show_auto, show_cons) in active_workspaces {
-            let window_title_prefix = format!("[{}] {}", tid.chars().take(4).collect::<String>(), title);
+            let window_title_prefix =
+                format!("[{}] {}", tid.chars().take(4).collect::<String>(), title);
 
             if show_net {
                 let mut open = true;
@@ -1031,7 +1473,11 @@ impl eframe::App for CrawlerApp {
                     .show(ctx, |ui| {
                         ui::network_panel::render(ui, &mut self.state, &tid);
                     });
-                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_network = false; } }
+                if !open {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.show_network = false;
+                    }
+                }
             }
             if show_med {
                 let mut open = true;
@@ -1044,7 +1490,11 @@ impl eframe::App for CrawlerApp {
                     .show(ctx, |ui| {
                         ui::media_panel::render(ui, &mut self.state, &tid);
                     });
-                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_media = false; } }
+                if !open {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.show_media = false;
+                    }
+                }
             }
             if show_stor {
                 let mut open = true;
@@ -1057,7 +1507,11 @@ impl eframe::App for CrawlerApp {
                     .show(ctx, |ui| {
                         ui::storage_panel::render(ui, &mut self.state, &tid);
                     });
-                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_storage = false; } }
+                if !open {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.show_storage = false;
+                    }
+                }
             }
             if show_auto {
                 let mut open = true;
@@ -1070,7 +1524,11 @@ impl eframe::App for CrawlerApp {
                     .show(ctx, |ui| {
                         ui::automation::render_embedded(ui, &mut self.state, &tid);
                     });
-                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_automation = false; } }
+                if !open {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.show_automation = false;
+                    }
+                }
             }
             if show_cons {
                 let mut open = true;
@@ -1084,32 +1542,80 @@ impl eframe::App for CrawlerApp {
                         // Isolated console logic inside the window
                         let (mut script, res, logs) = {
                             let ws = self.state.workspaces.get(&tid).unwrap();
-                            (ws.js_script.clone(), ws.js_result.clone(), ws.console_logs.clone())
+                            (
+                                ws.js_script.clone(),
+                                ws.js_result.clone(),
+                                ws.console_logs.clone(),
+                            )
                         };
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
                                 ui.heading(RichText::new("JS EXECUTOR").color(Color32::LIGHT_BLUE));
                                 if ui.button("📂 LOAD").clicked() {
-                                    if let Some(path) = rfd::FileDialog::new().add_filter("JavaScript", &["js"]).pick_file() {
-                                        if let Ok(c) = std::fs::read_to_string(path) { script = c; }
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .add_filter("JavaScript", &["js"])
+                                        .pick_file()
+                                    {
+                                        if let Ok(c) = std::fs::read_to_string(path) {
+                                            script = c;
+                                        }
                                     }
                                 }
-                                if ui.button("🗑 CLEAR").clicked() { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.console_logs.clear(); } }
+                                if ui.button("🗑 CLEAR").clicked() {
+                                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                                        ws.console_logs.clear();
+                                    }
+                                }
                             });
-                            ui.add(egui::TextEdit::multiline(&mut script).font(egui::FontId::monospace(12.0)).desired_rows(5).desired_width(f32::INFINITY).hint_text("Enter JS code to run on this tab..."));
+                            ui.add(
+                                egui::TextEdit::multiline(&mut script)
+                                    .font(egui::FontId::monospace(12.0))
+                                    .desired_rows(5)
+                                    .desired_width(f32::INFINITY)
+                                    .hint_text("Enter JS code to run on this tab..."),
+                            );
                             if ui.button(RichText::new("▶ RUN ON TAB").strong()).clicked() {
-                                ui::scrape::emit(AppEvent::RequestScriptExecution(tid.clone(), script.clone()));
+                                ui::scrape::emit(AppEvent::RequestScriptExecution(
+                                    tid.clone(),
+                                    script.clone(),
+                                ));
                             }
-                            if !res.is_empty() { ui.label(RichText::new(format!("Result: {}", res)).color(Color32::GREEN).monospace()); }
+                            if !res.is_empty() {
+                                ui.label(
+                                    RichText::new(format!("Result: {}", res))
+                                        .color(Color32::GREEN)
+                                        .monospace(),
+                                );
+                            }
                             ui.separator();
-                            ui.label(RichText::new("TAB CONSOLE OUTPUT:").small().color(Color32::GRAY));
-                            egui::ScrollArea::vertical().stick_to_bottom(true).max_height(200.0).id_salt(format!("{}_cons_scroll", tid)).show(ui, |ui| {
-                                for log in logs { ui.label(RichText::new(format!("> {}", log)).monospace().size(11.0)); }
-                            });
+                            ui.label(
+                                RichText::new("TAB CONSOLE OUTPUT:")
+                                    .small()
+                                    .color(Color32::GRAY),
+                            );
+                            egui::ScrollArea::vertical()
+                                .stick_to_bottom(true)
+                                .max_height(200.0)
+                                .id_salt(format!("{}_cons_scroll", tid))
+                                .show(ui, |ui| {
+                                    for log in logs {
+                                        ui.label(
+                                            RichText::new(format!("> {}", log))
+                                                .monospace()
+                                                .size(11.0),
+                                        );
+                                    }
+                                });
                         });
-                        if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.js_script = script; }
+                        if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                            ws.js_script = script;
+                        }
                     });
-                if !open { if let Some(ws) = self.state.workspaces.get_mut(&tid) { ws.show_console = false; } }
+                if !open {
+                    if let Some(ws) = self.state.workspaces.get_mut(&tid) {
+                        ws.show_console = false;
+                    }
+                }
             }
         }
 
@@ -1118,9 +1624,18 @@ impl eframe::App for CrawlerApp {
             .state
             .notifications
             .iter()
-            .map(|n| (n.id, n.level, n.title.clone(), n.message.clone(), n.created_at))
+            .map(|n| {
+                (
+                    n.id,
+                    n.level,
+                    n.title.clone(),
+                    n.message.clone(),
+                    n.created_at,
+                )
+            })
             .collect::<Vec<_>>();
-        for (idx, (id, level, title, message, created_at)) in notifications.into_iter().enumerate() {
+        for (idx, (id, level, title, message, created_at)) in notifications.into_iter().enumerate()
+        {
             let mut open = true;
             let bg = match level {
                 NotificationLevel::Ok => Color32::from_rgb(23, 56, 34),
@@ -1128,10 +1643,14 @@ impl eframe::App for CrawlerApp {
                 NotificationLevel::Warn => Color32::from_rgb(61, 48, 24),
                 NotificationLevel::Info => Color32::from_rgb(27, 44, 61),
             };
-            let age_secs = (chrono::Local::now().timestamp_millis() as f64 / 1000.0 - created_at).max(0.0);
+            let age_secs =
+                (chrono::Local::now().timestamp_millis() as f64 / 1000.0 - created_at).max(0.0);
             egui::Window::new(title)
                 .open(&mut open)
-                .anchor(egui::Align2::RIGHT_BOTTOM, [-20.0, -20.0 - (idx as f32 * 110.0)])
+                .anchor(
+                    egui::Align2::RIGHT_BOTTOM,
+                    [-20.0, -20.0 - (idx as f32 * 110.0)],
+                )
                 .collapsible(false)
                 .resizable(false)
                 .frame(egui::Frame::window(&ctx.style()).fill(bg))
