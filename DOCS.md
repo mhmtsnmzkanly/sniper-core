@@ -77,11 +77,14 @@ Potential startup errors:
 What it does:
 - Launches/terminates browser instance.
 - Uses configured Chrome path/profile/port.
-- Supports launch-time proxy and Stealth Mode (anti-fingerprint).
+- Supports launch-time proxy, User-Agent override, and Stealth Mode.
 
 Launch options:
 - `Proxy` (e.g. `http://host:port`, `socks5://host:port`)
+- `User-Agent` override
+- `Random UA`
 - `Stealth Mode` (window size/lang/automation flag randomization)
+- `RELAUNCH APPLY PROFILE` for active-session proxy/identity update via controlled restart.
 
 Outputs:
 - Browser process lifecycle events.
@@ -107,7 +110,7 @@ Potential issues:
 
 ## 4.3 Command Center
 Actions:
-- Capture HTML / Complete
+- Capture HTML / Complete / Mirror
 - Open Panels (Network, Media, Cookies, Console)
 - Reload current tab
 
