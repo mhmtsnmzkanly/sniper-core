@@ -588,17 +588,35 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                 .max_height(editor_h)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        // 1. Satır Numaraları
+                        // 1. Satır Numaraları ve Error Gutter
                         let line_count = state.script_package.code.lines().count().max(1);
-                        let mut line_numbers = String::new();
-                        for i in 1..=line_count {
-                            line_numbers.push_str(&format!("{:>3}\n", i));
-                        }
+                        let diagnostics = &state.ide_diagnostics;
                         
                         ui.add_space(4.0);
                         ui.vertical(|ui| {
                             ui.add_space(2.0);
-                            ui.label(RichText::new(line_numbers).monospace().color(Color32::from_gray(80)).line_height(Some(14.5)));
+                            for i in 1..=line_count {
+                                let has_error = diagnostics.iter().any(|d| d.line == Some(i) && d.severity == crate::core::scripting::types::DiagnosticSeverity::Error);
+                                let has_warn = diagnostics.iter().any(|d| d.line == Some(i) && d.severity == crate::core::scripting::types::DiagnosticSeverity::Warn);
+                                
+                                ui.horizontal(|ui| {
+                                    // Gutter Icon
+                                    if has_error {
+                                        ui.label(RichText::new("❌").size(10.0)).on_hover_ui(|ui| {
+                                            if let Some(d) = diagnostics.iter().find(|d| d.line == Some(i)) {
+                                                ui.label(format!("Error: {}", d.message));
+                                            }
+                                        });
+                                    } else if has_warn {
+                                        ui.label(RichText::new("⚠️").size(10.0));
+                                    } else {
+                                        ui.add_space(12.0); // Empty space for alignment
+                                    }
+                                    
+                                    // Line Number
+                                    ui.label(RichText::new(format!("{:>3}", i)).monospace().color(Color32::from_gray(80)).line_height(Some(14.5)));
+                                });
+                            }
                         });
                         
                         ui.add_space(4.0);
