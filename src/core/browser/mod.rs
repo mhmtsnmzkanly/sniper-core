@@ -22,6 +22,14 @@ pub struct BrowserLaunchOptions {
     pub user_agent: Option<String>,
     pub randomize_user_agent: bool,
     pub randomize_fingerprint: bool,
+    pub headless: bool,
+    pub incognito: bool,
+    pub ignore_cert_errors: bool,
+    pub mute_audio: bool,
+    pub disable_gpu: bool,
+    pub window_width: u32,
+    pub window_height: u32,
+    pub browser_language: String,
 }
 
 impl BrowserManager {
@@ -178,12 +186,19 @@ impl BrowserManager {
             .arg("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
             .arg("--metrics-recording-only");
 
+        if launch_opts.headless { command.arg("--headless=new"); }
+        if launch_opts.incognito { command.arg("--incognito"); }
+        if launch_opts.ignore_cert_errors { command.arg("--ignore-certificate-errors"); }
+        if launch_opts.mute_audio { command.arg("--mute-audio"); }
+        if launch_opts.disable_gpu { command.arg("--disable-gpu"); }
+
         if let Some(proxy) = launch_opts.proxy_server.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
             command.arg(format!("--proxy-server={}", proxy));
         }
         if let Some(ua) = Self::pick_user_agent(&launch_opts) {
             command.arg(format!("--user-agent={}", ua));
         }
+
         if launch_opts.randomize_fingerprint {
             let seed = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -197,6 +212,10 @@ impl BrowserManager {
                 .arg(format!("--window-size={},{}", width, height))
                 .arg(format!("--lang={}", lang))
                 .arg("--disable-blink-features=AutomationControlled");
+        } else {
+            command
+                .arg(format!("--window-size={},{}", launch_opts.window_width, launch_opts.window_height))
+                .arg(format!("--lang={}", launch_opts.browser_language));
         }
 
         #[cfg(target_os = "linux")]
@@ -204,8 +223,11 @@ impl BrowserManager {
             command.arg("--no-sandbox")
                    .arg("--disable-setuid-sandbox")
                    .arg("--disable-dev-shm-usage")
-                   .arg("--no-zygote") 
-                   .arg("--disable-gpu"); 
+                   .arg("--no-zygote");
+            
+            if launch_opts.disable_gpu {
+                command.arg("--disable-gpu");
+            }
         }
 
         // KOD NOTU: stdout ve stderr belirtilen log dosyasına yönlendirilir.

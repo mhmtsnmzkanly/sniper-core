@@ -60,62 +60,130 @@ pub fn render(ui: &mut Ui, state: &mut AppState) {
                     ui.add_space(4.0);
 
                     ui.vertical(|ui| {
-                        // Settings Grid
-                        ui.vertical(|ui| {
-                            egui::Grid::new("browser_mini_grid").spacing([8.0, 4.0]).show(ui, |ui| {
-                                ui.label("Path:"); 
-                                ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(ui.available_width() * 0.6));
-                                ui.end_row();
+                        ui.set_width(ui.available_width());
 
-                                ui.label("Launch URL:");
-                                ui.add(egui::TextEdit::singleline(&mut state.config.default_launch_url).desired_width(ui.available_width() * 0.6));
-                                ui.end_row();
+                        // --- GROUP 1: NETWORK & IDENTITY ---
+                        Frame::NONE
+                            .fill(design::BG_PRIMARY)
+                            .inner_margin(8.0)
+                            .corner_radius(6.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.label(RichText::new("🌐 NETWORK & IDENTITY").strong().size(11.0).color(design::ACCENT_CYAN));
+                                ui.add_space(4.0);
 
-                                ui.horizontal(|ui| {
-                                   ui.label("Port:"); 
-                                   ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
-                                   ui.add_space(20.0);
-                                   ui.label("Proxy:"); 
-                                   ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).desired_width(200.0));
+                                egui::Grid::new("network_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                    ui.label("Proxy:");
+                                    ui.add(egui::TextEdit::singleline(&mut state.config.proxy_server).hint_text("http://host:port").desired_width(280.0));
+                                    ui.end_row();
+
+                                    ui.label("Custom UA:");
+                                    ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).hint_text("Mozilla/5.0...").desired_width(280.0));
+                                    ui.end_row();
                                 });
-                                ui.end_row();
 
+                                ui.add_space(6.0);
                                 ui.horizontal(|ui| {
-                                    ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode");
-                                    ui.add_space(10.0);
-                                    ui.checkbox(&mut state.config.randomize_user_agent, "Random UA");
+                                    ui.checkbox(&mut state.config.randomize_user_agent, "Random UA Mode");
+                                    ui.add_space(12.0);
+                                    ui.checkbox(&mut state.config.randomize_fingerprint, "Stealth Mode (Anti-Fingerprint)");
                                 });
-                                ui.end_row();
-
-                                ui.label("Custom UA:");
-                                ui.add(egui::TextEdit::singleline(&mut state.config.user_agent).desired_width(ui.available_width() * 0.8));
-                                ui.end_row();
                             });
-                        });
 
-                        ui.add_space(12.0);
+                        ui.add_space(10.0);
 
+                        // --- GROUP 2: ENGINE & BEHAVIOR ---
+                        Frame::NONE
+                            .fill(design::BG_PRIMARY)
+                            .inner_margin(8.0)
+                            .corner_radius(6.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.label(RichText::new("⚙ ENGINE & BEHAVIOR").strong().size(11.0).color(design::ACCENT_CYAN));
+                                ui.add_space(4.0);
+
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.checkbox(&mut state.config.headless, "Headless");
+                                    ui.add_space(8.0);
+                                    ui.checkbox(&mut state.config.incognito, "Incognito");
+                                    ui.add_space(8.0);
+                                    ui.checkbox(&mut state.config.ignore_cert_errors, "Ignore SSL Errors");
+                                    ui.add_space(8.0);
+                                    ui.checkbox(&mut state.config.mute_audio, "Mute Audio");
+                                    ui.add_space(8.0);
+                                    ui.checkbox(&mut state.config.disable_gpu, "Disable GPU");
+                                });
+                            });
+
+                        ui.add_space(10.0);
+
+                        // --- GROUP 3: WINDOW & ENVIRONMENT ---
+                        Frame::NONE
+                            .fill(design::BG_PRIMARY)
+                            .inner_margin(8.0)
+                            .corner_radius(6.0)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.label(RichText::new("🖥 WINDOW & ENVIRONMENT").strong().size(11.0).color(design::ACCENT_CYAN));
+                                ui.add_space(4.0);
+
+                                egui::Grid::new("env_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                                    ui.label("Binary Path:");
+                                    ui.add(egui::TextEdit::singleline(&mut state.config.chrome_binary_path).desired_width(280.0));
+                                    ui.end_row();
+
+                                    ui.label("Launch URL:");
+                                    ui.add(egui::TextEdit::singleline(&mut state.config.default_launch_url).desired_width(280.0));
+                                    ui.end_row();
+
+                                    ui.label("Resolution:");
+                                    ui.horizontal(|ui| {
+                                        ui.add(egui::DragValue::new(&mut state.config.window_width).prefix("W: "));
+                                        ui.label("x");
+                                        ui.add(egui::DragValue::new(&mut state.config.window_height).prefix("H: "));
+                                        ui.add_space(20.0);
+                                        ui.label("Language:");
+                                        ui.add(egui::TextEdit::singleline(&mut state.config.browser_language).desired_width(80.0));
+                                    });
+                                    ui.end_row();
+                                });
+                            });
+
+                        ui.add_space(16.0);
+
+                        // --- LAUNCH CONTROLS ---
                         ui.horizontal(|ui| {
-                            let btn_h = 32.0;
+                            let btn_h = 36.0;
                             if !state.is_browser_running {
-                                if ui.add(egui::Button::new(RichText::new("🚀 LAUNCH BROWSER").strong().size(14.0))
-                                    .min_size([200.0, btn_h].into())
-                                    .fill(Color32::from_rgb(0, 110, 170))).clicked() {
+                                let launch_btn = egui::Button::new(RichText::new("🚀  LAUNCH TARGET BROWSER").strong().size(15.0))
+                                    .min_size([280.0, btn_h].into())
+                                    .fill(Color32::from_rgb(0, 110, 170));
+
+                                if ui.add(launch_btn).clicked() {
                                     launch_browser(state);
                                 }
+
+                                ui.add_space(12.0);
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new("Remote CDP Port:").size(9.0).color(design::TEXT_MUTED));
+                                    ui.add(egui::DragValue::new(&mut state.config.remote_debug_port));
+                                });
                             } else {
-                                if ui.add(egui::Button::new(RichText::new("⟳ RELAUNCH").strong().size(12.0))
-                                    .min_size([120.0, btn_h].into())
+                                if ui.add(egui::Button::new(RichText::new("⟳  RELAUNCH").strong().size(13.0))
+                                    .min_size([140.0, btn_h].into())
                                     .fill(design::ACCENT_CYAN)).clicked() {
                                     emit(AppEvent::TerminateBrowser);
                                     launch_browser(state);
                                 }
-                                ui.add_space(8.0);
-                                if ui.add(egui::Button::new(RichText::new("⏹ TERMINATE").strong().size(12.0))
-                                    .min_size([120.0, btn_h].into())
+                                ui.add_space(10.0);
+                                if ui.add(egui::Button::new(RichText::new("⏹  TERMINATE").strong().size(13.0))
+                                    .min_size([140.0, btn_h].into())
                                     .fill(Color32::from_rgb(255, 80, 80))).clicked() {
                                     emit(AppEvent::TerminateBrowser);
                                 }
+
+                                ui.add_space(20.0);
+                                ui.label(RichText::new(format!("Connected to port {}", state.config.remote_debug_port)).italics().color(design::ACCENT_GREEN));
                             }
                         });
                     });                });
@@ -233,6 +301,14 @@ fn launch_browser(state: &AppState) {
         user_agent: Some(state.config.user_agent.clone()),
         randomize_user_agent: state.config.randomize_user_agent,
         randomize_fingerprint: state.config.randomize_fingerprint,
+        headless: state.config.headless,
+        incognito: state.config.incognito,
+        ignore_cert_errors: state.config.ignore_cert_errors,
+        mute_audio: state.config.mute_audio,
+        disable_gpu: state.config.disable_gpu,
+        window_width: state.config.window_width,
+        window_height: state.config.window_height,
+        browser_language: state.config.browser_language.clone(),
     };
 
     tokio::spawn(async move {

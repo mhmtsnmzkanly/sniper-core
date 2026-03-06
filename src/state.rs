@@ -28,6 +28,16 @@ pub struct AppConfig {
     pub randomize_fingerprint: bool,
     /// Optional API key for AI-powered features (e.g., Translate).
     pub gemini_api_key: String,
+    
+    // --- NEW BROWSER SETTINGS ---
+    pub headless: bool,
+    pub incognito: bool,
+    pub ignore_cert_errors: bool,
+    pub mute_audio: bool,
+    pub disable_gpu: bool,
+    pub window_width: u32,
+    pub window_height: u32,
+    pub browser_language: String,
 }
 
 impl Default for AppConfig {
@@ -47,6 +57,14 @@ impl Default for AppConfig {
             randomize_user_agent: false,
             randomize_fingerprint: false,
             gemini_api_key: String::new(),
+            headless: false,
+            incognito: false,
+            ignore_cert_errors: true,
+            mute_audio: false,
+            disable_gpu: false,
+            window_width: 1280,
+            window_height: 720,
+            browser_language: "en-US".to_string(),
         }
     }
 }
