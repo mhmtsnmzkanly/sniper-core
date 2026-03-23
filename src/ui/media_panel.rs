@@ -5,7 +5,7 @@ use egui::{Color32, Frame, RichText, Ui, Stroke};
 
 pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
     // Extract state for local use
-    let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, mut preview_size, _show_export, _gallery_mode) = {
+    let (media_assets, media_count, selected_media_urls, media_search, mut type_filter, mut preview_size, _show_export, mut sort_col, mut sort_asc, mut min_size_kb) = {
         let ws = state.workspaces.get(tid).unwrap();
         (
             ws.media_assets.clone(), 
@@ -15,7 +15,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
             ws.media_type_filter.clone(), 
             ws.media_preview_size,
             ws.show_media_export,
-            ws.media_gallery_mode
+            ws.media_sort_col.clone(),
+            ws.media_sort_asc,
+            ws.media_min_size_kb
         )
     };
 
@@ -51,6 +53,22 @@ pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
                     }
                     if ui.button("CLEAR ALL").clicked() { type_filter.clear(); }
                 });
+
+                ui.separator();
+                ui.label("MIN SIZE:");
+                ui.add(egui::DragValue::new(&mut min_size_kb).suffix(" KB").speed(10.0));
+
+                ui.separator();
+                ui.label("SORT:");
+                egui::ComboBox::from_id_salt(format!("{}_media_sort", tid))
+                    .selected_text(&sort_col)
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut sort_col, "name".into(), "Name");
+                        ui.selectable_value(&mut sort_col, "type".into(), "Type");
+                        ui.selectable_value(&mut sort_col, "size".into(), "Size");
+                    });
+                if ui.button(if sort_asc { "🔼" } else { "🔽" }).clicked() { sort_asc = !sort_asc; }
 
                 ui.separator();
                 ui.label("ZOOM:");
@@ -89,11 +107,13 @@ pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
 
         ui.add_space(6.0);
 
-        // --- FILTERING LOGIC ---
-        let filtered_assets: Vec<crate::state::MediaAsset> = media_assets.into_iter().filter(|asset| {
+        // --- FILTERING & SORTING LOGIC ---
+        let mut filtered_assets: Vec<crate::state::MediaAsset> = media_assets.into_iter().filter(|asset| {
             let search = media_search.to_lowercase();
             if !search.is_empty() && !asset.url.to_lowercase().contains(&search) && !asset.name.to_lowercase().contains(&search) { return false; }
             
+            if min_size_kb > 0 && asset.size_bytes < min_size_kb * 1024 { return false; }
+
             if !type_filter.is_empty() {
                 let mt = asset.mime_type.to_lowercase();
                 let lu = asset.url.to_lowercase();
@@ -108,6 +128,17 @@ pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
             }
             true
         }).collect();
+
+        // SORTING
+        filtered_assets.sort_by(|a, b| {
+            let res = match sort_col.as_str() {
+                "name" => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                "type" => a.mime_type.cmp(&b.mime_type),
+                "size" => a.size_bytes.cmp(&b.size_bytes),
+                _ => a.name.cmp(&b.name),
+            };
+            if sort_asc { res } else { res.reverse() }
+        });
 
         // --- ASSET GRID (RESPONSIVE) ---
         // KOD NOTU: Grid artık tamamen responsive. Sütun sayısı panel genişliğine göre dinamik hesaplanır.
@@ -223,5 +254,8 @@ pub fn render(ui: &mut Ui, state: &mut AppState, tid: &str) {
         ws.media_search = media_search;
         ws.media_type_filter = type_filter;
         ws.media_preview_size = preview_size;
+        ws.media_sort_col = sort_col;
+        ws.media_sort_asc = sort_asc;
+        ws.media_min_size_kb = min_size_kb;
     }
 }
